@@ -1,0 +1,11 @@
+/node_modules
+/vendor
+/tests
+/storage/logs
+/database/*.sqlite
+/database/*.sqlite-journal
+.env
+.env.backup
+.env.production
+.phpunit.cache
+.phpunit.result.cache
