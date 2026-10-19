@@ -1,10 +1,11 @@
 <script setup>
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import BarcodeInput from '../../components/BarcodeInput.vue';
 import { formatPeso } from '../../formatPeso';
 import { jsonRequest } from '../../http';
 import PosLayout from '../../layouts/PosLayout.vue';
+import { hidePosChrome } from '../../posChrome';
 import {
     openAssignedDrawer,
     printBluetoothTest,
@@ -1064,6 +1065,14 @@ watch(countedCash, (value) => {
 
     closeForm.remit_amount = value.toFixed(2);
 });
+
+watch(closeOpen, (value) => {
+    hidePosChrome.value = value;
+});
+
+onUnmounted(() => {
+    hidePosChrome.value = false;
+});
 </script>
 
 <template>
@@ -1092,7 +1101,7 @@ watch(countedCash, (value) => {
         </template>
         <template v-else-if="shift && closeOpen">
             <button
-                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15 disabled:opacity-70"
+                class="h-10 shrink-0 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
                 form="close-shift-form"
                 type="submit"
                 :disabled="closeForm.processing"

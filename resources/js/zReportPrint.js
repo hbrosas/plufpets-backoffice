@@ -1,4 +1,4 @@
-import { printToAssignedPrinter } from './printerConnection';
+import { PrinterUnavailableError, printReceipt } from './printerConnection';
 import { mountToastHost, showToast } from './toast';
 
 function payload(id) {
@@ -11,19 +11,25 @@ function payload(id) {
     return JSON.parse(node.textContent);
 }
 
-async function printZReport(allowPrompt) {
+async function printZReport() {
     const printer = payload('z-report-printer');
     const receipt = payload('z-report-receipt');
 
-    showToast(printer?.device_name ? `Printing on ${printer.device_name}…` : 'Printing…');
-
     try {
-        await printToAssignedPrinter(printer, typeof receipt === 'string' ? receipt : '', allowPrompt);
+        await printReceipt(printer, typeof receipt === 'string' ? receipt : '', {
+            allowPrompt: false,
+        });
 
         if (printer && printer.connection !== 'browser') {
-            showToast('Sent to the assigned printer.');
+            showToast(printer.device_name ? `Sent to ${printer.device_name}.` : 'Sent to the connected printer.');
         }
     } catch (error) {
+        if (error instanceof PrinterUnavailableError) {
+            showToast('No printer is connected.', { tone: 'warning' });
+
+            return;
+        }
+
         showToast(error instanceof Error ? error.message : 'Could not print on the assigned printer.');
     }
 }
@@ -31,11 +37,11 @@ async function printZReport(allowPrompt) {
 mountToastHost();
 
 document.getElementById('print-z-report')?.addEventListener('click', () => {
-    printZReport(true);
+    printZReport();
 });
 
 if (document.getElementById('z-report-print')?.dataset.autoprint === '1') {
     window.addEventListener('load', () => {
-        printZReport(false);
+        printZReport();
     });
 }

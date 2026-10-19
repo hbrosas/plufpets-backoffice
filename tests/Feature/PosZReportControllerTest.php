@@ -68,6 +68,7 @@ class PosZReportControllerTest extends TestCase
             ->get("/backoffice/pos/register/{$shift->branch_id}/shifts/{$shift->id}/z-report?print=1")
             ->assertOk()
             ->assertSee('data-autoprint="1"', false)
+            ->assertDontSee('id="print-z-report"', false)
             ->assertSee('bt-z-report', false)
             ->assertSee('RPP02N', false)
             ->assertSee('Z-REPORT', false)

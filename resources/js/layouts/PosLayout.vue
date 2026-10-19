@@ -1,8 +1,9 @@
 <script setup>
 import { Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import FlashToast from '../components/FlashToast.vue';
 import PosSmsControls from '../components/PosSmsControls.vue';
+import { hidePosChrome } from '../posChrome';
 
 const page = usePage();
 const form = useForm({});
@@ -18,6 +19,12 @@ function logout() {
 function closeMenu() {
     menuOpen.value = false;
 }
+
+watch(hidePosChrome, (hidden) => {
+    if (hidden) {
+        closeMenu();
+    }
+});
 
 function toggleMenu() {
     menuOpen.value = !menuOpen.value;
@@ -38,19 +45,24 @@ function toggleMenu() {
         <header
             class="z-30 flex shrink-0 flex-wrap items-center gap-2 border-b border-mist bg-foam/90 px-3 py-2 backdrop-blur-md sm:gap-3 sm:px-4 sm:py-3 lg:px-6 dark:border-white/10 dark:bg-ink/90"
         >
-            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sand text-sm font-semibold text-pine">PP</span>
+            <span
+                v-show="!hidePosChrome"
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sand text-sm font-semibold text-pine"
+            >PP</span>
 
-            <div id="pos-header-search" class="min-w-[8rem] flex-1 basis-40" />
+            <div v-show="!hidePosChrome" id="pos-header-search" class="min-w-[8rem] flex-1 basis-40" />
 
-            <div class="flex shrink-0 flex-nowrap items-center gap-2">
-                <PosSmsControls />
+            <div class="flex shrink-0 flex-nowrap items-center gap-2" :class="hidePosChrome ? 'ml-auto' : ''">
+                <div v-show="!hidePosChrome" class="contents">
+                    <PosSmsControls />
+                </div>
 
                 <div
                     id="admin-header-actions"
                     class="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 />
 
-                <form class="shrink-0" @submit.prevent="logout">
+                <form v-show="!hidePosChrome" class="shrink-0" @submit.prevent="logout">
                     <button
                         class="h-10 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15 disabled:opacity-70"
                         type="submit"
@@ -61,7 +73,7 @@ function toggleMenu() {
                 </form>
             </div>
 
-            <div ref="menuTrigger" class="relative shrink-0">
+            <div v-show="!hidePosChrome" ref="menuTrigger" class="relative shrink-0">
                 <button
                     class="flex h-10 w-10 items-center justify-center rounded-xl border border-mist dark:border-white/15"
                     type="button"
