@@ -20,22 +20,29 @@ class PwaControllerTest extends TestCase
         $response->assertHeaderMissing('set-cookie');
         $response->assertJsonPath('name', 'Harbor Pets');
         $response->assertJsonPath('short_name', 'Pluf Pets');
+        $response->assertJsonPath('id', '/backoffice');
         $response->assertJsonPath('start_url', '/backoffice');
         $response->assertJsonPath('scope', '/');
         $response->assertJsonPath('display', 'standalone');
+        $response->assertJsonPath('prefer_related_applications', false);
         $response->assertJsonPath('icons.0.sizes', '192x192');
         $response->assertJsonPath('icons.0.purpose', 'any');
-        $response->assertJsonPath('icons.1.sizes', '512x512');
+        $response->assertJsonPath('icons.1.src', '/icons/icon-512.png');
+        $response->assertJsonPath('icons.1.purpose', 'any');
+        $response->assertJsonPath('icons.2.src', '/icons/icon-maskable-512.png');
         $response->assertJsonPath('icons.2.purpose', 'maskable');
 
         $icon192 = getimagesize(public_path('icons/icon-192.png'));
         $icon512 = getimagesize(public_path('icons/icon-512.png'));
+        $maskableIcon = getimagesize(public_path('icons/icon-maskable-512.png'));
         $appleIcon = getimagesize(public_path('icons/apple-touch-icon.png'));
 
         $this->assertSame(192, $icon192[0]);
         $this->assertSame(192, $icon192[1]);
         $this->assertSame(512, $icon512[0]);
         $this->assertSame(512, $icon512[1]);
+        $this->assertSame(512, $maskableIcon[0]);
+        $this->assertSame(512, $maskableIcon[1]);
         $this->assertSame(180, $appleIcon[0]);
         $this->assertSame(180, $appleIcon[1]);
     }

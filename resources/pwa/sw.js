@@ -1,11 +1,21 @@
-const CACHE_NAME = 'plufpets-pwa-v1';
-const PRECACHE_URLS = ['/offline', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
+const CACHE_NAME = 'plufpets-pwa-v2';
+const PRECACHE_URLS = ['/offline', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches
             .open(CACHE_NAME)
-            .then((cache) => cache.addAll(PRECACHE_URLS))
+            .then((cache) =>
+                Promise.all(
+                    PRECACHE_URLS.map(async (url) => {
+                        try {
+                            await cache.add(url);
+                        } catch {
+                            // A failed precache must not block installation.
+                        }
+                    }),
+                ),
+            )
             .then(() => self.skipWaiting()),
     );
 });
@@ -32,7 +42,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    if (url.pathname.startsWith('/build/') || url.pathname.startsWith('/icons/')) {
+    if (url.pathname.startsWith('/build/')) {
         event.respondWith(cacheFirst(request));
 
         return;
@@ -50,18 +60,18 @@ async function cacheFirst(request) {
         return cached;
     }
 
-    try {
-        const response = await fetch(request);
+    const response = await fetch(request);
 
-        if (response.ok && !response.redirected) {
+    if (response.ok && !response.redirected) {
+        try {
             const cache = await caches.open(CACHE_NAME);
             await cache.put(request, response.clone());
+        } catch {
+            // Keep the network response when the cache rejects the request.
         }
-
-        return response;
-    } catch {
-        return Response.error();
     }
+
+    return response;
 }
 
 async function networkFirstNavigation(request) {

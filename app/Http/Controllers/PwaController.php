@@ -14,7 +14,7 @@ class PwaController extends Controller
         $name = (string) config('app.name');
 
         return response()->json([
-            'id' => '/',
+            'id' => '/backoffice',
             'name' => $name,
             'short_name' => 'Pluf Pets',
             'description' => 'Pluf Pets — shop, grooming, and hotel for dogs and cats.',
@@ -23,6 +23,7 @@ class PwaController extends Controller
             'display' => 'standalone',
             'background_color' => '#1f6f68',
             'theme_color' => '#1f6f68',
+            'prefer_related_applications' => false,
             'icons' => [
                 [
                     'src' => '/icons/icon-192.png',
@@ -37,7 +38,7 @@ class PwaController extends Controller
                     'purpose' => 'any',
                 ],
                 [
-                    'src' => '/icons/icon-512.png',
+                    'src' => '/icons/icon-maskable-512.png',
                     'sizes' => '512x512',
                     'type' => 'image/png',
                     'purpose' => 'maskable',

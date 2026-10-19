@@ -5,13 +5,31 @@ const deferredPrompt = ref(null);
 const dismissed = ref(readDismissed());
 const installed = ref(runningStandalone());
 const showIosInstructions = ref(false);
+const blockedReason = ref(androidInstallBlockReason());
 
 const appName =
     document.querySelector('meta[name="apple-mobile-web-app-title"]')?.getAttribute('content') || 'Pluf Pets';
 
 const visible = computed(
-    () => !dismissed.value && !installed.value && (deferredPrompt.value !== null || showIosInstructions.value),
+    () =>
+        !dismissed.value &&
+        !installed.value &&
+        (blockedReason.value !== '' || deferredPrompt.value !== null || showIosInstructions.value),
 );
+
+function androidInstallBlockReason() {
+    const android = /android|googlebook/i.test(window.navigator.userAgent);
+
+    if (!android) {
+        return '';
+    }
+
+    if (!window.isSecureContext || window.location.port !== '') {
+        return 'Chrome on a tablet installs this app from an https address with no port number. Open that address, then install again.';
+    }
+
+    return '';
+}
 
 function runningStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -102,7 +120,10 @@ onUnmounted(() => {
                 </span>
                 <div class="flex min-w-0 flex-1 flex-col gap-1">
                     <p class="text-sm font-medium">Install {{ appName }}</p>
-                    <p v-if="deferredPrompt" class="text-sm text-ink/70 dark:text-foam/70">
+                    <p v-if="blockedReason" class="text-sm text-ink/70 dark:text-foam/70">
+                        {{ blockedReason }}
+                    </p>
+                    <p v-else-if="deferredPrompt" class="text-sm text-ink/70 dark:text-foam/70">
                         Add it to your home screen and open it like an app.
                     </p>
                     <p v-else class="text-sm text-ink/70 dark:text-foam/70">
@@ -119,7 +140,7 @@ onUnmounted(() => {
                     Not now
                 </button>
                 <button
-                    v-if="deferredPrompt"
+                    v-if="deferredPrompt && blockedReason === ''"
                     class="h-10 rounded-xl bg-pine px-4 text-sm font-medium text-foam"
                     type="button"
                     @click="install"
