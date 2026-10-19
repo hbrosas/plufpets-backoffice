@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Str;
 use Pdo\Mysql;
+use Pdo\Pgsql;
 
 return [
 
@@ -100,7 +101,7 @@ return [
             // Supabase's transaction pooler (port 6543) does not keep named prepared statements.
             'options' => extension_loaded('pdo_pgsql') ? [
                 PDO::ATTR_EMULATE_PREPARES => true,
-                PDO::PGSQL_ATTR_DISABLE_PREPARES => true,
+                (class_exists(Pgsql::class) ? Pgsql::ATTR_DISABLE_PREPARES : PDO::PGSQL_ATTR_DISABLE_PREPARES) => true,
             ] : [],
         ],
 
