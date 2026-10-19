@@ -53,4 +53,4 @@ Then run `php artisan migrate`.
 - `APP_URL` — the deployment URL
 - The Supabase variables above, when the database should be used
 
-`SESSION_DRIVER=cookie` is set for Vercel because the filesystem is read-only outside `/tmp`.
+`SESSION_DRIVER=cookie` is set for Vercel because the filesystem is read-only outside `/tmp`. Laravel cache and compiled views also use `/tmp`.
