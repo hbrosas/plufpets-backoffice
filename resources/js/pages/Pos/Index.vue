@@ -4,6 +4,8 @@ import { computed, ref, watch } from 'vue';
 import BarcodeInput from '../../components/BarcodeInput.vue';
 import { formatPeso } from '../../formatPeso';
 import PosLayout from '../../layouts/PosLayout.vue';
+import { openAssignedDrawer } from '../../printerConnection';
+import { showToast } from '../../toast';
 
 defineOptions({
     layout: PosLayout,
@@ -27,6 +29,11 @@ const props = defineProps({
 const page = usePage();
 const flash = computed(() => page.props.flash ?? {});
 const employee = computed(() => page.props.employee);
+const canOpenDrawer = computed(() => (employee.value?.permissions ?? []).includes('pos.open-drawer'));
+const receiptPrinter = computed(
+    () => props.printers.find((printer) => printer.role === 'receipt') ?? null,
+);
+const openingDrawer = ref(false);
 
 const selectedCategoryId = ref(null);
 const search = ref('');
@@ -271,8 +278,30 @@ function applySoldQuantities(lines) {
     soldQuantities.value = next;
 }
 
-function openDrawer() {
-    window.open('/backoffice/pos/drawer', 'pos-drawer', 'width=420,height=320');
+async function openDrawer(prompt = false) {
+    if (prompt && !canOpenDrawer.value) {
+        return;
+    }
+
+    openingDrawer.value = true;
+
+    try {
+        await openAssignedDrawer(receiptPrinter.value, prompt);
+
+        if (prompt) {
+            showToast(
+                receiptPrinter.value?.device_name
+                    ? `Opened drawer on ${receiptPrinter.value.device_name}.`
+                    : 'Opened the cash drawer.',
+            );
+        }
+    } catch (error) {
+        if (prompt) {
+            showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.');
+        }
+    } finally {
+        openingDrawer.value = false;
+    }
 }
 
 function openShift() {
@@ -822,7 +851,7 @@ watch(
     () => flash.value.open_drawer,
     (value) => {
         if (value) {
-            openDrawer();
+            openDrawer(false);
         }
     },
     { immediate: true },
@@ -882,11 +911,13 @@ watch(countedCash, (value) => {
         </template>
         <template v-else-if="shift && closeOpen">
             <button
-                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
+                v-if="canOpenDrawer"
+                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15 disabled:opacity-70"
                 type="button"
-                @click="openDrawer"
+                :disabled="openingDrawer"
+                @click="openDrawer(true)"
             >
-                Open drawer
+                {{ openingDrawer ? 'Opening…' : 'Open drawer' }}
             </button>
             <button
                 class="h-10 shrink-0 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
@@ -905,6 +936,15 @@ watch(countedCash, (value) => {
             </button>
         </template>
         <template v-else-if="shift">
+            <button
+                v-if="canOpenDrawer"
+                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15 disabled:opacity-70"
+                type="button"
+                :disabled="openingDrawer"
+                @click="openDrawer(true)"
+            >
+                {{ openingDrawer ? 'Opening…' : 'Open drawer' }}
+            </button>
             <button
                 class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
                 type="button"

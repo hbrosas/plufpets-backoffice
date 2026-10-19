@@ -20,6 +20,10 @@ function encodeEscPos(text) {
     return new TextEncoder().encode(`\x1b\x40${text}\n\n\n\x1d\x56\x41\x03`);
 }
 
+function drawerKickBytes() {
+    return new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+}
+
 function testBytes(printer) {
     return encodeEscPos(`${printer.name}\n${printer.role_label} test\n${new Date().toLocaleString()}\n`);
 }
@@ -221,9 +225,7 @@ export async function finishAssignedPrint(printer, text, session) {
     window.print();
 }
 
-export async function printEscPos(printer, text, allowPrompt = true) {
-    const bytes = encodeEscPos(text);
-
+async function sendToPrinter(printer, bytes, allowPrompt) {
     if (printer.connection === 'bluetooth') {
         await printBluetooth(printer, bytes, allowPrompt);
         return;
@@ -234,7 +236,31 @@ export async function printEscPos(printer, text, allowPrompt = true) {
         return;
     }
 
-    window.print();
+    throw new Error('This printer cannot send ESC/POS commands.');
+}
+
+export async function printEscPos(printer, text, allowPrompt = true) {
+    const bytes = encodeEscPos(text);
+
+    if (printer.connection === 'browser') {
+        window.print();
+        return;
+    }
+
+    await sendToPrinter(printer, bytes, allowPrompt);
+}
+
+export async function openAssignedDrawer(printer, allowPrompt = true) {
+    if (!printer) {
+        throw new Error('Assign a receipt printer for this branch in POS Settings.');
+    }
+
+    if (printer.connection === 'browser') {
+        window.open('/backoffice/pos/drawer', 'pos-drawer', 'width=420,height=320');
+        return;
+    }
+
+    await sendToPrinter(printer, drawerKickBytes(), allowPrompt);
 }
 
 export async function printToAssignedPrinter(printer, text, allowPrompt = true) {

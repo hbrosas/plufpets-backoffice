@@ -26,6 +26,7 @@ class PermissionCatalog
             ['key' => 'inventory.stock-assignments', 'name' => 'Assign stock', 'group' => 'Inventory'],
             ['key' => 'inventory.suppliers', 'name' => 'Manage suppliers', 'group' => 'Inventory'],
             ['key' => 'pos.access', 'name' => 'Use the register', 'group' => 'POS'],
+            ['key' => 'pos.open-drawer', 'name' => 'Open the cash drawer', 'group' => 'POS'],
             ['key' => 'pos.categories', 'name' => 'Manage POS categories', 'group' => 'POS'],
             ['key' => 'pos.settings', 'name' => 'Manage POS settings', 'group' => 'POS'],
             ['key' => 'staff.manage', 'name' => 'Manage staff', 'group' => 'Staff'],
