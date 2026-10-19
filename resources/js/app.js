@@ -3,6 +3,7 @@ import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import FullscreenButton from './components/FullscreenButton.vue';
 import PwaInstallPrompt from './components/PwaInstallPrompt.vue';
+import { mountToastHost } from './toast';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Employee Portal';
 
@@ -17,6 +18,7 @@ createInertiaApp({
         createApp({ render: () => h(App, props) }).use(plugin).mount(el);
         mountPwaInstallPrompt();
         mountFullscreenButton();
+        mountToastHost();
     },
     progress: {
         color: '#1f6f68',

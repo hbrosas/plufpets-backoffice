@@ -410,6 +410,7 @@ class PosController extends Controller
 
             return [
                 'key' => 'sale-'.$sale->id,
+                'id' => $sale->id,
                 'type' => 'sale',
                 'title' => $sale->number,
                 'sort' => $sale->sold_at?->timestamp ?? 0,

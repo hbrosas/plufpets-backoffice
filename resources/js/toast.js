@@ -1,9 +1,9 @@
-export function showToast(message) {
+export function showToast(message, { tone = 'info' } = {}) {
     if (!message) {
         return;
     }
 
-    window.dispatchEvent(new CustomEvent('app:toast', { detail: { message } }));
+    window.dispatchEvent(new CustomEvent('app:toast', { detail: { message, tone } }));
 }
 
 export function mountToastHost() {
@@ -25,11 +25,13 @@ export function mountToastHost() {
             return;
         }
 
+        const warning = event.detail?.tone === 'warning';
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = message;
-        button.style.cssText =
-            'pointer-events:auto;border-radius:0.75rem;border:1px solid rgba(31,111,104,0.2);background:#f4f7f5;padding:0.75rem 1rem;text-align:left;font-size:14px;color:#14231f;box-shadow:0 10px 15px rgba(20,35,31,0.12);cursor:pointer;';
+        button.style.cssText = warning
+            ? 'pointer-events:auto;border-radius:0.75rem;border:1px solid #c4a15a;background:#fbf6ea;padding:0.75rem 1rem;text-align:left;font-size:14px;color:#14231f;box-shadow:0 10px 15px rgba(20,35,31,0.12);cursor:pointer;'
+            : 'pointer-events:auto;border-radius:0.75rem;border:1px solid rgba(31,111,104,0.2);background:#f4f7f5;padding:0.75rem 1rem;text-align:left;font-size:14px;color:#14231f;box-shadow:0 10px 15px rgba(20,35,31,0.12);cursor:pointer;';
         button.addEventListener('click', () => button.remove());
         host.appendChild(button);
         window.setTimeout(() => button.remove(), 3000);

@@ -145,6 +145,36 @@ class PrinterControllerTest extends TestCase
         ]);
     }
 
+    public function test_register_connects_only_the_branch_printer(): void
+    {
+        $printer = Printer::factory()->bluetooth()->create([
+            'bluetooth_id' => '',
+            'device_name' => '',
+        ]);
+        $other = Printer::factory()->bluetooth()->create();
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$printer->branch_id}")
+            ->put("/backoffice/pos/register/{$printer->branch_id}/printers/{$printer->id}", [
+                'bluetooth_id' => 'bt-front',
+                'device_name' => 'Front register',
+            ])
+            ->assertRedirect("/backoffice/pos/register/{$printer->branch_id}");
+
+        $this->assertDatabaseHas('printers', [
+            'id' => $printer->id,
+            'bluetooth_id' => 'bt-front',
+            'device_name' => 'Front register',
+        ]);
+
+        $this->actingAsEmployee()
+            ->put("/backoffice/pos/register/{$printer->branch_id}/printers/{$other->id}", [
+                'bluetooth_id' => 'bt-other',
+                'device_name' => 'Wrong branch',
+            ])
+            ->assertNotFound();
+    }
+
     public function test_test_page_uses_the_printer_paper_size(): void
     {
         $printer = Printer::factory()->label()->create([

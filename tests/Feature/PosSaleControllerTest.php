@@ -12,6 +12,8 @@ use App\Models\Modifier;
 use App\Models\PaymentMethod;
 use App\Models\PosOpenOrder;
 use App\Models\PosSale;
+use App\Models\PosSaleItem;
+use App\Models\PosSalePayment;
 use App\Models\PosShift;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -190,6 +192,75 @@ class PosSaleControllerTest extends TestCase
         $this->assertDatabaseHas('branch_inventories', [
             'catalog_item_variant_id' => $variant->id,
             'quantity' => 4,
+        ]);
+    }
+
+    public function test_sale_preview_returns_a_receipt_without_recording_a_sale(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['type' => CatalogItemType::Product, 'name' => 'Kibble']))
+            ->create(['name' => 'Large', 'price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+        $payment = PaymentMethod::factory()->cash()->create();
+
+        $response = $this->actingAsEmployee()
+            ->postJson("/backoffice/pos/register/{$branch->id}/sales/preview", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '100',
+                    'amount_tendered' => '150',
+                ]],
+            ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('number', 'POS-'.now()->format('Ymd').'-0001');
+        $response->assertJsonPath('open_drawer', true);
+        $response->assertJsonPath('checkout_success.total', '₱100.00');
+        $response->assertJsonPath('checkout_success.change', '₱50.00');
+        $this->assertStringContainsString('Kibble Large', (string) $response->json('receipt'));
+        $this->assertStringContainsString('Cash', (string) $response->json('receipt'));
+        $this->assertDatabaseCount('pos_sales', 0);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+    }
+
+    public function test_sale_keeps_the_number_printed_on_the_receipt(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()->create(['price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+        $payment = PaymentMethod::factory()->cash()->create();
+        $number = 'POS-'.now()->format('Ymd').'-0007';
+
+        $this->actingAsEmployee()
+            ->postJson("/backoffice/pos/register/{$branch->id}/sales", [
+                'number' => $number,
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '100',
+                    'amount_tendered' => '100',
+                ]],
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('pos_sales', [
+            'branch_id' => $branch->id,
+            'number' => $number,
         ]);
     }
 
@@ -595,5 +666,58 @@ class PosSaleControllerTest extends TestCase
             'payments' => 'Payments must equal the sale total.',
         ]);
         $this->assertDatabaseCount('pos_sales', 0);
+    }
+
+    public function test_guest_cannot_read_a_sale_receipt(): void
+    {
+        $sale = PosSale::factory()->create();
+
+        $response = $this->get("/backoffice/pos/register/{$sale->branch_id}/sales/{$sale->id}/receipt");
+
+        $response->assertRedirect(route('login'));
+    }
+
+    public function test_sale_receipt_returns_the_saved_receipt(): void
+    {
+        $branch = Branch::factory()->create();
+        $sale = PosSale::factory()->create([
+            'branch_id' => $branch->id,
+            'number' => 'POS-20261019-0004',
+            'total' => 100,
+            'amount_tendered' => 100,
+            'change_due' => 0,
+        ]);
+        PosSaleItem::factory()->create([
+            'pos_sale_id' => $sale->id,
+            'product_name' => 'Kibble',
+            'variant_name' => 'Large',
+            'quantity' => 1,
+            'line_total' => 100,
+        ]);
+        PosSalePayment::factory()->create([
+            'pos_sale_id' => $sale->id,
+            'payment_method_name' => 'Cash',
+            'reference_number' => null,
+        ]);
+
+        $response = $this->actingAsEmployee()
+            ->getJson("/backoffice/pos/register/{$branch->id}/sales/{$sale->id}/receipt");
+
+        $response->assertOk();
+        $receipt = $response->json('receipt');
+        $this->assertIsString($receipt);
+        $this->assertStringContainsString('POS-20261019-0004', $receipt);
+        $this->assertStringContainsString('Kibble Large', $receipt);
+        $this->assertStringContainsString('Cash', $receipt);
+    }
+
+    public function test_sale_receipt_is_not_found_for_another_branch(): void
+    {
+        $branch = Branch::factory()->create();
+        $sale = PosSale::factory()->create();
+
+        $this->actingAsEmployee()
+            ->getJson("/backoffice/pos/register/{$branch->id}/sales/{$sale->id}/receipt")
+            ->assertNotFound();
     }
 }

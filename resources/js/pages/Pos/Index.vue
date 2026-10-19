@@ -5,7 +5,15 @@ import BarcodeInput from '../../components/BarcodeInput.vue';
 import { formatPeso } from '../../formatPeso';
 import { jsonRequest } from '../../http';
 import PosLayout from '../../layouts/PosLayout.vue';
-import { beginAssignedPrint, openAssignedDrawer, printReceipt } from '../../printerConnection';
+import {
+    openAssignedDrawer,
+    printBluetoothTest,
+    printReceipt,
+    PrinterUnavailableError,
+    printSerialTest,
+    requestBluetoothIdentity,
+    requestSerialIdentity,
+} from '../../printerConnection';
 import { showToast } from '../../toast';
 
 defineOptions({
@@ -31,8 +39,11 @@ const page = usePage();
 const flash = computed(() => page.props.flash ?? {});
 const employee = computed(() => page.props.employee);
 const canOpenDrawer = computed(() => (employee.value?.permissions ?? []).includes('pos.open-drawer'));
+const branchPrinters = computed(() =>
+    props.printers.filter((printer) => String(printer.branch_id) === String(props.branch.id)),
+);
 const receiptPrinter = computed(
-    () => props.printers.find((printer) => printer.role === 'receipt') ?? null,
+    () => branchPrinters.value.find((printer) => printer.role === 'receipt') ?? null,
 );
 const openingDrawer = ref(false);
 
@@ -40,6 +51,7 @@ const selectedCategoryId = ref(null);
 const search = ref('');
 const cart = ref([]);
 const salesOpen = ref(false);
+const reprintingSaleId = ref(null);
 const cashOpen = ref(false);
 const closeOpen = ref(false);
 const customizeOpen = ref(false);
@@ -49,6 +61,9 @@ const customNotes = ref('');
 const customSelections = ref({});
 const editingLineKey = ref(null);
 const chargeOpen = ref(false);
+const printersOpen = ref(false);
+const printerNotice = ref('');
+const connectingPrinterId = ref(null);
 const openOrdersOpen = ref(false);
 const saveOpen = ref(false);
 const activeOpenOrderId = ref(null);
@@ -278,6 +293,65 @@ function applySoldQuantities(lines) {
     });
 
     soldQuantities.value = next;
+}
+
+function usesPairedDevice(printer) {
+    return printer.connection === 'bluetooth' || printer.connection === 'serial';
+}
+
+async function connectBranchPrinter(printer) {
+    printerNotice.value = '';
+    connectingPrinterId.value = printer.id;
+
+    if (!usesPairedDevice(printer)) {
+        window.open(printer.test_href, '_blank', 'noopener');
+        connectingPrinterId.value = null;
+        return;
+    }
+
+    try {
+        const identity = printer.connection === 'bluetooth'
+            ? await requestBluetoothIdentity()
+            : await requestSerialIdentity();
+
+        router.put(`${registerPath.value}/printers/${printer.id}`, identity, {
+            preserveScroll: true,
+            preserveState: true,
+            only: ['printers'],
+            onSuccess: () => {
+                printerNotice.value = `Connected ${identity.device_name}.`;
+            },
+            onError: (errors) => {
+                const message = Object.values(errors)[0];
+                printerNotice.value = Array.isArray(message) ? message[0] : (message || 'Could not connect to that printer.');
+            },
+            onFinish: () => {
+                connectingPrinterId.value = null;
+            },
+        });
+    } catch (error) {
+        connectingPrinterId.value = null;
+        printerNotice.value = error instanceof Error ? error.message : 'Could not connect to that printer.';
+    }
+}
+
+async function testBranchPrinter(printer) {
+    printerNotice.value = '';
+
+    try {
+        if (printer.connection === 'bluetooth') {
+            await printBluetoothTest(printer);
+        } else if (printer.connection === 'serial') {
+            await printSerialTest(printer);
+        } else {
+            window.open(printer.test_href, '_blank', 'noopener');
+            return;
+        }
+
+        printerNotice.value = `Sent a test to ${printer.device_name || printer.name}.`;
+    } catch (error) {
+        printerNotice.value = error instanceof Error ? error.message : 'Test print failed.';
+    }
 }
 
 async function openDrawer(prompt = false) {
@@ -739,8 +813,18 @@ async function charge() {
         (sum, payment) => sum + Number(payment.change_due || 0),
         0,
     );
-    const printer = receiptPrinter.value;
-    const printSession = printer ? beginAssignedPrint(printer) : Promise.resolve(null);
+    const payload = {
+        items: saleItems(),
+        payments: checkoutPayments.value.map((payment) => ({
+            payment_method_id: payment.payment_method_id,
+            amount: payment.amount,
+            amount_tendered: payment.is_cash ? payment.amount_tendered : null,
+            reference_number: payment.reference_number,
+        })),
+        delivery_method_id: saleForm.delivery_method_id,
+        delivery_fee: saleForm.delivery_fee,
+        pos_open_order_id: activeOpenOrderId.value,
+    };
 
     checkoutSuccess.value = {
         total: formatPeso(saleTotal.value),
@@ -752,26 +836,26 @@ async function charge() {
     saleForm.clearErrors();
 
     try {
-        const result = await jsonRequest(`${registerPath.value}/sales`, {
+        const preview = await jsonRequest(`${registerPath.value}/sales/preview`, {
             method: 'POST',
-            body: {
-                items: saleItems(),
-                payments: checkoutPayments.value.map((payment) => ({
-                    payment_method_id: payment.payment_method_id,
-                    amount: payment.amount,
-                    amount_tendered: payment.is_cash ? payment.amount_tendered : null,
-                    reference_number: payment.reference_number,
-                })),
-                delivery_method_id: saleForm.delivery_method_id,
-                delivery_fee: saleForm.delivery_fee,
-                pos_open_order_id: activeOpenOrderId.value,
-            },
+            body: payload,
         });
 
         checkoutSuccess.value = {
-            total: result.checkout_success?.total ?? checkoutSuccess.value.total,
-            change: changeLabel(result.checkout_success?.change),
+            total: preview.checkout_success?.total ?? checkoutSuccess.value.total,
+            change: changeLabel(preview.checkout_success?.change),
         };
+
+        await printOnReceiptPrinter(preview.receipt, Boolean(preview.open_drawer));
+
+        await jsonRequest(`${registerPath.value}/sales`, {
+            method: 'POST',
+            body: {
+                ...payload,
+                number: preview.number,
+            },
+        });
+
         applySoldQuantities(soldLines);
         cart.value = [];
         checkoutPayments.value = [];
@@ -780,27 +864,12 @@ async function charge() {
         activeOpenOrderName.value = '';
         saleForm.reset();
 
-        if (printer && result.receipt) {
-            void printReceipt(printer, result.receipt, {
-                openDrawer: Boolean(result.open_drawer),
-                session: printSession,
-            }).catch((error) => {
-                showToast(error instanceof Error ? error.message : 'Could not print the receipt.');
-            });
-        } else if (result.open_drawer) {
-            void openDrawer(false);
-            printSession.catch(() => {});
-        } else {
-            printSession.catch(() => {});
-        }
-
         router.reload({
             ...registerPartial,
             only: [...registerPartial.only, 'variants'],
         });
     } catch (error) {
         checkoutSuccess.value = null;
-        printSession.catch(() => {});
 
         const errors = error?.errors ?? {};
         const entries = Object.entries(errors);
@@ -818,6 +887,49 @@ async function charge() {
         }
     } finally {
         charging.value = false;
+    }
+}
+
+async function printOnReceiptPrinter(text, openDrawer) {
+    const printer = receiptPrinter.value;
+
+    if (!printer) {
+        showToast('No printer is connected.', { tone: 'warning' });
+
+        return;
+    }
+
+    try {
+        await printReceipt(printer, text, {
+            openDrawer,
+            allowPrompt: false,
+        });
+    } catch (error) {
+        if (error instanceof PrinterUnavailableError) {
+            showToast('No printer is connected.', { tone: 'warning' });
+
+            return;
+        }
+
+        throw error;
+    }
+}
+
+async function reprintReceipt(transaction) {
+    if (reprintingSaleId.value !== null || transaction.type !== 'sale') {
+        return;
+    }
+
+    reprintingSaleId.value = transaction.id;
+
+    try {
+        const payload = await jsonRequest(`${registerPath.value}/sales/${transaction.id}/receipt`);
+
+        await printOnReceiptPrinter(payload.receipt, false);
+    } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not reprint the receipt.');
+    } finally {
+        reprintingSaleId.value = null;
     }
 }
 
@@ -1007,6 +1119,13 @@ watch(countedCash, (value) => {
     </Teleport>
 
     <Teleport defer to="#pos-header-menu-items">
+        <button
+            class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
+            type="button"
+            @click="printersOpen = true"
+        >
+            Printers
+        </button>
         <template v-if="shift">
             <button
                 v-if="canOpenDrawer"
@@ -1460,11 +1579,17 @@ watch(countedCash, (value) => {
             <p class="text-4xl font-medium sm:text-5xl">{{ checkoutSuccess.total }}</p>
             <p v-if="checkoutSuccess.change" class="text-lg">Change {{ checkoutSuccess.change }}</p>
             <button
-                class="mt-4 h-11 rounded-xl bg-pine px-6 text-sm font-medium text-foam"
+                class="mt-4 flex h-11 min-w-24 items-center justify-center rounded-xl bg-pine px-6 text-sm font-medium text-foam disabled:opacity-70"
                 type="button"
+                :disabled="charging"
                 @click="closeCheckout"
             >
-                Done
+                <span
+                    v-if="charging"
+                    class="h-4 w-4 animate-spin rounded-full border-2 border-foam/40 border-t-foam"
+                    aria-label="Saving sale"
+                ></span>
+                <span v-else>Done</span>
             </button>
         </div>
         <template v-else>
@@ -1673,13 +1798,54 @@ watch(countedCash, (value) => {
             </section>
         </div>
         </template>
-        <div
-            v-if="charging"
-            class="absolute inset-0 flex items-center justify-center bg-foam/80 dark:bg-ink/80"
-            role="status"
-            aria-live="polite"
-        >
-            <span class="h-10 w-10 animate-spin rounded-full border-2 border-mist border-t-pine dark:border-white/15" aria-label="Saving sale"></span>
+    </div>
+
+    <div v-if="printersOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
+        <div class="flex max-h-[90dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-foam p-6 dark:bg-ink">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-medium">Printers</h2>
+                    <p class="text-sm text-ink/60 dark:text-foam/60">{{ branch.name }}</p>
+                </div>
+                <button class="text-sm font-medium" type="button" @click="printersOpen = false">Close</button>
+            </div>
+            <p v-if="printerNotice" class="text-sm text-pine dark:text-sand">{{ printerNotice }}</p>
+            <p v-if="branchPrinters.length === 0" class="text-sm text-ink/60 dark:text-foam/60">
+                No printers are assigned to this branch.
+            </p>
+            <ul v-else class="flex flex-col gap-3">
+                <li
+                    v-for="printer in branchPrinters"
+                    :key="printer.id"
+                    class="flex flex-col gap-3 rounded-xl border border-mist p-3 dark:border-white/10"
+                >
+                    <div>
+                        <p class="font-medium">{{ printer.name }}</p>
+                        <p class="text-xs text-ink/50 dark:text-foam/50">
+                            {{ printer.role_label }} · {{ printer.connection_label }} · {{ printer.paper_label }}
+                            <span v-if="printer.is_identified"> · {{ printer.device_name }}</span>
+                            <span v-else-if="usesPairedDevice(printer)"> · Not connected</span>
+                        </p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button
+                            class="h-10 rounded-xl bg-pine px-3 text-sm font-medium text-foam disabled:opacity-70"
+                            type="button"
+                            :disabled="connectingPrinterId === printer.id"
+                            @click="connectBranchPrinter(printer)"
+                        >
+                            {{ connectingPrinterId === printer.id ? 'Connecting…' : (usesPairedDevice(printer) ? 'Connect' : 'Identify') }}
+                        </button>
+                        <button
+                            class="h-10 rounded-xl border border-mist px-3 text-sm font-medium dark:border-white/15"
+                            type="button"
+                            @click="testBranchPrinter(printer)"
+                        >
+                            Test
+                        </button>
+                    </div>
+                </li>
+            </ul>
         </div>
     </div>
 
@@ -1788,6 +1954,16 @@ watch(countedCash, (value) => {
                     </span>
                     <span v-if="item.notes"> · {{ item.notes }}</span>
                 </p>
+                <div v-if="transaction.type === 'sale'" class="mt-2 flex justify-end">
+                    <button
+                        class="h-9 rounded-xl border border-mist px-3 text-sm font-medium disabled:opacity-50 dark:border-white/10"
+                        type="button"
+                        :disabled="reprintingSaleId === transaction.id"
+                        @click="reprintReceipt(transaction)"
+                    >
+                        {{ reprintingSaleId === transaction.id ? 'Printing…' : 'Reprint receipt' }}
+                    </button>
+                </div>
             </article>
         </div>
     </div>

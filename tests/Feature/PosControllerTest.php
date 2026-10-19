@@ -148,7 +148,7 @@ class PosControllerTest extends TestCase
             'employee_name' => 'Sample Employee',
             'recorded_at' => now()->subHour(),
         ]);
-        PosSale::factory()->create([
+        $sale = PosSale::factory()->create([
             'pos_shift_id' => $shift->id,
             'branch_id' => $branch->id,
             'number' => 'POS-20261018-0001',
@@ -163,6 +163,8 @@ class PosControllerTest extends TestCase
         $response->assertInertia(fn (Assert $page) => $page
             ->where('todayTransactionsTotal', '₱250.00')
             ->where('todayTransactions.0.title', 'POS-20261018-0001')
+            ->where('todayTransactions.0.type', 'sale')
+            ->where('todayTransactions.0.id', $sale->id)
             ->where('todayTransactions.1.title', 'Cash out')
             ->where('todayTransactions.1.amount_label', '-₱50.00')
             ->where('todayTransactions.2.title', 'Cash in')

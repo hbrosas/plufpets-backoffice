@@ -89,7 +89,10 @@ Route::prefix('backoffice')->group(function () {
             Route::post('/pos/register/{branch}/shifts', [PosShiftController::class, 'store'])->name('pos.shifts.store');
             Route::post('/pos/register/{branch}/shifts/{pos_shift}/close', [PosShiftController::class, 'close'])->name('pos.shifts.close');
             Route::get('/pos/register/{branch}/shifts/{pos_shift}/z-report', [PosZReportController::class, 'show'])->name('pos.shifts.z-report');
+            Route::post('/pos/register/{branch}/sales/preview', [PosSaleController::class, 'preview'])->name('pos.sales.preview');
             Route::post('/pos/register/{branch}/sales', [PosSaleController::class, 'store'])->name('pos.sales.store');
+            Route::get('/pos/register/{branch}/sales/{pos_sale}/receipt', [PosSaleController::class, 'receipt'])->name('pos.sales.receipt');
+            Route::put('/pos/register/{branch}/printers/{printer}', [PrinterController::class, 'connect'])->name('pos.printers.connect');
             Route::post('/pos/register/{branch}/open-orders', [PosOpenOrderController::class, 'store'])->name('pos.open-orders.store');
             Route::put('/pos/register/{branch}/open-orders/{pos_open_order}', [PosOpenOrderController::class, 'update'])
                 ->scopeBindings()

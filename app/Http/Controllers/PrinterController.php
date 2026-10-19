@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ConnectPrinterRequest;
 use App\Http\Requests\StorePrinterRequest;
 use App\Http\Requests\UpdatePrinterRequest;
+use App\Models\Branch;
 use App\Models\Printer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -35,6 +37,21 @@ class PrinterController extends Controller
         return redirect()
             ->route('pos.settings.index')
             ->with('status', 'Printer deleted.');
+    }
+
+    public function connect(ConnectPrinterRequest $request, Branch $branch, Printer $printer): RedirectResponse
+    {
+        abort_unless($printer->branch_id === $branch->id, 404);
+
+        $printer->update($request->safe()->only([
+            'usb_vendor_id',
+            'usb_product_id',
+            'usb_serial_number',
+            'device_name',
+            'bluetooth_id',
+        ]));
+
+        return back();
     }
 
     public function test(Printer $printer): View

@@ -17,6 +17,7 @@ use App\Models\PosSalePayment;
 use App\Models\PosSaleTax;
 use App\Models\PosShift;
 use App\Models\TaxFee;
+use App\Support\Peso;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -42,116 +43,28 @@ class RecordPosSale
                 ]);
             }
 
-            $deliveryMethod = null;
-            $deliveryFee = 0.0;
-
-            if (! empty($attributes['delivery_method_id'])) {
-                $deliveryMethod = DeliveryMethod::query()->findOrFail($attributes['delivery_method_id']);
-
-                if (! $deliveryMethod->is_active) {
-                    throw ValidationException::withMessages([
-                        'delivery_method_id' => 'Choose an active delivery method.',
-                    ]);
-                }
-
-                $deliveryFee = array_key_exists('delivery_fee', $attributes) && $attributes['delivery_fee'] !== null
-                    ? (float) $attributes['delivery_fee']
-                    : (float) ($deliveryMethod->fee ?? 0);
-            }
-
-            $subtotal = 0.0;
-            $preparedItems = [];
-
-            foreach ($attributes['items'] as $index => $item) {
-                $variant = CatalogItemVariant::query()
-                    ->with([
-                        'catalogItem.modifiers',
-                        'catalogItem.modifierOptionPrices.branchPrices' => fn ($query) => $query->where('branch_id', $shift->branch_id),
-                        'branchPrices' => fn ($query) => $query->where('branch_id', $shift->branch_id),
-                    ])
-                    ->whereKey($item['catalog_item_variant_id'])
-                    ->lockForUpdate()
-                    ->firstOrFail();
-
-                if (! $variant->is_active || ! $variant->catalogItem?->is_active) {
-                    throw ValidationException::withMessages([
-                        "items.{$index}.catalog_item_variant_id" => 'That item is not available.',
-                    ]);
-                }
-
-                $quantity = (int) $item['quantity'];
-                $isProduct = $variant->catalogItem?->type === CatalogItemType::Product;
-
-                if ($isProduct) {
-                    $inventory = BranchInventory::query()
-                        ->where('branch_id', $shift->branch_id)
-                        ->where('catalog_item_variant_id', $variant->id)
-                        ->lockForUpdate()
-                        ->first();
-
-                    $onHand = $inventory?->quantity ?? 0;
-
-                    if ($quantity > $onHand) {
-                        throw ValidationException::withMessages([
-                            "items.{$index}.quantity" => 'Only '.$onHand.' units are available at this branch.',
-                        ]);
-                    }
-                }
-
-                $selectedModifiers = $this->selectedModifiers($variant, $item['modifiers'] ?? [], $index, $shift->branch_id);
-                $unitPrice = $this->unitPrice($variant, $shift->branch_id) + $selectedModifiers['extra'];
-                $lineTotal = round($unitPrice * $quantity, 2);
-                $subtotal += $lineTotal;
-
-                $preparedItems[] = [
-                    'variant' => $variant,
-                    'quantity' => $quantity,
-                    'notes' => isset($item['notes']) && is_string($item['notes']) ? trim($item['notes']) : null,
-                    'modifiers' => $selectedModifiers['snapshot'],
-                    'unit_price' => number_format($unitPrice, 2, '.', ''),
-                    'line_total' => number_format($lineTotal, 2, '.', ''),
-                    'decrement_inventory' => $isProduct,
-                ];
-            }
-
-            $taxable = round($subtotal + $deliveryFee, 2);
-            $taxRows = [];
-            $taxTotal = 0.0;
-
-            foreach (TaxFee::query()->where('is_active', true)->orderBy('name')->orderBy('id')->get() as $taxFee) {
-                $amount = $taxFee->type === TaxFeeType::Percent
-                    ? round($taxable * ((float) $taxFee->rate) / 100, 2)
-                    : (float) $taxFee->rate;
-
-                $taxTotal += $amount;
-                $taxRows[] = [
-                    'tax_fee' => $taxFee,
-                    'amount' => number_format($amount, 2, '.', ''),
-                ];
-            }
-
-            $total = round($taxable + $taxTotal, 2);
-            $preparedPayments = $this->preparedPayments($attributes['payments'] ?? [], $total);
-            $primaryPayment = $preparedPayments[0];
-            $hasCash = collect($preparedPayments)->contains(fn (array $payment): bool => $payment['is_cash']);
-            $tendered = collect($preparedPayments)->sum(fn (array $payment): float => (float) $payment['amount_tendered']);
-            $changeDue = collect($preparedPayments)->sum(fn (array $payment): float => (float) $payment['change_due']);
+            $prepared = $this->prepare($shift, $attributes, true);
+            $deliveryMethod = $prepared['delivery_method'];
+            $preparedItems = $prepared['items'];
+            $taxRows = $prepared['tax_rows'];
+            $preparedPayments = $prepared['payments'];
+            $primaryPayment = $prepared['primary_payment'];
 
             $sale = PosSale::query()->create([
                 'pos_shift_id' => $shift->id,
                 'branch_id' => $shift->branch_id,
-                'number' => $this->nextNumber($shift->branch_id),
+                'number' => $this->assignedNumber($shift->branch_id, $attributes['number'] ?? null),
                 'payment_method_id' => $primaryPayment['payment_method_id'],
                 'payment_method_name' => collect($preparedPayments)->pluck('payment_method_name')->unique()->implode(' + '),
-                'is_cash' => $hasCash,
+                'is_cash' => $prepared['has_cash'],
                 'delivery_method_id' => $deliveryMethod?->id,
                 'delivery_method_name' => $deliveryMethod?->name,
-                'delivery_fee' => number_format($deliveryFee, 2, '.', ''),
-                'subtotal' => number_format($subtotal, 2, '.', ''),
-                'tax_total' => number_format($taxTotal, 2, '.', ''),
-                'total' => number_format($total, 2, '.', ''),
-                'amount_tendered' => number_format((float) $tendered, 2, '.', ''),
-                'change_due' => number_format($changeDue, 2, '.', ''),
+                'delivery_fee' => number_format($prepared['delivery_fee'], 2, '.', ''),
+                'subtotal' => number_format($prepared['subtotal'], 2, '.', ''),
+                'tax_total' => number_format($prepared['tax_total'], 2, '.', ''),
+                'total' => number_format($prepared['total'], 2, '.', ''),
+                'amount_tendered' => number_format($prepared['amount_tendered'], 2, '.', ''),
+                'change_due' => number_format($prepared['change_due'], 2, '.', ''),
                 'sold_by_employee_number' => $employee['employee_number'],
                 'sold_by_name' => $employee['name'],
                 'sold_at' => now(),
@@ -371,14 +284,238 @@ class RecordPosSale
         return (float) $variant->price;
     }
 
-    private function nextNumber(int $branchId): string
+    /**
+     * @param  array{
+     *     items: list<array{catalog_item_variant_id: int, quantity: int, notes?: string|null, modifiers?: list<array{modifier_id: int, option: string}>}>,
+     *     payments: list<array{payment_method_id: int, amount: mixed, amount_tendered?: mixed, reference_number?: string|null}>,
+     *     delivery_method_id?: int|null,
+     *     delivery_fee?: mixed
+     * }  $attributes
+     * @return array{
+     *     number: string,
+     *     has_cash: bool,
+     *     total: float,
+     *     change_due: float,
+     *     amount_tendered: float,
+     *     items: list<array{name: string, quantity: int, subtotal: string}>,
+     *     payments: list<array{name: string, reference: string|null}>
+     * }
+     */
+    /**
+     * @param  array{
+     *     items: list<array{catalog_item_variant_id: int, quantity: int, notes?: string|null, modifiers?: list<array{modifier_id: int, option: string}>}>,
+     *     payments: list<array{payment_method_id: int, amount: mixed, amount_tendered?: mixed, reference_number?: string|null}>,
+     *     delivery_method_id?: int|null,
+     *     delivery_fee?: mixed
+     * }  $attributes
+     * @return array{
+     *     delivery_method: DeliveryMethod|null,
+     *     delivery_fee: float,
+     *     subtotal: float,
+     *     tax_rows: list<array{tax_fee: TaxFee, amount: string}>,
+     *     tax_total: float,
+     *     total: float,
+     *     payments: list<array{payment_method_id: int, payment_method_name: string, is_cash: bool, amount: string, amount_tendered: string, change_due: string, reference_number: string|null}>,
+     *     primary_payment: array{payment_method_id: int, payment_method_name: string, is_cash: bool, amount: string, amount_tendered: string, change_due: string, reference_number: string|null},
+     *     has_cash: bool,
+     *     amount_tendered: float,
+     *     change_due: float,
+     *     items: list<array{variant: CatalogItemVariant, product_name: string, variant_name: string, quantity: int, notes: string|null, modifiers: list<array{name: string, option: string, price: string}>, unit_price: string, line_total: string, decrement_inventory: bool}>
+     * }
+     */
+    private function prepare(PosShift $shift, array $attributes, bool $lock): array
+    {
+        $deliveryMethod = null;
+        $deliveryFee = 0.0;
+
+        if (! empty($attributes['delivery_method_id'])) {
+            $deliveryMethod = DeliveryMethod::query()->findOrFail($attributes['delivery_method_id']);
+
+            if (! $deliveryMethod->is_active) {
+                throw ValidationException::withMessages([
+                    'delivery_method_id' => 'Choose an active delivery method.',
+                ]);
+            }
+
+            $deliveryFee = array_key_exists('delivery_fee', $attributes) && $attributes['delivery_fee'] !== null
+                ? (float) $attributes['delivery_fee']
+                : (float) ($deliveryMethod->fee ?? 0);
+        }
+
+        $subtotal = 0.0;
+        $preparedItems = [];
+
+        foreach ($attributes['items'] as $index => $item) {
+            $variantQuery = CatalogItemVariant::query()
+                ->with([
+                    'catalogItem.modifiers',
+                    'catalogItem.modifierOptionPrices.branchPrices' => fn ($query) => $query->where('branch_id', $shift->branch_id),
+                    'branchPrices' => fn ($query) => $query->where('branch_id', $shift->branch_id),
+                ])
+                ->whereKey($item['catalog_item_variant_id']);
+
+            if ($lock) {
+                $variantQuery->lockForUpdate();
+            }
+
+            $variant = $variantQuery->firstOrFail();
+
+            if (! $variant->is_active || ! $variant->catalogItem?->is_active) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.catalog_item_variant_id" => 'That item is not available.',
+                ]);
+            }
+
+            $quantity = (int) $item['quantity'];
+            $isProduct = $variant->catalogItem?->type === CatalogItemType::Product;
+
+            if ($isProduct) {
+                $inventoryQuery = BranchInventory::query()
+                    ->where('branch_id', $shift->branch_id)
+                    ->where('catalog_item_variant_id', $variant->id);
+
+                if ($lock) {
+                    $inventoryQuery->lockForUpdate();
+                }
+
+                $onHand = $inventoryQuery->first()?->quantity ?? 0;
+
+                if ($quantity > $onHand) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.quantity" => 'Only '.$onHand.' units are available at this branch.',
+                    ]);
+                }
+            }
+
+            $selectedModifiers = $this->selectedModifiers($variant, $item['modifiers'] ?? [], $index, $shift->branch_id);
+            $unitPrice = $this->unitPrice($variant, $shift->branch_id) + $selectedModifiers['extra'];
+            $lineTotal = round($unitPrice * $quantity, 2);
+            $subtotal += $lineTotal;
+
+            $preparedItems[] = [
+                'variant' => $variant,
+                'product_name' => $variant->catalogItem?->name ?? $variant->name,
+                'variant_name' => $variant->name,
+                'quantity' => $quantity,
+                'notes' => isset($item['notes']) && is_string($item['notes']) ? trim($item['notes']) : null,
+                'modifiers' => $selectedModifiers['snapshot'],
+                'unit_price' => number_format($unitPrice, 2, '.', ''),
+                'line_total' => number_format($lineTotal, 2, '.', ''),
+                'decrement_inventory' => $isProduct,
+            ];
+        }
+
+        $taxable = round($subtotal + $deliveryFee, 2);
+        $taxRows = [];
+        $taxTotal = 0.0;
+
+        foreach (TaxFee::query()->where('is_active', true)->orderBy('name')->orderBy('id')->get() as $taxFee) {
+            $amount = $taxFee->type === TaxFeeType::Percent
+                ? round($taxable * ((float) $taxFee->rate) / 100, 2)
+                : (float) $taxFee->rate;
+
+            $taxTotal += $amount;
+            $taxRows[] = [
+                'tax_fee' => $taxFee,
+                'amount' => number_format($amount, 2, '.', ''),
+            ];
+        }
+
+        $total = round($taxable + $taxTotal, 2);
+        $preparedPayments = $this->preparedPayments($attributes['payments'] ?? [], $total);
+
+        return [
+            'delivery_method' => $deliveryMethod,
+            'delivery_fee' => $deliveryFee,
+            'subtotal' => $subtotal,
+            'tax_rows' => $taxRows,
+            'tax_total' => $taxTotal,
+            'total' => $total,
+            'payments' => $preparedPayments,
+            'primary_payment' => $preparedPayments[0],
+            'has_cash' => collect($preparedPayments)->contains(fn (array $payment): bool => $payment['is_cash']),
+            'amount_tendered' => collect($preparedPayments)->sum(fn (array $payment): float => (float) $payment['amount_tendered']),
+            'change_due' => collect($preparedPayments)->sum(fn (array $payment): float => (float) $payment['change_due']),
+            'items' => $preparedItems,
+        ];
+    }
+
+    public function quote(PosShift $shift, array $attributes): array
+    {
+        if (! $shift->isOpen()) {
+            throw ValidationException::withMessages([
+                'status' => 'Open a shift before recording a sale.',
+            ]);
+        }
+
+        return [
+            ...$this->receiptLines($shift, $attributes, false),
+            'number' => $this->nextNumber($shift->branch_id, false),
+        ];
+    }
+
+    /**
+     * @param  array{
+     *     items: list<array{catalog_item_variant_id: int, quantity: int, notes?: string|null, modifiers?: list<array{modifier_id: int, option: string}>}>,
+     *     payments: list<array{payment_method_id: int, amount: mixed, amount_tendered?: mixed, reference_number?: string|null}>,
+     *     delivery_method_id?: int|null,
+     *     delivery_fee?: mixed
+     * }  $attributes
+     * @return array{
+     *     has_cash: bool,
+     *     total: float,
+     *     change_due: float,
+     *     amount_tendered: float,
+     *     items: list<array{name: string, quantity: int, subtotal: string}>,
+     *     payments: list<array{name: string, reference: string|null}>
+     * }
+     */
+    private function receiptLines(PosShift $shift, array $attributes, bool $lock): array
+    {
+        $prepared = $this->prepare($shift, $attributes, $lock);
+
+        return [
+            'has_cash' => $prepared['has_cash'],
+            'total' => $prepared['total'],
+            'change_due' => $prepared['change_due'],
+            'amount_tendered' => $prepared['amount_tendered'],
+            'items' => array_map(fn (array $item): array => [
+                'name' => trim(($item['product_name'] ?? '').' '.($item['variant_name'] ?? '')),
+                'quantity' => $item['quantity'],
+                'subtotal' => Peso::format($item['line_total']),
+            ], $prepared['items']),
+            'payments' => array_map(fn (array $payment): array => [
+                'name' => $payment['payment_method_name'],
+                'reference' => $payment['reference_number'],
+            ], $prepared['payments']),
+        ];
+    }
+
+    private function assignedNumber(int $branchId, mixed $requested): string
+    {
+        if (is_string($requested) && preg_match('/^POS-\d{8}-\d{4}$/', $requested) === 1) {
+            $taken = PosSale::query()
+                ->where('branch_id', $branchId)
+                ->where('number', $requested)
+                ->lockForUpdate()
+                ->exists();
+
+            if (! $taken) {
+                return $requested;
+            }
+        }
+
+        return $this->nextNumber($branchId);
+    }
+
+    private function nextNumber(int $branchId, bool $lock = true): string
     {
         $prefix = now()->format('Ymd');
         $latestNumber = PosSale::query()
             ->where('branch_id', $branchId)
             ->whereDate('sold_at', now()->toDateString())
             ->orderByDesc('id')
-            ->lockForUpdate()
+            ->when($lock, fn ($query) => $query->lockForUpdate())
             ->value('number');
 
         $sequence = 1;

@@ -24,6 +24,7 @@ class PosSaleRules
             'payments.*.reference_number' => ['nullable', 'string', 'max:255'],
             'delivery_method_id' => ['nullable', 'integer', 'exists:delivery_methods,id'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0', 'decimal:0,2', 'max:999999.99'],
+            'number' => ['nullable', 'string', 'regex:/^POS-\d{8}-\d{4}$/'],
         ];
     }
 

@@ -22,6 +22,39 @@ use Inertia\Response;
 
 class PosSaleController extends Controller
 {
+    public function preview(StorePosSaleRequest $request, Branch $branch, RecordPosSale $recordPosSale): JsonResponse
+    {
+        $quote = $recordPosSale->quote(
+            $this->openShift($branch),
+            $request->safe()->only([
+                'items',
+                'payments',
+                'delivery_method_id',
+                'delivery_fee',
+            ]),
+        );
+        $printer = Printer::defaultFor(PrinterRole::Receipt, $branch);
+        $width = $printer !== null && $printer->paper_width_mm <= 58 ? 32 : 48;
+
+        return response()->json([
+            'number' => $quote['number'],
+            'open_drawer' => $quote['has_cash'],
+            'checkout_success' => [
+                'total' => Peso::format($quote['total']),
+                'change' => $quote['has_cash'] ? Peso::format($quote['change_due']) : null,
+            ],
+            'receipt' => SaleReceipt::text([
+                'sold_at' => now()->timezone((string) config('app.timezone'))->format('M j, Y g:i A'),
+                'number' => $quote['number'],
+                'items' => $quote['items'],
+                'total' => Peso::format($quote['total']),
+                'tendered' => Peso::format($quote['amount_tendered']),
+                'change' => Peso::format($quote['change_due']),
+                'payments' => $quote['payments'],
+            ], $width),
+        ]);
+    }
+
     public function store(StorePosSaleRequest $request, Branch $branch, RecordPosSale $recordPosSale, PosController $posController): JsonResponse|RedirectResponse|Response
     {
         $employee = EmployeeSession::current();
@@ -32,6 +65,7 @@ class PosSaleController extends Controller
                 'payments',
                 'delivery_method_id',
                 'delivery_fee',
+                'number',
             ]),
             $employee ?? ['employee_number' => '', 'name' => ''],
         );
@@ -64,8 +98,18 @@ class PosSaleController extends Controller
         return $posController->fromMutation($request, $branch, $notice);
     }
 
+    public function receipt(Branch $branch, PosSale $posSale): JsonResponse
+    {
+        abort_unless($posSale->branch_id === $branch->id, 404);
+
+        return response()->json([
+            'receipt' => $this->receiptText($posSale, $branch),
+        ]);
+    }
+
     private function receiptText(PosSale $sale, Branch $branch): string
     {
+        $sale->loadMissing(['items', 'payments']);
         $printer = Printer::defaultFor(PrinterRole::Receipt, $branch);
         $width = $printer !== null && $printer->paper_width_mm <= 58 ? 32 : 48;
         $soldAt = $sale->sold_at?->timezone((string) config('app.timezone'))->format('M j, Y g:i A') ?? '';
