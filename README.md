@@ -45,12 +45,35 @@ SUPABASE_SERVICE_ROLE_KEY=
 
 Then run `php artisan migrate`.
 
+### Storage
+
+Catalog photos and brand logos use the Laravel `public` disk. Locally that is `storage/app/public`. On Vercel it is a **public** Supabase Storage bucket named `media` (S3 protocol).
+
+In the Supabase dashboard:
+
+1. Storage → New bucket → name `media` → Public
+2. Storage Settings → S3 → create access keys, and copy the region
+
+Then set:
+
+```
+FILESYSTEM_PUBLIC_DRIVER=s3
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_DEFAULT_REGION=<from Storage S3 settings>
+AWS_BUCKET=media
+AWS_USE_PATH_STYLE_ENDPOINT=true
+```
+
+`AWS_ENDPOINT` and `AWS_URL` default from `SUPABASE_URL`. Re-upload existing photos after switching; old local files are not copied.
+
 ## Vercel
 
 `vercel.json` runs the app with the `vercel-php@0.9.0` runtime (PHP 8.5) and builds the Vue assets. In the Vercel project settings, set:
 
 - `APP_KEY` — generate one with `php artisan key:generate --show`
 - `APP_URL` — the deployment URL
-- The Supabase variables above, when the database should be used
+- The Supabase database variables above
+- `FILESYSTEM_PUBLIC_DRIVER=s3` (already in `vercel.json`) plus `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION`
 
 `SESSION_DRIVER=cookie` is set for Vercel because the filesystem is read-only outside `/tmp`. Laravel cache and compiled views also use `/tmp`.

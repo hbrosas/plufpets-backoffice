@@ -1,5 +1,27 @@
 <?php
 
+$mediaBucket = env('AWS_BUCKET', 'media');
+$supabaseUrl = rtrim((string) env('SUPABASE_URL'), '/');
+
+$supabaseDisk = [
+    'driver' => 's3',
+    'key' => env('AWS_ACCESS_KEY_ID'),
+    'secret' => env('AWS_SECRET_ACCESS_KEY'),
+    'region' => env('AWS_DEFAULT_REGION', 'ap-northeast-1'),
+    'bucket' => $mediaBucket,
+    'url' => env('AWS_URL', $supabaseUrl === '' ? null : $supabaseUrl.'/storage/v1/object/public/'.$mediaBucket),
+    'endpoint' => env('AWS_ENDPOINT', $supabaseUrl === '' ? null : $supabaseUrl.'/storage/v1/s3'),
+    'use_path_style_endpoint' => filter_var(env('AWS_USE_PATH_STYLE_ENDPOINT', true), FILTER_VALIDATE_BOOLEAN),
+    'visibility' => 'private',
+    'throw' => false,
+    'report' => false,
+    'options' => [
+        'params' => [
+            'ACL' => '',
+        ],
+    ],
+];
+
 return [
 
     /*
@@ -7,9 +29,9 @@ return [
     | Default Filesystem Disk
     |--------------------------------------------------------------------------
     |
-    | Here you may specify the default filesystem disk that should be used
-    | by the framework. The "local" disk, as well as a variety of cloud
-    | based disks are available to your application for file storage.
+    | Here you may specify which of the disks below should be used as the
+    | default disk for filesystem operations. The public disk stores
+    | catalog photos and brand logos.
     |
     */
 
@@ -38,7 +60,7 @@ return [
             'report' => false,
         ],
 
-        'public' => [
+        'public' => env('FILESYSTEM_PUBLIC_DRIVER', 'local') === 's3' ? $supabaseDisk : [
             'driver' => 'local',
             'root' => storage_path('app/public'),
             'url' => '/storage',
@@ -48,18 +70,7 @@ return [
             'report' => false,
         ],
 
-        's3' => [
-            'driver' => 's3',
-            'key' => env('AWS_ACCESS_KEY_ID'),
-            'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'region' => env('AWS_DEFAULT_REGION'),
-            'bucket' => env('AWS_BUCKET'),
-            'url' => env('AWS_URL'),
-            'endpoint' => env('AWS_ENDPOINT'),
-            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'throw' => false,
-            'report' => false,
-        ],
+        's3' => $supabaseDisk,
 
     ],
 
