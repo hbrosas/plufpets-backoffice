@@ -1,6 +1,7 @@
 import { createApp, h } from 'vue';
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
+import FullscreenButton from './components/FullscreenButton.vue';
 import PwaInstallPrompt from './components/PwaInstallPrompt.vue';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Employee Portal';
@@ -15,11 +16,23 @@ createInertiaApp({
     setup({ el, App, props, plugin }) {
         createApp({ render: () => h(App, props) }).use(plugin).mount(el);
         mountPwaInstallPrompt();
+        mountFullscreenButton();
     },
     progress: {
         color: '#1f6f68',
     },
 });
+
+function mountFullscreenButton() {
+    if (document.getElementById('fullscreen-button-root')) {
+        return;
+    }
+
+    const root = document.createElement('div');
+    root.id = 'fullscreen-button-root';
+    document.body.appendChild(root);
+    createApp(FullscreenButton).mount(root);
+}
 
 function mountPwaInstallPrompt() {
     if (document.getElementById('pwa-install-root')) {
