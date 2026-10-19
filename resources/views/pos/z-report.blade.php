@@ -32,7 +32,6 @@
     >
         <button id="print-z-report" type="button">Print</button>
         <a href="{{ route('pos.index', $shift->branch) }}">Back to POS</a>
-        <p id="print-status" class="muted"></p>
     </div>
     <script type="application/json" id="z-report-printer">@json($printer)</script>
     <script type="application/json" id="z-report-receipt">@json($receiptText)</script>

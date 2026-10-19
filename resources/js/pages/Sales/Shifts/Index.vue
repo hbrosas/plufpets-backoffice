@@ -4,6 +4,7 @@ import { ref } from 'vue';
 import SalesFilters from '../../../components/SalesFilters.vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 import { beginAssignedPrint, finishAssignedPrint } from '../../../printerConnection';
+import { showToast } from '../../../toast';
 
 defineOptions({
     layout: AdminLayout,
@@ -17,7 +18,6 @@ defineProps({
 });
 
 const openShift = ref(null);
-const printNotice = ref('');
 const printingShiftId = ref(null);
 
 async function printZReport(shift) {
@@ -27,7 +27,7 @@ async function printZReport(shift) {
 
     const session = beginAssignedPrint(shift.receipt_printer);
     printingShiftId.value = shift.id;
-    printNotice.value = `Printing Z-Report for ${shift.branch}…`;
+    showToast(`Printing Z-Report for ${shift.branch}…`);
 
     try {
         const response = await fetch(shift.z_report_print_href, {
@@ -44,11 +44,13 @@ async function printZReport(shift) {
         const payload = await response.json();
         const printer = payload.printer ?? shift.receipt_printer;
         await finishAssignedPrint(printer, payload.receipt ?? '', session);
-        printNotice.value = printer?.device_name
-            ? `Sent Z-Report to ${printer.device_name}.`
-            : 'Sent Z-Report to the assigned printer.';
+        showToast(
+            printer?.device_name
+                ? `Sent Z-Report to ${printer.device_name}.`
+                : 'Sent Z-Report to the assigned printer.',
+        );
     } catch (error) {
-        printNotice.value = error instanceof Error ? error.message : 'Could not print on the assigned printer.';
+        showToast(error instanceof Error ? error.message : 'Could not print on the assigned printer.');
     } finally {
         printingShiftId.value = null;
     }
@@ -64,7 +66,6 @@ async function printZReport(shift) {
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <p class="text-sm text-ink/55 dark:text-foam/50">{{ period_label }}</p>
-        <p v-if="printNotice" class="text-sm text-pine dark:text-sand">{{ printNotice }}</p>
 
         <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
             <table class="w-full min-w-[56rem] text-left text-sm">

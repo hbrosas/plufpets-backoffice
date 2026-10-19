@@ -192,6 +192,10 @@ const draftChange = computed(() => {
     return Math.round((tendered - amount) * 100) / 100;
 });
 
+const startingCash = computed(() =>
+    openForm.denominations.reduce((sum, row) => sum + Number(row.denomination) * Number(row.quantity || 0), 0),
+);
+
 const countedCash = computed(() =>
     closeForm.denominations.reduce((sum, row) => sum + Number(row.denomination) * Number(row.quantity || 0), 0),
 );
@@ -203,10 +207,18 @@ function emptyDenominations(values) {
     return values.map((value) => ({ denomination: value, quantity: 0 }));
 }
 
-function changeCloseQty(index, delta) {
-    const quantity = Math.floor(Number(closeForm.denominations[index].quantity) || 0);
+function changeDenominationQty(rows, index, delta) {
+    const quantity = Math.floor(Number(rows[index].quantity) || 0);
 
-    closeForm.denominations[index].quantity = Math.max(0, quantity + delta);
+    rows[index].quantity = Math.max(0, quantity + delta);
+}
+
+function changeOpenQty(index, delta) {
+    changeDenominationQty(openForm.denominations, index, delta);
+}
+
+function changeCloseQty(index, delta) {
+    changeDenominationQty(closeForm.denominations, index, delta);
 }
 
 function selectInputValue(event) {
@@ -858,7 +870,17 @@ watch(countedCash, (value) => {
     </Teleport>
 
     <Teleport defer to="#admin-header-actions">
-        <template v-if="shift && closeOpen">
+        <template v-if="!shift">
+            <button
+                class="h-10 shrink-0 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
+                form="open-shift-form"
+                type="submit"
+                :disabled="openForm.processing"
+            >
+                {{ openForm.processing ? 'Opening…' : 'Open Shift' }}
+            </button>
+        </template>
+        <template v-else-if="shift && closeOpen">
             <button
                 class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
                 type="button"
@@ -908,42 +930,79 @@ watch(countedCash, (value) => {
     </Teleport>
 
     <div class="relative flex min-h-0 flex-1 flex-col gap-3 sm:gap-4">
-        <section v-if="!shift" class="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-mist bg-white p-6 dark:border-white/10 dark:bg-white/5">
-            <h2 class="text-lg font-medium">Open Shift · {{ branch.name }}</h2>
-            <p class="mt-1 text-sm text-ink/60 dark:text-foam/60">
-                Count the starting cash. Saving this will open the cash drawer.
-            </p>
-            <form class="mt-6 flex flex-col gap-4" @submit.prevent="openShift">
-                <table class="w-full max-w-md text-left text-sm">
+        <form
+            v-if="!shift"
+            id="open-shift-form"
+            class="grid min-h-0 flex-1 grid-cols-2 overflow-hidden rounded-2xl border border-mist bg-foam dark:border-white/10 dark:bg-ink"
+            @submit.prevent="openShift"
+        >
+            <section class="flex min-h-0 flex-col gap-6 overflow-y-auto border-r border-mist p-4 sm:p-6 dark:border-white/10">
+                <div class="flex flex-col gap-1">
+                    <h2 class="text-lg font-medium">Open Shift · {{ branch.name }}</h2>
+                    <p class="text-sm text-ink/60 dark:text-foam/60">
+                        Count the starting cash. Saving this will open the cash drawer.
+                    </p>
+                </div>
+                <div class="flex flex-col gap-2 border-t border-mist pt-6 dark:border-white/10">
+                    <p class="text-sm text-ink/60 dark:text-foam/60">Starting cash</p>
+                    <p class="text-4xl font-medium sm:text-5xl">{{ formatPeso(startingCash) }}</p>
+                </div>
+                <p v-if="openForm.errors.denominations" class="text-sm text-danger">{{ openForm.errors.denominations }}</p>
+                <p v-if="openForm.errors.branch_id" class="text-sm text-danger">{{ openForm.errors.branch_id }}</p>
+            </section>
+            <section class="flex min-h-0 flex-col gap-4 overflow-y-auto p-4 sm:p-6">
+                <p class="text-sm font-medium">Cash count</p>
+                <table class="w-full text-left text-sm">
                     <thead class="text-ink/50 dark:text-foam/50">
                         <tr>
                             <th class="py-2 font-medium">Denomination</th>
                             <th class="py-2 font-medium">Quantity</th>
+                            <th class="py-2 text-right font-medium">Total</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="(row, index) in openForm.denominations" :key="row.denomination">
                             <td class="py-2">{{ formatPeso(row.denomination) }}</td>
                             <td class="py-2">
-                                <input
-                                    v-model.number="openForm.denominations[index].quantity"
-                                    class="h-10 w-24 rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5"
-                                    min="0"
-                                    type="number"
-                                />
+                                <div class="flex items-center gap-1">
+                                    <input
+                                        v-model.number="openForm.denominations[index].quantity"
+                                        class="h-10 w-20 rounded-xl border border-mist bg-white px-3 text-center dark:border-white/10 dark:bg-white/5"
+                                        inputmode="numeric"
+                                        pattern="[0-9]*"
+                                        type="text"
+                                        @focus="selectInputValue"
+                                        @click="selectInputValue"
+                                    />
+                                    <div class="flex flex-col gap-0.5">
+                                        <button
+                                            class="flex h-5 w-7 items-center justify-center rounded-md border border-mist text-xs font-medium dark:border-white/15"
+                                            type="button"
+                                            aria-label="Increase quantity"
+                                            @click="changeOpenQty(index, 1)"
+                                        >
+                                            ▲
+                                        </button>
+                                        <button
+                                            class="flex h-5 w-7 items-center justify-center rounded-md border border-mist text-xs font-medium disabled:opacity-40 dark:border-white/15"
+                                            type="button"
+                                            aria-label="Decrease quantity"
+                                            :disabled="Number(row.quantity || 0) <= 0"
+                                            @click="changeOpenQty(index, -1)"
+                                        >
+                                            ▼
+                                        </button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 text-right">
+                                {{ formatPeso(Number(row.denomination) * Number(row.quantity || 0)) }}
                             </td>
                         </tr>
                     </tbody>
                 </table>
-                <button
-                    class="h-11 w-fit rounded-xl bg-pine px-4 text-sm font-medium text-foam disabled:opacity-70"
-                    type="submit"
-                    :disabled="openForm.processing"
-                >
-                    {{ openForm.processing ? 'Opening…' : 'Open Shift' }}
-                </button>
-            </form>
-        </section>
+            </section>
+        </form>
 
         <div
             v-else

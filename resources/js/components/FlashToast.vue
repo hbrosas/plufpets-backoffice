@@ -39,6 +39,10 @@ function onFlash(event) {
     pushToast(event.detail.flash?.status);
 }
 
+function onAppToast(event) {
+    pushToast(event.detail?.message);
+}
+
 watch(
     () => `${page.props.flash?.status_at ?? ''}:${page.props.flash?.status ?? ''}`,
     () => {
@@ -48,6 +52,7 @@ watch(
 
 onMounted(() => {
     pushToast(page.props.flash?.status);
+    window.addEventListener('app:toast', onAppToast);
 });
 
 onUnmounted(
@@ -57,6 +62,10 @@ onUnmounted(
 onUnmounted(
     router.on('flash', onFlash),
 );
+
+onUnmounted(() => {
+    window.removeEventListener('app:toast', onAppToast);
+});
 
 onUnmounted(() => {
     timers.forEach((timer) => clearTimeout(timer));

@@ -1,5 +1,12 @@
 <script setup>
+import { Link, useForm } from '@inertiajs/vue3';
 import FlashToast from '../components/FlashToast.vue';
+
+const form = useForm({});
+
+function logout() {
+    form.post('/backoffice/logout');
+}
 </script>
 
 <template>
@@ -16,6 +23,22 @@ import FlashToast from '../components/FlashToast.vue';
                 id="admin-header-actions"
                 class="flex w-full min-w-0 flex-nowrap items-center justify-end gap-2 overflow-x-auto sm:w-auto sm:flex-none sm:gap-3"
             />
+
+            <Link
+                class="inline-flex h-10 shrink-0 items-center rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
+                href="/backoffice/dashboard"
+            >
+                Dashboard
+            </Link>
+            <form class="shrink-0" @submit.prevent="logout">
+                <button
+                    class="h-10 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15 disabled:opacity-70"
+                    type="submit"
+                    :disabled="form.processing"
+                >
+                    {{ form.processing ? 'Locking…' : 'Lock' }}
+                </button>
+            </form>
         </header>
 
         <main class="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-6 lg:py-5">
