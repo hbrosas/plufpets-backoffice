@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\PrinterRole;
 use App\Models\Branch;
 use App\Models\PosSale;
 use App\Models\PosShift;
+use App\Models\Printer;
 use App\Support\Peso;
+use App\Support\ZReportReceipt;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -39,21 +42,52 @@ class PosZReportController extends Controller
             ])
             ->values();
 
+        $timezone = config('app.timezone');
+        $printer = Printer::defaultFor(PrinterRole::Receipt, $branch);
+        $itemCount = $sales->sum(fn (PosSale $sale): int => (int) $sale->items->sum('quantity'));
+        $salesTotal = Peso::format($sales->sum('total'));
+        $cashSales = Peso::format($posShift->cashSalesTotal());
+        $cashIn = Peso::format($posShift->cashInTotal());
+        $cashOut = Peso::format($posShift->cashOutTotal());
+        $startingCash = Peso::format($posShift->starting_cash);
+        $expectedCash = Peso::format($posShift->expected_cash);
+        $countedCash = Peso::format($posShift->counted_cash);
+        $variance = Peso::format($posShift->variance);
+        $remitAmount = Peso::format($posShift->remit_amount);
+
         return view('pos.z-report', [
             'shift' => $posShift,
             'appName' => config('app.name'),
             'autoprint' => $request->boolean('print'),
+            'printer' => $printer?->toSettingsPayload(),
+            'receiptText' => ZReportReceipt::text([
+                'app' => (string) config('app.name'),
+                'branch' => (string) $posShift->branch?->name,
+                'opened' => 'Opened by '.$posShift->opened_by_name.' · '.$posShift->opened_at?->timezone($timezone)->format('M j, Y g:i A'),
+                'closed' => 'Closed by '.$posShift->closed_by_name.' · '.$posShift->closed_at?->timezone($timezone)->format('M j, Y g:i A'),
+                'payments' => $salesByPayment->all(),
+                'item_count' => $itemCount,
+                'sales_total' => $salesTotal,
+                'starting_cash' => $startingCash,
+                'cash_sales' => $cashSales,
+                'cash_in' => $cashIn,
+                'cash_out' => $cashOut,
+                'expected_cash' => $expectedCash,
+                'counted_cash' => $countedCash,
+                'variance' => $variance,
+                'remit_amount' => $remitAmount,
+            ], $printer !== null && $printer->paper_width_mm <= 58 ? 32 : 48),
             'salesByPayment' => $salesByPayment,
-            'itemCount' => $sales->sum(fn (PosSale $sale): int => (int) $sale->items->sum('quantity')),
-            'salesTotal' => Peso::format($sales->sum('total')),
-            'cashSales' => Peso::format($posShift->cashSalesTotal()),
-            'cashIn' => Peso::format($posShift->cashInTotal()),
-            'cashOut' => Peso::format($posShift->cashOutTotal()),
-            'startingCash' => Peso::format($posShift->starting_cash),
-            'expectedCash' => Peso::format($posShift->expected_cash),
-            'countedCash' => Peso::format($posShift->counted_cash),
-            'variance' => Peso::format($posShift->variance),
-            'remitAmount' => Peso::format($posShift->remit_amount),
+            'itemCount' => $itemCount,
+            'salesTotal' => $salesTotal,
+            'cashSales' => $cashSales,
+            'cashIn' => $cashIn,
+            'cashOut' => $cashOut,
+            'startingCash' => $startingCash,
+            'expectedCash' => $expectedCash,
+            'countedCash' => $countedCash,
+            'variance' => $variance,
+            'remitAmount' => $remitAmount,
         ]);
     }
 }

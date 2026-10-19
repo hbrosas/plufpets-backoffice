@@ -11,6 +11,7 @@ use App\Models\PosCashMovement;
 use App\Models\PosCategory;
 use App\Models\PosSale;
 use App\Models\PosShift;
+use App\Models\Printer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -55,7 +56,24 @@ class PosControllerTest extends TestCase
             ->where('variants.0.pos_category_id', $posCategory->id)
             ->where('variants.0.quantity', 0)
             ->where('variants.0.modifiers', [])
-            ->has('openOrders', 0));
+            ->has('openOrders', 0)
+            ->has('printers', 0));
+    }
+
+    public function test_register_loads_printers_for_the_open_branch(): void
+    {
+        $branch = Branch::factory()->create();
+        $otherBranch = Branch::factory()->create();
+        Printer::factory()->bluetooth()->for($branch)->create(['name' => 'Makati receipt']);
+        Printer::factory()->bluetooth()->for($otherBranch)->create(['name' => 'QC receipt']);
+
+        $response = $this->actingAsEmployee()->get("/backoffice/pos/register/{$branch->id}");
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->has('printers', 1)
+            ->where('printers.0.name', 'Makati receipt')
+            ->where('printers.0.branch_id', $branch->id));
     }
 
     public function test_open_shift_is_shared_across_employees(): void

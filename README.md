@@ -1,15 +1,17 @@
 # Employee Portal
 
-A blank Laravel and Vue application. Sign-in uses an employee number and PIN code. There is no account registration yet.
+A Laravel and Vue backoffice. Staff sign in with an employee number (EMPID) and PIN. Roles decide which features each person can open.
 
 ## Sign in
 
-These credentials are hard-coded in `config/employee.php`:
+`php artisan migrate` creates the first administrator:
 
 | Field | Value |
 | --- | --- |
 | Employee number | `10001` |
 | PIN code | `1234` |
+
+Change that PIN from Staff after you sign in. New staff accounts get the next EMPID automatically.
 
 ## Local setup
 
@@ -18,13 +20,14 @@ composer install
 npm install
 cp .env.example .env
 php artisan key:generate
+php artisan migrate
 npm run build
 php artisan serve
 ```
 
 Open `http://localhost:8000` for the public site, and `http://localhost:8000/backoffice` to sign in. For frontend hot reload, run `npm run dev` in another terminal.
 
-Login does not need a database. Sessions are stored in an encrypted cookie so the same sign-in works on Vercel before Supabase is connected.
+Staff accounts live in the database. Sessions are stored in an encrypted cookie so sign-in works on Vercel once the database is connected.
 
 ## Supabase
 

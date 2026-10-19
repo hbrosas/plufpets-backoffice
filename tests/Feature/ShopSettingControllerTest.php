@@ -44,6 +44,7 @@ class ShopSettingControllerTest extends TestCase
             ->where('deliveryMethods.0.name', 'Grab')
             ->where('deliveryMethods.0.fee_label', 'Set in cart')
             ->where('deliveryMethods.1.name', 'Lalamove')
-            ->where('deliveryMethods.1.fee_label', '₱150.00'));
+            ->where('deliveryMethods.1.fee_label', '₱150.00')
+            ->missing('printers'));
     }
 }

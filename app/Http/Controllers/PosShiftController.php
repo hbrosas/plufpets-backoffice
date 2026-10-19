@@ -46,7 +46,11 @@ class PosShiftController extends Controller
         );
 
         return redirect()
-            ->route('pos.shifts.z-report', [$branch, $shift])
+            ->route('pos.shifts.z-report', [
+                'branch' => $branch,
+                'pos_shift' => $shift,
+                'print' => 1,
+            ])
             ->with('status', 'Shift closed.')
             ->with('open_drawer', true);
     }

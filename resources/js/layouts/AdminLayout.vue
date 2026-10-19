@@ -14,31 +14,37 @@ const openGroups = ref({
     shop: false,
     inventory: false,
     pos: false,
+    staff: false,
 });
 const posModalOpen = ref(false);
+const permissions = computed(() => page.props.employee?.permissions ?? []);
 
-const navigationGroups = [
+function can(permission) {
+    return permissions.value.includes(permission);
+}
+
+const navigation = [
     {
         id: 'sales',
         name: 'Sales',
         prefix: '/backoffice/sales',
         items: [
-            { name: 'Overview', href: '/backoffice/sales', match: '/backoffice/sales' },
-            { name: 'Receipts', href: '/backoffice/sales/receipts', match: '/backoffice/sales/receipts' },
-            { name: 'Items', href: '/backoffice/sales/items', match: '/backoffice/sales/items' },
-            { name: 'Shifts', href: '/backoffice/sales/shifts', match: '/backoffice/sales/shifts' },
+            { name: 'Overview', href: '/backoffice/sales', match: '/backoffice/sales', permission: 'sales.view' },
+            { name: 'Receipts', href: '/backoffice/sales/receipts', match: '/backoffice/sales/receipts', permission: 'sales.view' },
+            { name: 'Items', href: '/backoffice/sales/items', match: '/backoffice/sales/items', permission: 'sales.view' },
+            { name: 'Shifts', href: '/backoffice/sales/shifts', match: '/backoffice/sales/shifts', permission: 'sales.view' },
         ],
     },
     {
         id: 'shop',
         name: 'Shop Management',
-        prefix: '/shop',
+        prefix: '/backoffice/shop',
         items: [
-            { name: 'Catalog', href: '/backoffice/shop/catalog', match: '/backoffice/shop/catalog' },
-            { name: 'Categories & Brands', href: '/backoffice/shop/catalog-meta', match: '/backoffice/shop/catalog-meta' },
-            { name: 'Modifiers', href: '/backoffice/shop/modifiers', match: '/backoffice/shop/modifiers' },
-            { name: 'Branches', href: '/backoffice/shop/branches', match: '/backoffice/shop/branches' },
-            { name: 'Settings', href: '/backoffice/shop/settings', match: '/backoffice/shop/settings' },
+            { name: 'Catalog', href: '/backoffice/shop/catalog', match: '/backoffice/shop/catalog', permission: 'shop.catalog' },
+            { name: 'Categories & Brands', href: '/backoffice/shop/catalog-meta', match: '/backoffice/shop/catalog-meta', permission: 'shop.catalog-meta' },
+            { name: 'Modifiers', href: '/backoffice/shop/modifiers', match: '/backoffice/shop/modifiers', permission: 'shop.modifiers' },
+            { name: 'Branches', href: '/backoffice/shop/branches', match: '/backoffice/shop/branches', permission: 'shop.branches' },
+            { name: 'Settings', href: '/backoffice/shop/settings', match: '/backoffice/shop/settings', permission: 'shop.settings' },
         ],
     },
     {
@@ -46,33 +52,53 @@ const navigationGroups = [
         name: 'Inventory Management',
         prefix: '/backoffice/inventory',
         items: [
-            { name: 'Inventory', href: '/backoffice/inventory', match: '/backoffice/inventory' },
-            { name: 'Purchase Orders', href: '/backoffice/inventory/purchase-orders', match: '/backoffice/inventory/purchase-orders' },
-            { name: 'Delivery Orders', href: '/backoffice/inventory/delivery-orders', match: '/backoffice/inventory/delivery-orders' },
-            { name: 'Stock Assignment', href: '/backoffice/inventory/stock-assignments', match: '/backoffice/inventory/stock-assignments' },
-            { name: 'Suppliers', href: '/backoffice/inventory/suppliers', match: '/backoffice/inventory/suppliers' },
+            { name: 'Inventory', href: '/backoffice/inventory', match: '/backoffice/inventory', permission: 'inventory.view' },
+            { name: 'Purchase Orders', href: '/backoffice/inventory/purchase-orders', match: '/backoffice/inventory/purchase-orders', permission: 'inventory.purchase-orders' },
+            { name: 'Delivery Orders', href: '/backoffice/inventory/delivery-orders', match: '/backoffice/inventory/delivery-orders', permission: 'inventory.delivery-orders' },
+            { name: 'Stock Assignment', href: '/backoffice/inventory/stock-assignments', match: '/backoffice/inventory/stock-assignments', permission: 'inventory.stock-assignments' },
+            { name: 'Suppliers', href: '/backoffice/inventory/suppliers', match: '/backoffice/inventory/suppliers', permission: 'inventory.suppliers' },
         ],
     },
     {
         id: 'pos',
         name: 'POS Management',
-        prefix: '/pos',
+        prefix: '/backoffice/pos',
         items: [
-            { name: 'POS Categories', href: '/backoffice/pos/categories', match: '/backoffice/pos/categories' },
+            { name: 'POS Categories', href: '/backoffice/pos/categories', match: '/backoffice/pos/categories', permission: 'pos.categories' },
+            { name: 'POS Settings', href: '/backoffice/pos/settings', match: '/backoffice/pos/settings', permission: 'pos.settings' },
+        ],
+    },
+    {
+        id: 'staff',
+        name: 'Staff',
+        prefix: '/backoffice/staff',
+        items: [
+            { name: 'Staff', href: '/backoffice/staff', match: '/backoffice/staff', permission: 'staff.manage' },
+            { name: 'Roles', href: '/backoffice/staff/roles', match: '/backoffice/staff/roles', permission: 'roles.manage' },
         ],
     },
 ];
 
-const upcomingItems = ['Pets', 'Orders', 'Customers', 'Staff'];
+const navigationGroups = computed(() => navigation
+    .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => can(item.permission)),
+    }))
+    .filter((group) => group.items.length > 0));
+
+const upcomingItems = ['Pets', 'Orders', 'Customers'];
 
 const currentPath = computed(() => page.url.split('?')[0]);
 
 const pageTitle = computed(() => {
     const titles = [
+        ['/backoffice/staff/roles', 'Roles'],
+        ['/backoffice/staff', 'Staff'],
         ['/backoffice/sales/receipts', 'Receipts'],
         ['/backoffice/sales/items', 'Sold items'],
         ['/backoffice/sales/shifts', 'Shifts'],
         ['/backoffice/sales', 'Sales'],
+        ['/backoffice/pos/settings', 'POS Settings'],
         ['/backoffice/pos/categories', 'POS Categories'],
         ['/backoffice/inventory/purchase-orders', 'Purchase Orders'],
         ['/backoffice/inventory/delivery-orders', 'Delivery Orders'],
@@ -94,7 +120,7 @@ const pageTitle = computed(() => {
 });
 
 function isCurrent(item) {
-    if (item.match === '/backoffice/inventory' || item.match === '/backoffice/sales') {
+    if (item.match === '/backoffice/inventory' || item.match === '/backoffice/sales' || item.match === '/backoffice/staff') {
         return currentPath.value === item.match;
     }
 
@@ -127,7 +153,7 @@ watch(
     (path) => {
         sidebarOpen.value = false;
 
-        navigationGroups.forEach((group) => {
+        navigationGroups.value.forEach((group) => {
             if (path === group.prefix || path.startsWith(`${group.prefix}/`)) {
                 openGroups.value[group.id] = true;
             }
@@ -161,6 +187,7 @@ watch(
 
             <nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-4" aria-label="Admin">
                 <button
+                    v-if="can('pos.access')"
                     class="mb-1 flex items-center gap-2 rounded-xl bg-sand px-3 py-2.5 text-sm font-semibold text-pine transition hover:bg-sand/90"
                     type="button"
                     @click="posModalOpen = true"
@@ -248,6 +275,7 @@ watch(
                 <div class="flex flex-col gap-0.5 px-3">
                     <p class="truncate text-sm font-medium">{{ employee?.name }}</p>
                     <p class="text-xs text-foam/55">#{{ employee?.employee_number }}</p>
+                    <p v-if="employee?.role" class="text-xs text-foam/55">{{ employee.role }}</p>
                 </div>
 
                 <form @submit.prevent="logout">

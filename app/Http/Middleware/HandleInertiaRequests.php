@@ -47,7 +47,7 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'appName' => config('app.name'),
             'employee' => EmployeeSession::current(),
-            'posBranches' => EmployeeSession::check() && $onAdminShell ? PosLaunchPads::branches() : [],
+            'posBranches' => EmployeeSession::allows('pos.access') && $onAdminShell ? PosLaunchPads::branches() : [],
             'posCategories' => EmployeeSession::check() && $onAdminShell
                 ? PosCategory::query()
                     ->where('is_active', true)

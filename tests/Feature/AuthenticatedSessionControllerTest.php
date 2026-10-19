@@ -2,12 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Models\Employee;
+use App\Support\PermissionCatalog;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class AuthenticatedSessionControllerTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -70,11 +75,43 @@ class AuthenticatedSessionControllerTest extends TestCase
             'pin' => '1234',
         ]);
 
+        $employee = Employee::query()->where('employee_number', '10001')->firstOrFail();
+
         $response->assertRedirect(route('dashboard'));
-        $response->assertSessionHas('employee', [
+        $response->assertSessionHas('employee.id', $employee->id);
+
+        $this->get('/backoffice/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('employee.employee_number', '10001')
+                ->where('employee.name', 'Sample Employee')
+                ->where('employee.permissions', PermissionCatalog::keys()));
+    }
+
+    public function test_inactive_employee_cannot_sign_in(): void
+    {
+        Employee::query()->where('employee_number', '10001')->update(['is_active' => false]);
+
+        $response = $this->from('/backoffice')->post('/backoffice/login', [
             'employee_number' => '10001',
-            'name' => 'Sample Employee',
+            'pin' => '1234',
         ]);
+
+        $response->assertRedirect('/backoffice');
+        $response->assertSessionHasErrors([
+            'employee_number' => 'Employee number or PIN code is incorrect.',
+        ]);
+        $response->assertSessionMissing('employee');
+    }
+
+    public function test_inactive_employee_session_is_signed_out(): void
+    {
+        $employee = Employee::query()->where('employee_number', '10001')->firstOrFail();
+        $employee->update(['is_active' => false]);
+
+        $response = $this->actingAsEmployee($employee)->get('/backoffice/dashboard');
+
+        $response->assertRedirect(route('login'));
     }
 
     public function test_credentials_with_surrounding_spaces_start_a_session(): void
@@ -85,7 +122,10 @@ class AuthenticatedSessionControllerTest extends TestCase
         ]);
 
         $response->assertRedirect(route('dashboard'));
-        $response->assertSessionHas('employee.employee_number', '10001');
+        $response->assertSessionHas(
+            'employee.id',
+            Employee::query()->where('employee_number', '10001')->value('id'),
+        );
     }
 
     public function test_authenticated_employee_is_redirected_away_from_login(): void

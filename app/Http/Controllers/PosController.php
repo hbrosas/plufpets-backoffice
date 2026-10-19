@@ -16,6 +16,7 @@ use App\Models\PosCategory;
 use App\Models\PosOpenOrder;
 use App\Models\PosSale;
 use App\Models\PosShift;
+use App\Models\Printer;
 use App\Models\TaxFee;
 use App\Support\CashDenominations;
 use App\Support\Peso;
@@ -125,6 +126,19 @@ class PosController extends Controller
             if ($wants('todayTransactionsTotal')) {
                 $props['todayTransactionsTotal'] = $todayPayload['sales_total_label'];
             }
+        }
+
+        if ($wants('printers')) {
+            $props['printers'] = Printer::query()
+                ->where('branch_id', $branch->id)
+                ->where('is_active', true)
+                ->orderBy('role')
+                ->orderByDesc('is_default')
+                ->orderBy('name')
+                ->orderBy('id')
+                ->get()
+                ->map(fn (Printer $printer): array => $printer->toSettingsPayload())
+                ->values();
         }
 
         if ($wants('openOrders')) {

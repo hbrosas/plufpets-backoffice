@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\LoginRequest;
+use App\Models\Employee;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -17,11 +18,16 @@ class AuthenticatedSessionController extends Controller
 
     public function store(LoginRequest $request): RedirectResponse
     {
+        $employee = $request->attributes->get('authenticatedEmployee');
+
+        if (! $employee instanceof Employee) {
+            abort(403);
+        }
+
         $request->session()->regenerate();
 
         $request->session()->put('employee', [
-            'employee_number' => (string) config('employee.number'),
-            'name' => (string) config('employee.name'),
+            'id' => $employee->id,
         ]);
 
         return redirect()->intended(route('dashboard'));

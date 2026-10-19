@@ -11,16 +11,31 @@
         th, td { text-align: left; padding: 8px; border-bottom: 1px solid #d7e0dc; }
         th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #5b6b66; }
         td.num, th.num { text-align: right; }
-        .actions { margin-bottom: 24px; display: flex; gap: 12px; }
+        .actions { margin-bottom: 24px; display: flex; gap: 12px; align-items: center; }
         .actions a, .actions button { border: 1px solid #1f6f68; background: #1f6f68; color: white; padding: 8px 14px; border-radius: 10px; text-decoration: none; font-size: 14px; }
         @media print { .actions { display: none; } }
     </style>
+    @php
+        $zReportPrintManifest = json_decode((string) @file_get_contents(public_path('build/manifest.json')), true) ?? [];
+        $zReportPrintReady = file_exists(public_path('hot'))
+            || array_key_exists('resources/js/zReportPrint.js', $zReportPrintManifest);
+    @endphp
+    @if ($zReportPrintReady)
+        @vite(['resources/js/zReportPrint.js'])
+    @endif
 </head>
 <body>
-    <div class="actions">
-        <button type="button" onclick="window.print()">Print</button>
+    <div
+        id="z-report-print"
+        class="actions"
+        data-autoprint="{{ ($autoprint ?? false) ? '1' : '0' }}"
+    >
+        <button id="print-z-report" type="button">Print</button>
         <a href="{{ route('pos.index', $shift->branch) }}">Back to POS</a>
+        <p id="print-status" class="muted"></p>
     </div>
+    <script type="application/json" id="z-report-printer">@json($printer)</script>
+    <script type="application/json" id="z-report-receipt">@json($receiptText)</script>
 
     <p class="muted">Z-Report</p>
     <h1>{{ $shift->branch?->name }}</h1>
@@ -64,8 +79,5 @@
             <tr><td>Amount to remit</td><td class="num">{{ $remitAmount }}</td></tr>
         </tbody>
     </table>
-    @if ($autoprint ?? false)
-        <script>window.addEventListener('load', function () { window.print(); });</script>
-    @endif
 </body>
 </html>

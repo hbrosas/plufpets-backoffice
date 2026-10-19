@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Employee;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Validator;
 
 class LoginRequest extends FormRequest
@@ -55,22 +57,23 @@ class LoginRequest extends FormRequest
                     return;
                 }
 
-                $numberMatches = hash_equals(
-                    (string) config('employee.number'),
-                    $this->string('employee_number')->toString(),
-                );
+                $employee = Employee::query()
+                    ->where('employee_number', $this->string('employee_number')->toString())
+                    ->first();
 
-                $pinMatches = hash_equals(
-                    (string) config('employee.pin'),
-                    $this->string('pin')->toString(),
-                );
+                $pinMatches = $employee instanceof Employee
+                    && Hash::check($this->string('pin')->toString(), $employee->pin);
 
-                if (! $numberMatches || ! $pinMatches) {
+                if (! $employee instanceof Employee || ! $employee->is_active || ! $pinMatches) {
                     $validator->errors()->add(
                         'employee_number',
                         'Employee number or PIN code is incorrect.',
                     );
+
+                    return;
                 }
+
+                $this->attributes->set('authenticatedEmployee', $employee);
             },
         ];
     }

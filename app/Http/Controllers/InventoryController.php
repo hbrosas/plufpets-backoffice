@@ -6,6 +6,7 @@ use App\Enums\CatalogItemType;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\CatalogItemVariant;
+use App\Models\Printer;
 use App\Models\PurchaseOrderItem;
 use App\Support\BarcodeSvg;
 use App\Support\InventoryCosts;
@@ -127,6 +128,7 @@ class InventoryController extends Controller
             ? $payload['product']['variant']
             : null;
 
+        $paper = Printer::labelPaper();
         $view = view('labels.sticker', [
             'title' => $payload['product']['name'].' labels',
             'name' => $payload['product']['name'],
@@ -134,6 +136,8 @@ class InventoryController extends Controller
             'price' => $payload['product']['retail_price'],
             'barcodeValue' => $barcodeValue,
             'barcodeSvg' => BarcodeSvg::code39($barcodeValue),
+            'widthMm' => $paper['width'],
+            'heightMm' => $paper['height'],
             'dateLine' => count($payload['repack_dates']) > 0
                 ? implode(', ', $payload['repack_dates'])
                 : '—',

@@ -4,15 +4,15 @@
     <meta charset="utf-8">
     <title>{{ $title }}</title>
     <style>
-        @page { size: 40mm 30mm; margin: 0; }
+        @page { size: {{ $widthMm }}mm {{ $heightMm }}mm; margin: 0; }
         * { box-sizing: border-box; }
         body { font-family: ui-sans-serif, system-ui, sans-serif; color: #14231f; margin: 16px; background: #f4f6f5; }
         .actions { margin-bottom: 16px; display: flex; gap: 12px; }
         .actions a, .actions button { border: 1px solid #1f6f68; background: #1f6f68; color: white; padding: 8px 14px; border-radius: 10px; text-decoration: none; font-size: 14px; }
         .sheet { display: flex; flex-wrap: wrap; gap: 8px; }
         .label {
-            width: 40mm;
-            height: 30mm;
+            width: {{ $widthMm }}mm;
+            height: {{ $heightMm }}mm;
             background: #fff;
             border: 1px solid #d7e0dc;
             padding: 1.2mm 1.4mm 1.4mm;
@@ -44,7 +44,7 @@
             body { margin: 0; background: #fff; }
             .actions { display: none; }
             .sheet { display: block; gap: 0; }
-            .label { border: 0; width: 40mm; height: 30mm; }
+            .label { border: 0; width: {{ $widthMm }}mm; height: {{ $heightMm }}mm; }
         }
     </style>
 </head>

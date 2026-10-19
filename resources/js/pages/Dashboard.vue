@@ -7,6 +7,13 @@ defineOptions({
     layout: AdminLayout,
 });
 
+const props = defineProps({
+    activeStaffCount: {
+        type: Number,
+        default: 0,
+    },
+});
+
 const page = usePage();
 const employee = computed(() => page.props.employee);
 
@@ -14,7 +21,7 @@ const stats = computed(() => [
     { label: 'Pets listed', value: '0', hint: 'Catalog is empty' },
     { label: 'Open orders', value: '0', hint: 'No orders in progress' },
     { label: 'Customers', value: '0', hint: 'No customer accounts yet' },
-    { label: 'Active staff', value: '1', hint: employee.value?.name ?? 'Signed in' },
+    { label: 'Active staff', value: String(props.activeStaffCount), hint: employee.value?.name ?? 'Signed in' },
 ]);
 </script>
 

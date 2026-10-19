@@ -97,7 +97,11 @@ class PosShiftControllerTest extends TestCase
             'remit_amount' => '1000.00',
         ]);
 
-        $response->assertRedirect(route('pos.shifts.z-report', [$branch, $shift]));
+        $response->assertRedirect(route('pos.shifts.z-report', [
+            'branch' => $branch,
+            'pos_shift' => $shift,
+            'print' => 1,
+        ]));
         $this->assertDatabaseHas('pos_shifts', [
             'id' => $shift->id,
             'closed_by_employee_number' => '20002',

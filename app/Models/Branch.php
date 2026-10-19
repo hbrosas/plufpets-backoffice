@@ -47,6 +47,14 @@ class Branch extends Model
     }
 
     /**
+     * @return HasMany<Printer, $this>
+     */
+    public function printers(): HasMany
+    {
+        return $this->hasMany(Printer::class);
+    }
+
+    /**
      * @return HasMany<PosOpenOrder, $this>
      */
     public function posOpenOrders(): HasMany

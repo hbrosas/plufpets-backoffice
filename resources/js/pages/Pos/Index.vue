@@ -21,6 +21,7 @@ const props = defineProps({
     todayTransactions: { type: Array, required: true },
     todayTransactionsTotal: { type: String, required: true },
     openOrders: { type: Array, default: () => [] },
+    printers: { type: Array, default: () => [] },
 });
 
 const page = usePage();

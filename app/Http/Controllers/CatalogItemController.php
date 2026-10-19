@@ -11,6 +11,7 @@ use App\Models\Brand;
 use App\Models\CatalogItem;
 use App\Models\Category;
 use App\Models\Modifier;
+use App\Models\Printer;
 use App\Support\BarcodeSvg;
 use App\Support\CatalogItemSupplies;
 use App\Support\Peso;
@@ -130,6 +131,7 @@ class CatalogItemController extends Controller
             ? $lot['variant']
             : null;
 
+        $paper = Printer::labelPaper();
         $view = view('labels.sticker', [
             'title' => $catalogItem->name.' labels',
             'name' => $catalogItem->name,
@@ -139,6 +141,8 @@ class CatalogItemController extends Controller
             'barcodeSvg' => BarcodeSvg::code39((string) $lot['barcode']),
             'dateLine' => $lot['packed_date'] ?: '—',
             'copies' => $copies,
+            'widthMm' => $paper['width'],
+            'heightMm' => $paper['height'],
             'downloadUrl' => route('shop.catalog.supplies.labels', [
                 'catalog_item' => $catalogItem,
                 'supply' => $lot['id'],

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureEmployeeHasPermission;
 use App\Http\Middleware\EnsureEmployeeIsAuthenticated;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RedirectIfEmployeeAuthenticated;
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'employee.auth' => EnsureEmployeeIsAuthenticated::class,
             'employee.guest' => RedirectIfEmployeeAuthenticated::class,
+            'employee.permission' => EnsureEmployeeHasPermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
