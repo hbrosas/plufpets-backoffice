@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="description" content="Employee sign-in">
+        <meta name="description" content="Pluf Pets — shop, grooming, and hotel for dogs and cats.">
         <title>{{ config('app.name', 'Employee Portal') }}</title>
 
         @fonts

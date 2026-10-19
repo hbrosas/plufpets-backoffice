@@ -22,7 +22,7 @@ npm run build
 php artisan serve
 ```
 
-Open `http://localhost:8000`. For frontend hot reload, run `npm run dev` in another terminal.
+Open `http://localhost:8000` for the public site, and `http://localhost:8000/backoffice` to sign in. For frontend hot reload, run `npm run dev` in another terminal.
 
 Login does not need a database. Sessions are stored in an encrypted cookie so the same sign-in works on Vercel before Supabase is connected.
 

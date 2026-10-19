@@ -53,5 +53,9 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(5)->by($employeeNumber.'|'.$request->ip());
         });
+
+        RateLimiter::for('catalog-import', function (Request $request) {
+            return Limit::perMinute(10)->by($request->ip());
+        });
     }
 }

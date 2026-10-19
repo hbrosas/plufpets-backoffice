@@ -17,7 +17,7 @@ class AuthenticatedSessionControllerTest extends TestCase
 
     public function test_guest_sees_the_login_page(): void
     {
-        $response = $this->get('/');
+        $response = $this->get('/backoffice');
 
         $response->assertOk();
         $response->assertInertia(fn (Assert $page) => $page->component('Auth/Login'));
@@ -25,9 +25,9 @@ class AuthenticatedSessionControllerTest extends TestCase
 
     public function test_missing_credentials_are_rejected(): void
     {
-        $response = $this->from('/')->post('/login', []);
+        $response = $this->from('/backoffice')->post('/backoffice/login', []);
 
-        $response->assertRedirect('/');
+        $response->assertRedirect('/backoffice');
         $response->assertSessionHasErrors([
             'employee_number' => 'Enter your employee number.',
             'pin' => 'Enter your PIN code.',
@@ -37,12 +37,12 @@ class AuthenticatedSessionControllerTest extends TestCase
 
     public function test_short_pin_is_rejected(): void
     {
-        $response = $this->from('/')->post('/login', [
+        $response = $this->from('/backoffice')->post('/backoffice/login', [
             'employee_number' => '10001',
             'pin' => '12',
         ]);
 
-        $response->assertRedirect('/');
+        $response->assertRedirect('/backoffice');
         $response->assertSessionHasErrors([
             'pin' => 'The PIN code must be 4 to 8 digits.',
         ]);
@@ -51,12 +51,12 @@ class AuthenticatedSessionControllerTest extends TestCase
 
     public function test_incorrect_credentials_are_rejected(): void
     {
-        $response = $this->from('/')->post('/login', [
+        $response = $this->from('/backoffice')->post('/backoffice/login', [
             'employee_number' => '10001',
             'pin' => '0000',
         ]);
 
-        $response->assertRedirect('/');
+        $response->assertRedirect('/backoffice');
         $response->assertSessionHasErrors([
             'employee_number' => 'Employee number or PIN code is incorrect.',
         ]);
@@ -65,7 +65,7 @@ class AuthenticatedSessionControllerTest extends TestCase
 
     public function test_correct_credentials_start_a_session(): void
     {
-        $response = $this->post('/login', [
+        $response = $this->post('/backoffice/login', [
             'employee_number' => '10001',
             'pin' => '1234',
         ]);
@@ -79,7 +79,7 @@ class AuthenticatedSessionControllerTest extends TestCase
 
     public function test_credentials_with_surrounding_spaces_start_a_session(): void
     {
-        $response = $this->post('/login', [
+        $response = $this->post('/backoffice/login', [
             'employee_number' => ' 10001 ',
             'pin' => ' 1234 ',
         ]);
@@ -95,7 +95,7 @@ class AuthenticatedSessionControllerTest extends TestCase
                 'employee_number' => '10001',
                 'name' => 'Sample Employee',
             ],
-        ])->get('/');
+        ])->get('/backoffice');
 
         $response->assertRedirect(route('dashboard'));
     }
@@ -107,24 +107,24 @@ class AuthenticatedSessionControllerTest extends TestCase
                 'employee_number' => '10001',
                 'name' => 'Sample Employee',
             ],
-        ])->post('/logout');
+        ])->post('/backoffice/logout');
 
         $response->assertRedirect(route('login'));
         $response->assertSessionMissing('employee');
 
-        $this->get('/dashboard')->assertRedirect(route('login'));
+        $this->get('/backoffice/dashboard')->assertRedirect(route('login'));
     }
 
     public function test_repeated_login_attempts_are_throttled(): void
     {
         for ($attempt = 0; $attempt < 5; $attempt++) {
-            $this->from('/')->post('/login', [
+            $this->from('/backoffice')->post('/backoffice/login', [
                 'employee_number' => '10001',
                 'pin' => '0000',
-            ])->assertRedirect('/');
+            ])->assertRedirect('/backoffice');
         }
 
-        $this->from('/')->post('/login', [
+        $this->from('/backoffice')->post('/backoffice/login', [
             'employee_number' => '10001',
             'pin' => '0000',
         ])->assertTooManyRequests();

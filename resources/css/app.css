@@ -14,3 +14,19 @@
     --color-sand: oklch(0.74 0.09 85);
     --color-danger: oklch(0.52 0.16 25);
 }
+
+@layer base {
+    select {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23485a56' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+        background-position: right 0.875rem center;
+        background-repeat: no-repeat;
+        background-size: 1.15rem 1.15rem;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23d7e3db' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+        }
+    }
+}

@@ -16,7 +16,7 @@ const formError = computed(
 );
 
 function submit() {
-    form.post('/login', {
+    form.post('/backoffice/login', {
         onFinish: () => form.reset('pin'),
     });
 }
@@ -33,13 +33,13 @@ function submit() {
             <p class="relative text-sm font-medium tracking-[0.22em] uppercase">{{ appName }}</p>
 
             <div class="relative flex max-w-md flex-col gap-5">
-                <h1 class="text-5xl leading-tight font-medium">Sign in with your employee number.</h1>
+                <h1 class="text-5xl leading-tight font-medium">Admin access for the Pluf Pets team.</h1>
                 <p class="text-lg text-foam/75">
-                    PIN access for people who already have an account. New accounts are not open yet.
+                    Sign in with your employee number and PIN to open the backoffice dashboard.
                 </p>
             </div>
 
-            <p class="relative text-sm text-foam/60">Laravel · Vue · Supabase</p>
+            <p class="relative text-sm text-foam/60">Staff only · PIN sign-in</p>
         </section>
 
         <main class="flex min-h-screen items-center justify-center px-6 py-16">
@@ -50,8 +50,8 @@ function submit() {
                 </div>
 
                 <div class="mb-8 hidden flex-col gap-2 lg:flex">
-                    <h2 class="text-3xl font-medium">Welcome back</h2>
-                    <p class="text-ink/70 dark:text-foam/70">Enter the employee number and PIN code issued to you.</p>
+                    <h2 class="text-3xl font-medium">Staff sign in</h2>
+                    <p class="text-ink/70 dark:text-foam/70">Use the employee number and PIN issued for the admin dashboard.</p>
                 </div>
 
                 <form class="flex flex-col gap-5" @submit.prevent="submit">
