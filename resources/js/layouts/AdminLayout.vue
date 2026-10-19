@@ -65,6 +65,7 @@ const navigation = [
         prefix: '/backoffice/pos',
         items: [
             { name: 'POS Categories', href: '/backoffice/pos/categories', match: '/backoffice/pos/categories', permission: 'pos.categories' },
+            { name: 'SMS History', href: '/backoffice/pos/sms-history', match: '/backoffice/pos/sms-history', permission: 'pos.sms-history' },
             { name: 'POS Settings', href: '/backoffice/pos/settings', match: '/backoffice/pos/settings', permission: 'pos.settings' },
         ],
     },
@@ -98,6 +99,7 @@ const pageTitle = computed(() => {
         ['/backoffice/sales/items', 'Sold items'],
         ['/backoffice/sales/shifts', 'Shifts'],
         ['/backoffice/sales', 'Sales'],
+        ['/backoffice/pos/sms-history', 'SMS History'],
         ['/backoffice/pos/settings', 'POS Settings'],
         ['/backoffice/pos/categories', 'POS Categories'],
         ['/backoffice/inventory/purchase-orders', 'Purchase Orders'],
@@ -198,6 +200,7 @@ watch(
                     Open POS
                 </button>
                 <Link
+                    v-if="can('dashboard.view')"
                     href="/backoffice/dashboard"
                     class="rounded-xl px-3 py-2.5 text-sm font-medium transition"
                     :class="

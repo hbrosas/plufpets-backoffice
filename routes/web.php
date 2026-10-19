@@ -19,16 +19,19 @@ use App\Http\Controllers\PosCashMovementController;
 use App\Http\Controllers\PosCategoryController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\PosDrawerController;
+use App\Http\Controllers\PosLaunchController;
 use App\Http\Controllers\PosOpenOrderController;
 use App\Http\Controllers\PosSaleController;
 use App\Http\Controllers\PosSettingController;
 use App\Http\Controllers\PosShiftController;
 use App\Http\Controllers\PosSmsController;
+use App\Http\Controllers\PosSmsHistoryController;
 use App\Http\Controllers\PosSmsTemplateController;
 use App\Http\Controllers\PosVariantCategoryController;
 use App\Http\Controllers\PosZReportController;
 use App\Http\Controllers\PrinterController;
 use App\Http\Controllers\PurchaseOrderController;
+use App\Http\Controllers\PwaController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SalesItemController;
 use App\Http\Controllers\SalesOverviewController;
@@ -40,7 +43,26 @@ use App\Http\Controllers\StockConversionController;
 use App\Http\Controllers\StockTransferController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\TaxFeeController;
+use App\Http\Middleware\HandleInertiaRequests;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
+
+Route::withoutMiddleware([
+    EncryptCookies::class,
+    AddQueuedCookiesToResponse::class,
+    StartSession::class,
+    ShareErrorsFromSession::class,
+    PreventRequestForgery::class,
+    HandleInertiaRequests::class,
+])->group(function () {
+    Route::get('/manifest.webmanifest', [PwaController::class, 'manifest'])->name('pwa.manifest');
+    Route::get('/sw.js', [PwaController::class, 'serviceWorker'])->name('pwa.service_worker');
+    Route::get('/offline', [PwaController::class, 'offline'])->name('pwa.offline');
+});
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
 
@@ -54,11 +76,14 @@ Route::prefix('backoffice')->group(function () {
     });
 
     Route::middleware('employee.auth')->group(function () {
-        Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('/dashboard', [DashboardController::class, 'index'])
+            ->middleware('employee.permission:dashboard.view')
+            ->name('dashboard');
 
         Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
         Route::middleware('employee.permission:pos.access')->group(function () {
+            Route::get('/pos', [PosLaunchController::class, 'index'])->name('pos.launch');
             Route::get('/pos/drawer', [PosDrawerController::class, 'show'])->name('pos.drawer');
             Route::get('/pos/register/{branch}', [PosController::class, 'index'])->name('pos.index');
             Route::post('/pos/register/{branch}/shifts', [PosShiftController::class, 'store'])->name('pos.shifts.store');
@@ -74,11 +99,16 @@ Route::prefix('backoffice')->group(function () {
                 ->name('pos.open-orders.destroy');
             Route::post('/pos/register/{branch}/cash-movements', [PosCashMovementController::class, 'store'])->name('pos.cash-movements.store');
             Route::post('/pos/register/{branch}/sms', [PosSmsController::class, 'store'])->name('pos.sms.store');
-            Route::get('/pos/sms/history', [PosSmsController::class, 'history'])->name('pos.sms.history');
+            Route::post('/pos/sms/{sms_message}/resend', [PosSmsController::class, 'resend'])->name('pos.sms.resend');
+            Route::get('/pos/register/{branch}/sms/history', [PosSmsController::class, 'history'])->name('pos.sms.history');
             Route::get('/pos/sms/templates', [PosSmsTemplateController::class, 'index'])->name('pos.sms.templates.index');
             Route::post('/pos/sms/templates', [PosSmsTemplateController::class, 'store'])->name('pos.sms.templates.store');
             Route::put('/pos/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'update'])->name('pos.sms.templates.update');
             Route::delete('/pos/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'destroy'])->name('pos.sms.templates.destroy');
+        });
+
+        Route::middleware('employee.permission:pos.sms-history')->group(function () {
+            Route::get('/pos/sms-history', [PosSmsHistoryController::class, 'index'])->name('pos.sms-history.index');
         });
 
         Route::middleware('employee.permission:pos.categories')->group(function () {

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\EmployeeHomeScreen;
 use Database\Factories\EmployeeFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
-#[Fillable(['name', 'date_of_birth', 'start_date', 'employee_number', 'pin', 'role_id', 'is_active'])]
+#[Fillable(['name', 'date_of_birth', 'start_date', 'employee_number', 'pin', 'role_id', 'is_active', 'home_screen'])]
 class Employee extends Model
 {
     /** @use HasFactory<EmployeeFactory> */
@@ -41,7 +42,27 @@ class Employee extends Model
             'employee_number' => 'string',
             'pin' => 'hashed',
             'is_active' => 'boolean',
+            'home_screen' => EmployeeHomeScreen::class,
         ];
+    }
+
+    public function homeUrl(): string
+    {
+        $this->loadMissing('role.permissions');
+
+        $permissions = $this->role?->permissions->pluck('key')->all() ?? [];
+        $canUsePos = in_array('pos.access', $permissions, true);
+        $canViewDashboard = in_array('dashboard.view', $permissions, true);
+
+        if ($this->home_screen === EmployeeHomeScreen::Pos && $canUsePos) {
+            return route('pos.launch');
+        }
+
+        if ($canViewDashboard || ! $canUsePos) {
+            return route('dashboard');
+        }
+
+        return route('pos.launch');
     }
 
     public function role(): BelongsTo

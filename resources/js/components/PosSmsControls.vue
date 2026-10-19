@@ -15,6 +15,7 @@ const menuTrigger = ref(null);
 const menuStyle = ref({});
 const panel = ref(null);
 const sending = ref(false);
+const resendingId = ref(null);
 const loading = ref(false);
 const number = ref('');
 const message = ref('');
@@ -130,16 +131,54 @@ async function loadTemplates() {
     }
 }
 
-async function loadHistory() {
-    loading.value = true;
+async function loadHistory({ silent = false } = {}) {
+    if (!silent) {
+        loading.value = true;
+    }
 
     try {
-        const response = await jsonRequest('/backoffice/pos/sms/history');
+        if (!branchId.value) {
+            history.value = [];
+            return;
+        }
+
+        const response = await jsonRequest(`/backoffice/pos/register/${branchId.value}/sms/history`);
         history.value = response.messages ?? [];
     } catch (error) {
         showToast(error instanceof Error ? error.message : 'Could not load history.');
     } finally {
         loading.value = false;
+    }
+}
+
+function statusClass(status) {
+    const value = String(status || '').toLowerCase();
+
+    if (value === 'failed' || value === 'refunded') {
+        return 'bg-danger/10 text-danger';
+    }
+
+    return 'bg-pine/10 text-pine dark:bg-pine/20 dark:text-sand';
+}
+
+async function resendSms(row) {
+    if (resendingId.value) {
+        return;
+    }
+
+    resendingId.value = row.id;
+    showToast('Sending text…');
+
+    try {
+        const response = await jsonRequest(`/backoffice/pos/sms/${row.id}/resend`, {
+            method: 'POST',
+        });
+        showToast(response.status || 'Text resent.');
+        await loadHistory({ silent: true });
+    } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not resend the text.');
+    } finally {
+        resendingId.value = null;
     }
 }
 
@@ -375,21 +414,42 @@ function useTemplate(template) {
     </div>
 
     <div v-if="panel === 'history'" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
-        <div class="flex max-h-[80vh] w-full max-w-lg flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 dark:bg-ink">
-            <div class="flex items-start justify-between gap-4">
-                <h2 class="text-lg font-medium">SMS History</h2>
+        <div class="flex h-[80vh] w-full max-w-lg flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 dark:bg-ink">
+            <div class="flex shrink-0 items-start justify-between gap-4">
+                <div class="flex flex-col gap-1">
+                    <h2 class="text-lg font-medium">SMS History</h2>
+                    <p class="text-sm text-ink/55 dark:text-foam/50">Texts sent during this shift.</p>
+                </div>
                 <button class="text-sm font-medium" type="button" @click="closePanel">Close</button>
             </div>
-            <div class="min-h-0 flex-1 overflow-y-auto">
+            <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
                 <p v-if="loading" class="text-sm text-ink/60 dark:text-foam/60">Loading…</p>
-                <p v-else-if="history.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No texts sent yet.</p>
+                <p v-else-if="history.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No texts sent during this shift.</p>
                 <ul v-else class="flex flex-col gap-2">
                     <li
                         v-for="row in history"
                         :key="row.id"
                         class="flex flex-col gap-1 rounded-xl border border-mist px-3 py-3 text-sm dark:border-white/10"
                     >
-                        <p class="font-medium">{{ row.number }}</p>
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex min-w-0 flex-col gap-1">
+                                <p class="font-medium">{{ row.number }}</p>
+                                <span
+                                    class="w-fit rounded-full px-2 py-0.5 text-[11px] font-medium"
+                                    :class="statusClass(row.status)"
+                                >
+                                    {{ row.status || 'Sent' }}
+                                </span>
+                            </div>
+                            <button
+                                class="shrink-0 text-sm font-medium text-pine disabled:opacity-70 dark:text-sand"
+                                type="button"
+                                :disabled="Boolean(resendingId)"
+                                @click="resendSms(row)"
+                            >
+                                {{ resendingId === row.id ? 'Sending…' : 'Resend' }}
+                            </button>
+                        </div>
                         <p class="whitespace-pre-wrap text-ink/70 dark:text-foam/70">{{ row.body }}</p>
                         <p class="text-xs text-ink/50 dark:text-foam/50">
                             {{ row.branch }} · {{ row.sender }} · {{ row.sent_at }}

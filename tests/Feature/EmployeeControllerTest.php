@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\EmployeeHomeScreen;
 use App\Models\Employee;
 use App\Models\Role;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,7 +38,8 @@ class EmployeeControllerTest extends TestCase
         $response->assertInertia(fn (Assert $page) => $page
             ->component('Staff/Index')
             ->where('employees.0.employee_number', '10001')
-            ->where('employees.0.name', 'Sample Employee'));
+            ->where('employees.0.name', 'Sample Employee')
+            ->where('employees.0.home_screen', 'dashboard'));
     }
 
     public function test_empty_payload_is_rejected(): void
@@ -51,6 +53,7 @@ class EmployeeControllerTest extends TestCase
             'start_date' => 'Enter a start date.',
             'pin' => 'Enter a PIN code.',
             'role_id' => 'Choose a role.',
+            'home_screen' => 'Choose where sign-in opens.',
         ]);
         $this->assertDatabaseCount('employees', 1);
     }
@@ -66,6 +69,7 @@ class EmployeeControllerTest extends TestCase
             'pin' => '4321',
             'role_id' => $role->id,
             'is_active' => true,
+            'home_screen' => 'dashboard',
         ]);
 
         $response->assertRedirect('/backoffice/staff');
@@ -86,6 +90,7 @@ class EmployeeControllerTest extends TestCase
             'pin' => '4321',
             'role_id' => $role->id,
             'is_active' => true,
+            'home_screen' => 'dashboard',
         ]);
 
         $response->assertRedirect('/backoffice/staff');
@@ -105,6 +110,7 @@ class EmployeeControllerTest extends TestCase
             'pin' => '12',
             'role_id' => $role->id,
             'is_active' => true,
+            'home_screen' => 'dashboard',
         ]);
 
         $response->assertRedirect('/backoffice/staff');
@@ -124,6 +130,7 @@ class EmployeeControllerTest extends TestCase
             'pin' => '4321',
             'role_id' => $role->id,
             'is_active' => true,
+            'home_screen' => 'dashboard',
             'employee_number' => '99999',
         ]);
 
@@ -136,6 +143,7 @@ class EmployeeControllerTest extends TestCase
         $this->assertNotSame('4321', $employee->pin);
         $this->assertTrue(Hash::check('4321', $employee->pin));
         $this->assertSame($role->id, $employee->role_id);
+        $this->assertSame(EmployeeHomeScreen::Dashboard, $employee->home_screen);
     }
 
     public function test_blank_pin_keeps_the_current_pin(): void
@@ -153,6 +161,7 @@ class EmployeeControllerTest extends TestCase
             'pin' => '',
             'role_id' => $admin->role_id,
             'is_active' => true,
+            'home_screen' => 'dashboard',
         ]);
 
         $response->assertRedirect(route('staff.index'));
@@ -175,6 +184,7 @@ class EmployeeControllerTest extends TestCase
             'pin' => '2222',
             'role_id' => $admin->role_id,
             'is_active' => true,
+            'home_screen' => 'dashboard',
         ])->assertRedirect(route('staff.index'));
 
         $this->post('/backoffice/logout');
@@ -212,6 +222,7 @@ class EmployeeControllerTest extends TestCase
             'start_date' => '2026-01-01',
             'role_id' => $cashier->id,
             'is_active' => true,
+            'home_screen' => 'dashboard',
         ]);
 
         $response->assertRedirect('/backoffice/staff');
@@ -230,5 +241,68 @@ class EmployeeControllerTest extends TestCase
 
         $response->assertRedirect(route('staff.index'));
         $this->assertModelMissing($employee);
+    }
+
+    public function test_pos_first_is_saved_for_a_register_role(): void
+    {
+        $role = Role::factory()->withPermissions(['pos.access'])->create();
+
+        $response = $this->actingAsEmployee()->post('/backoffice/staff', [
+            'name' => 'Mina Cruz',
+            'date_of_birth' => '1998-03-04',
+            'start_date' => '2026-02-01',
+            'pin' => '4321',
+            'role_id' => $role->id,
+            'is_active' => true,
+            'home_screen' => 'pos',
+        ]);
+
+        $response->assertRedirect(route('staff.index'));
+        $this->assertSame(
+            EmployeeHomeScreen::Pos,
+            Employee::query()->where('name', 'Mina Cruz')->firstOrFail()->home_screen,
+        );
+    }
+
+    public function test_pos_first_is_rejected_when_the_role_cannot_use_the_register(): void
+    {
+        $role = Role::factory()->withPermissions(['dashboard.view'])->create();
+
+        $response = $this->actingAsEmployee()->from('/backoffice/staff')->post('/backoffice/staff', [
+            'name' => 'Mina Cruz',
+            'date_of_birth' => '1998-03-04',
+            'start_date' => '2026-02-01',
+            'pin' => '4321',
+            'role_id' => $role->id,
+            'is_active' => true,
+            'home_screen' => 'pos',
+        ]);
+
+        $response->assertRedirect('/backoffice/staff');
+        $response->assertSessionHasErrors([
+            'home_screen' => 'POS first needs a role that can use the register.',
+        ]);
+        $this->assertDatabaseMissing('employees', ['name' => 'Mina Cruz']);
+    }
+
+    public function test_dashboard_first_is_rejected_when_the_role_cannot_view_the_dashboard(): void
+    {
+        $role = Role::factory()->withPermissions(['pos.access'])->create();
+
+        $response = $this->actingAsEmployee()->from('/backoffice/staff')->post('/backoffice/staff', [
+            'name' => 'Mina Cruz',
+            'date_of_birth' => '1998-03-04',
+            'start_date' => '2026-02-01',
+            'pin' => '4321',
+            'role_id' => $role->id,
+            'is_active' => true,
+            'home_screen' => 'dashboard',
+        ]);
+
+        $response->assertRedirect('/backoffice/staff');
+        $response->assertSessionHasErrors([
+            'home_screen' => 'Dashboard first needs a role that can view the dashboard.',
+        ]);
+        $this->assertDatabaseMissing('employees', ['name' => 'Mina Cruz']);
     }
 }

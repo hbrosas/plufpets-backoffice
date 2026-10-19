@@ -8,7 +8,7 @@ use Illuminate\Validation\ValidationException;
 
 class SendSemaphoreSms
 {
-    public function handle(string $number, string $message): void
+    public function handle(string $number, string $message): string
     {
         $key = config('services.semaphore.key');
 
@@ -40,6 +40,8 @@ class SendSemaphoreSms
                 'status' => $this->errorMessage($response->json()),
             ]);
         }
+
+        return $this->deliveryStatus($response->json());
     }
 
     /**
@@ -52,5 +54,19 @@ class SendSemaphoreSms
         }
 
         return 'Could not send the text.';
+    }
+
+    /**
+     * @param  array<string, mixed>|list<mixed>|null  $payload
+     */
+    private function deliveryStatus(mixed $payload): string
+    {
+        $first = is_array($payload) ? ($payload[0] ?? $payload) : null;
+
+        if (is_array($first) && isset($first['status']) && is_string($first['status']) && $first['status'] !== '') {
+            return $first['status'];
+        }
+
+        return 'Sent';
     }
 }

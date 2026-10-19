@@ -1,6 +1,7 @@
 import { createApp, h } from 'vue';
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
+import PwaInstallPrompt from './components/PwaInstallPrompt.vue';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Employee Portal';
 
@@ -13,8 +14,33 @@ createInertiaApp({
         ),
     setup({ el, App, props, plugin }) {
         createApp({ render: () => h(App, props) }).use(plugin).mount(el);
+        mountPwaInstallPrompt();
     },
     progress: {
         color: '#1f6f68',
     },
 });
+
+function mountPwaInstallPrompt() {
+    if (document.getElementById('pwa-install-root')) {
+        return;
+    }
+
+    const root = document.createElement('div');
+    root.id = 'pwa-install-root';
+    document.body.appendChild(root);
+    createApp(PwaInstallPrompt).mount(root);
+}
+
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker
+            .register('/sw.js', {
+                scope: '/',
+                updateViaCache: 'none',
+            })
+            .catch((error) => {
+                console.error('Service worker registration failed.', error);
+            });
+    });
+}

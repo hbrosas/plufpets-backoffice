@@ -12,6 +12,7 @@ class PermissionCatalog
     public static function all(): array
     {
         return [
+            ['key' => 'dashboard.view', 'name' => 'View the dashboard', 'group' => 'Dashboard'],
             ['key' => 'sales.view', 'name' => 'View sales', 'group' => 'Sales'],
             ['key' => 'sales.refund', 'name' => 'Refund receipts', 'group' => 'Sales'],
             ['key' => 'shop.catalog', 'name' => 'Manage catalog', 'group' => 'Shop'],
@@ -29,6 +30,7 @@ class PermissionCatalog
             ['key' => 'pos.open-drawer', 'name' => 'Open the cash drawer', 'group' => 'POS'],
             ['key' => 'pos.categories', 'name' => 'Manage POS categories', 'group' => 'POS'],
             ['key' => 'pos.settings', 'name' => 'Manage POS settings', 'group' => 'POS'],
+            ['key' => 'pos.sms-history', 'name' => 'View SMS history', 'group' => 'POS'],
             ['key' => 'staff.manage', 'name' => 'Manage staff', 'group' => 'Staff'],
             ['key' => 'roles.manage', 'name' => 'Manage roles', 'group' => 'Staff'],
         ];

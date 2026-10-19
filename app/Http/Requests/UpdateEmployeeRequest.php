@@ -78,7 +78,11 @@ class UpdateEmployeeRequest extends FormRequest
 
                 if ($employee->isOnlyActiveStaffManager() && (! $this->boolean('is_active') || ! $roleGrantsStaffManagement)) {
                     $validator->errors()->add('role_id', 'Keep staff management on at least one active employee.');
+
+                    return;
                 }
+
+                EmployeeRules::guardHomeScreen($validator);
             },
         ];
     }

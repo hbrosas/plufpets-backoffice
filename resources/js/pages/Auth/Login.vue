@@ -1,117 +1,209 @@
 <script setup>
 import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 const page = usePage();
 const appName = computed(() => page.props.appName);
-const pinVisible = ref(false);
 
 const form = useForm({
     employee_number: '',
     pin: '',
 });
 
-const formError = computed(
-    () => form.errors.employee_number || form.errors.pin || '',
+const activeField = ref('employee_number');
+const pinVisible = ref(false);
+
+const employeeNumberMaxLength = 10;
+const pinMaxLength = 8;
+const digitKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+const formError = computed(() => form.errors.employee_number || form.errors.pin || '');
+
+const canSignIn = computed(
+    () => form.employee_number.length > 0 && form.pin.length >= 4 && !form.processing,
 );
 
+const pinDisplay = computed(() => (pinVisible.value ? form.pin : '•'.repeat(form.pin.length)));
+
+function selectField(field) {
+    activeField.value = field;
+}
+
+function appendDigit(digit) {
+    const field = activeField.value;
+    const maxLength = field === 'pin' ? pinMaxLength : employeeNumberMaxLength;
+
+    if (form[field].length >= maxLength) {
+        return;
+    }
+
+    form[field] += digit;
+    form.clearErrors();
+}
+
+function backspace() {
+    const field = activeField.value;
+    form[field] = form[field].slice(0, -1);
+    form.clearErrors();
+}
+
+function clearActiveField() {
+    form[activeField.value] = '';
+    form.clearErrors();
+}
+
 function submit() {
+    if (!canSignIn.value) {
+        return;
+    }
+
     form.post('/backoffice/login', {
-        onFinish: () => form.reset('pin'),
+        onFinish: () => {
+            form.reset('pin');
+            activeField.value = 'pin';
+        },
     });
 }
+
+function onKeydown(event) {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+    }
+
+    if (/^\d$/.test(event.key)) {
+        event.preventDefault();
+        appendDigit(event.key);
+
+        return;
+    }
+
+    if (event.key === 'Backspace') {
+        event.preventDefault();
+        backspace();
+
+        return;
+    }
+
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        submit();
+    }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown));
+onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <template>
     <Head title="Sign in" />
 
-    <div class="min-h-screen lg:grid lg:grid-cols-2">
-        <section class="relative hidden overflow-hidden bg-pine text-foam lg:flex lg:flex-col lg:justify-between lg:px-14 lg:py-12">
-            <div class="absolute -top-24 -left-16 h-72 w-72 rounded-full bg-sand/20 blur-3xl"></div>
-            <div class="absolute right-0 bottom-0 h-80 w-80 rounded-full bg-foam/10 blur-3xl"></div>
-
-            <p class="relative text-sm font-medium tracking-[0.22em] uppercase">{{ appName }}</p>
-
-            <div class="relative flex max-w-md flex-col gap-5">
-                <h1 class="text-5xl leading-tight font-medium">Admin access for the Pluf Pets team.</h1>
-                <p class="text-lg text-foam/75">
-                    Sign in with your employee number and PIN to open the backoffice dashboard.
-                </p>
+    <main class="mx-auto flex h-dvh max-h-dvh w-full max-w-md flex-col gap-[clamp(0.5rem,1.6vh,1rem)] overflow-hidden px-4 py-[clamp(0.75rem,2vh,1.25rem)]">
+        <div class="flex shrink-0 flex-col items-center gap-1 text-center">
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-pine text-sm font-semibold text-foam">PP</span>
+            <div class="flex flex-col">
+                <p class="text-xs font-medium tracking-[0.18em] text-pine uppercase dark:text-sand">{{ appName }}</p>
+                <h1 class="text-xl font-medium [@media(min-height:760px)]:text-2xl">Sign in</h1>
             </div>
+        </div>
 
-            <p class="relative text-sm text-foam/60">Staff only · PIN sign-in</p>
-        </section>
+        <p
+            v-if="formError"
+            class="shrink-0 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-center text-sm text-danger"
+            role="alert"
+        >
+            {{ formError }}
+        </p>
 
-        <main class="flex min-h-screen items-center justify-center px-6 py-16">
-            <div class="w-full max-w-sm">
-                <div class="mb-10 flex flex-col gap-3 lg:hidden">
-                    <p class="text-sm font-medium tracking-[0.22em] text-pine uppercase dark:text-sand">{{ appName }}</p>
-                    <h1 class="text-4xl font-medium">Sign in</h1>
-                </div>
+        <div class="grid shrink-0 grid-cols-1 gap-2 [@media(max-height:720px)]:grid-cols-2">
+            <button
+                class="flex shrink-0 flex-col gap-0.5 rounded-2xl border px-3 py-2 text-left transition"
+                :class="
+                    activeField === 'employee_number'
+                        ? 'border-pine bg-white ring-2 ring-sand/80 dark:border-sand dark:bg-white/10'
+                        : 'border-mist bg-white dark:border-white/10 dark:bg-white/5'
+                "
+                type="button"
+                :aria-pressed="activeField === 'employee_number'"
+                @click="selectField('employee_number')"
+            >
+                <span class="text-sm font-medium text-ink/70 dark:text-foam/70">Employee number</span>
+                <span class="min-h-7 truncate text-[clamp(1.15rem,3.4vh,1.5rem)] tracking-[0.14em] tabular-nums">
+                    {{ form.employee_number || '—' }}
+                </span>
+            </button>
 
-                <div class="mb-8 hidden flex-col gap-2 lg:flex">
-                    <h2 class="text-3xl font-medium">Staff sign in</h2>
-                    <p class="text-ink/70 dark:text-foam/70">Use the employee number and PIN issued for the admin dashboard.</p>
-                </div>
-
-                <form class="flex flex-col gap-5" @submit.prevent="submit">
-                    <div
-                        v-if="formError"
-                        class="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
-                        role="alert"
-                    >
-                        {{ formError }}
-                    </div>
-
-                    <div class="flex flex-col gap-2">
-                        <label class="text-sm font-medium" for="employee_number">Employee number</label>
-                        <input
-                            id="employee_number"
-                            v-model="form.employee_number"
-                            autocomplete="username"
-                            class="h-12 rounded-xl border border-mist bg-white px-4 text-base outline-none transition focus:border-pine focus:ring-2 focus:ring-sand/70 dark:border-white/10 dark:bg-white/5"
-                            inputmode="numeric"
-                            name="employee_number"
-                            required
-                            type="text"
-                            :aria-invalid="Boolean(form.errors.employee_number)"
-                        />
-                    </div>
-
-                    <div class="flex flex-col gap-2">
-                        <label class="text-sm font-medium" for="pin">PIN code</label>
-                        <div class="relative">
-                            <input
-                                id="pin"
-                                v-model="form.pin"
-                                autocomplete="current-password"
-                                class="h-12 w-full rounded-xl border border-mist bg-white px-4 pr-20 text-base tracking-[0.3em] outline-none transition focus:border-pine focus:ring-2 focus:ring-sand/70 dark:border-white/10 dark:bg-white/5"
-                                inputmode="numeric"
-                                maxlength="8"
-                                name="pin"
-                                required
-                                :type="pinVisible ? 'text' : 'password'"
-                                :aria-invalid="Boolean(form.errors.pin)"
-                            />
-                            <button
-                                class="absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium text-pine dark:text-sand"
-                                type="button"
-                                @click="pinVisible = !pinVisible"
-                            >
-                                {{ pinVisible ? 'Hide' : 'Show' }}
-                            </button>
-                        </div>
-                    </div>
-
+            <div
+                class="flex shrink-0 cursor-pointer flex-col gap-0.5 rounded-2xl border px-3 py-2 text-left transition"
+                :class="
+                    activeField === 'pin'
+                        ? 'border-pine bg-white ring-2 ring-sand/80 dark:border-sand dark:bg-white/10'
+                        : 'border-mist bg-white dark:border-white/10 dark:bg-white/5'
+                "
+                @click="selectField('pin')"
+            >
+                <span class="flex items-center justify-between gap-3">
+                    <span class="text-sm font-medium text-ink/70 dark:text-foam/70">PIN code</span>
                     <button
-                        class="mt-2 h-12 rounded-xl bg-pine text-base font-medium text-foam transition hover:bg-pine/90 disabled:cursor-wait disabled:opacity-70"
-                        type="submit"
-                        :disabled="form.processing"
+                        class="text-sm font-medium text-pine dark:text-sand"
+                        type="button"
+                        @click.stop="pinVisible = !pinVisible"
                     >
-                        {{ form.processing ? 'Signing in…' : 'Sign in' }}
+                        {{ pinVisible ? 'Hide' : 'Show' }}
                     </button>
-                </form>
+                </span>
+                <span class="min-h-7 truncate text-[clamp(1.15rem,3.4vh,1.5rem)] tracking-[0.2em]">
+                    {{ pinDisplay || '—' }}
+                </span>
             </div>
-        </main>
-    </div>
+        </div>
+
+        <div class="grid min-h-0 flex-1 grid-cols-3 grid-rows-4 gap-2">
+            <button
+                v-for="digit in digitKeys"
+                :key="digit"
+                class="h-full min-h-0 rounded-2xl border border-mist bg-white text-[clamp(1.05rem,3vh,1.5rem)] font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 dark:border-white/10 dark:bg-white/5"
+                type="button"
+                :disabled="form.processing"
+                @click="appendDigit(digit)"
+            >
+                {{ digit }}
+            </button>
+
+            <button
+                class="h-full min-h-0 rounded-2xl border border-mist bg-white text-[clamp(0.8rem,2.2vh,1rem)] font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 dark:border-white/10 dark:bg-white/5"
+                type="button"
+                aria-label="Delete"
+                :disabled="form.processing"
+                @click="backspace"
+            >
+                Delete
+            </button>
+            <button
+                class="h-full min-h-0 rounded-2xl border border-mist bg-white text-[clamp(1.05rem,3vh,1.5rem)] font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 dark:border-white/10 dark:bg-white/5"
+                type="button"
+                :disabled="form.processing"
+                @click="appendDigit('0')"
+            >
+                0
+            </button>
+            <button
+                class="h-full min-h-0 rounded-2xl border border-mist bg-white text-[clamp(0.8rem,2.2vh,1rem)] font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 dark:border-white/10 dark:bg-white/5"
+                type="button"
+                aria-label="Clear"
+                :disabled="form.processing"
+                @click="clearActiveField"
+            >
+                Clear
+            </button>
+        </div>
+
+        <button
+            class="h-[clamp(2.5rem,7vh,3rem)] shrink-0 rounded-2xl bg-pine text-base font-medium text-foam transition hover:bg-pine/90 disabled:cursor-not-allowed disabled:opacity-50"
+            type="button"
+            :disabled="!canSignIn"
+            @click="submit"
+        >
+            {{ form.processing ? 'Signing in…' : 'Sign in' }}
+        </button>
+    </main>
 </template>

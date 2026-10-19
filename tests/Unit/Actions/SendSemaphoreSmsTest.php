@@ -24,6 +24,25 @@ class SendSemaphoreSmsTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_successful_send_returns_the_provider_status(): void
+    {
+        Http::preventStrayRequests();
+        config([
+            'services.semaphore.key' => 'test-key',
+            'services.semaphore.sender' => 'PLUFPETS',
+        ]);
+        Http::fake([
+            'https://api.semaphore.co/api/v4/messages' => Http::response([
+                ['message_id' => 1, 'status' => 'Queued'],
+            ]),
+        ]);
+
+        $status = (new SendSemaphoreSms)->handle('09171234567', 'Pickup is ready.');
+
+        $this->assertSame('Queued', $status);
+        Http::assertSentCount(1);
+    }
+
     public function test_connection_failure_is_rejected(): void
     {
         Http::preventStrayRequests();

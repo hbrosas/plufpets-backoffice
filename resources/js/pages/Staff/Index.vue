@@ -28,6 +28,7 @@ const form = useForm({
     pin: '',
     role_id: '',
     is_active: true,
+    home_screen: 'dashboard',
 });
 
 function openCreate() {
@@ -47,6 +48,7 @@ function openEdit(employee) {
     form.pin = '';
     form.role_id = employee.role_id;
     form.is_active = employee.is_active;
+    form.home_screen = employee.home_screen;
     form.clearErrors();
     modalOpen.value = true;
 }
@@ -107,13 +109,14 @@ function formatDate(value) {
                         <th class="px-4 py-3 font-medium">EMPID</th>
                         <th class="px-4 py-3 font-medium">Role</th>
                         <th class="px-4 py-3 font-medium">Start date</th>
+                        <th class="px-4 py-3 font-medium">Opens</th>
                         <th class="px-4 py-3 font-medium">Status</th>
                         <th class="px-4 py-3 font-medium"><span class="sr-only">Actions</span></th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr v-if="props.employees.length === 0">
-                        <td class="px-4 py-10 text-ink/60 dark:text-foam/60" colspan="6">No staff accounts yet.</td>
+                        <td class="px-4 py-10 text-ink/60 dark:text-foam/60" colspan="7">No staff accounts yet.</td>
                     </tr>
                     <tr
                         v-for="employee in props.employees"
@@ -124,6 +127,7 @@ function formatDate(value) {
                         <td class="px-4 py-3">{{ employee.employee_number }}</td>
                         <td class="px-4 py-3">{{ employee.role_name }}</td>
                         <td class="px-4 py-3">{{ formatDate(employee.start_date) }}</td>
+                        <td class="px-4 py-3">{{ employee.home_screen === 'pos' ? 'POS' : 'Dashboard' }}</td>
                         <td class="px-4 py-3">{{ employee.is_active ? 'Active' : 'Inactive' }}</td>
                         <td class="px-4 py-3">
                             <div class="flex justify-end gap-3">
@@ -216,6 +220,34 @@ function formatDate(value) {
                         <p v-if="form.errors.pin" class="text-sm text-danger">{{ form.errors.pin }}</p>
                     </div>
                 </div>
+                <fieldset class="flex flex-col gap-2">
+                    <legend class="text-sm font-medium">After sign-in</legend>
+                    <div class="flex gap-2">
+                        <label
+                            class="flex h-11 flex-1 cursor-pointer items-center justify-center rounded-xl border text-sm font-medium"
+                            :class="
+                                form.home_screen === 'dashboard'
+                                    ? 'border-pine bg-pine/10 text-pine dark:border-sand dark:text-sand'
+                                    : 'border-mist dark:border-white/15'
+                            "
+                        >
+                            <input v-model="form.home_screen" class="sr-only" type="radio" value="dashboard" />
+                            Dashboard first
+                        </label>
+                        <label
+                            class="flex h-11 flex-1 cursor-pointer items-center justify-center rounded-xl border text-sm font-medium"
+                            :class="
+                                form.home_screen === 'pos'
+                                    ? 'border-pine bg-pine/10 text-pine dark:border-sand dark:text-sand'
+                                    : 'border-mist dark:border-white/15'
+                            "
+                        >
+                            <input v-model="form.home_screen" class="sr-only" type="radio" value="pos" />
+                            POS first
+                        </label>
+                    </div>
+                    <p v-if="form.errors.home_screen" class="text-sm text-danger">{{ form.errors.home_screen }}</p>
+                </fieldset>
                 <label class="flex items-center gap-2 text-sm font-medium">
                     <input v-model="form.is_active" class="h-4 w-4 accent-pine" type="checkbox" />
                     Active

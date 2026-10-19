@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\SendPosSms;
 use App\Http\Requests\StorePosSmsRequest;
 use App\Models\Branch;
+use App\Models\PosShift;
 use App\Models\SmsMessage;
 use App\Support\EmployeeSession;
 use Illuminate\Http\JsonResponse;
@@ -25,22 +26,43 @@ class PosSmsController extends Controller
         return response()->json(['status' => 'Text sent.']);
     }
 
-    public function history(): JsonResponse
+    public function resend(SmsMessage $smsMessage, SendPosSms $sendPosSms): JsonResponse
     {
+        $branch = $smsMessage->branch;
+        abort_unless($branch instanceof Branch && $branch->is_active, 404);
+
+        $sendPosSms->handle(
+            $branch,
+            $smsMessage->number,
+            $smsMessage->body,
+            EmployeeSession::current() ?? ['employee_number' => '', 'name' => ''],
+        );
+
+        return response()->json(['status' => 'Text resent.']);
+    }
+
+    public function history(Branch $branch): JsonResponse
+    {
+        abort_unless($branch->is_active, 404);
+
+        $shift = PosShift::query()
+            ->where('branch_id', $branch->id)
+            ->open()
+            ->first();
+
+        if (! $shift instanceof PosShift) {
+            return response()->json(['messages' => []]);
+        }
+
         $messages = SmsMessage::query()
             ->with(['branch:id,name'])
+            ->where('branch_id', $branch->id)
+            ->where('sent_at', '>=', $shift->opened_at)
             ->orderByDesc('sent_at')
             ->orderByDesc('id')
-            ->limit(50)
+            ->limit(100)
             ->get()
-            ->map(fn (SmsMessage $message): array => [
-                'id' => $message->id,
-                'number' => $message->number,
-                'body' => $message->body,
-                'branch' => $message->branch?->name,
-                'sender' => $message->employee_name.' · #'.$message->employee_number,
-                'sent_at' => $message->sent_at?->timezone(config('app.timezone'))->format('M j, Y g:i A'),
-            ]);
+            ->map(fn (SmsMessage $message): array => $message->toHistoryArray());
 
         return response()->json(['messages' => $messages]);
     }

@@ -30,7 +30,7 @@ class AuthenticatedSessionController extends Controller
             'id' => $employee->id,
         ]);
 
-        return redirect()->intended(route('dashboard'));
+        return redirect()->intended($employee->homeUrl());
     }
 
     public function destroy(Request $request): RedirectResponse

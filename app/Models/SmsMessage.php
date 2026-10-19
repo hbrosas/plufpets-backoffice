@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'body',
     'employee_number',
     'employee_name',
+    'status',
     'sent_at',
 ])]
 class SmsMessage extends Model
@@ -37,5 +38,21 @@ class SmsMessage extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * @return array{id: int, number: string, body: string, status: string|null, branch: string|null, sender: string, sent_at: string|null}
+     */
+    public function toHistoryArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'number' => $this->number,
+            'body' => $this->body,
+            'status' => $this->status,
+            'branch' => $this->branch?->name,
+            'sender' => $this->employee_name.' · #'.$this->employee_number,
+            'sent_at' => $this->sent_at?->timezone(config('app.timezone'))->format('M j, Y g:i A'),
+        ];
     }
 }

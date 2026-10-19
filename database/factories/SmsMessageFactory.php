@@ -23,6 +23,7 @@ class SmsMessageFactory extends Factory
             'body' => SmsDisclaimer::append('Pickup is ready.'),
             'employee_number' => '10001',
             'employee_name' => 'Sample Employee',
+            'status' => 'Queued',
             'sent_at' => now(),
         ];
     }

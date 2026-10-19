@@ -30,6 +30,7 @@ class EmployeeController extends Controller
                     'role_id' => $employee->role_id,
                     'role_name' => $employee->role->name,
                     'is_active' => $employee->is_active,
+                    'home_screen' => $employee->home_screen->value,
                 ]),
             'roles' => Role::query()
                 ->orderBy('name')
@@ -50,6 +51,7 @@ class EmployeeController extends Controller
             'pin',
             'role_id',
             'is_active',
+            'home_screen',
         ]));
 
         return redirect()
@@ -65,6 +67,7 @@ class EmployeeController extends Controller
             'start_date',
             'role_id',
             'is_active',
+            'home_screen',
         ]);
 
         if ($request->filled('pin')) {

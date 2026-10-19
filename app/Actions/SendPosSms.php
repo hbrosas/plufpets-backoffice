@@ -17,7 +17,7 @@ class SendPosSms
     {
         $body = SmsDisclaimer::append($message);
 
-        $this->sendSemaphoreSms->handle($number, $body);
+        $status = $this->sendSemaphoreSms->handle($number, $body);
 
         return SmsMessage::query()->create([
             'branch_id' => $branch->id,
@@ -25,6 +25,7 @@ class SendPosSms
             'body' => $body,
             'employee_number' => $employee['employee_number'],
             'employee_name' => $employee['name'],
+            'status' => $status,
             'sent_at' => now(),
         ]);
     }

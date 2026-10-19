@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Support\EmployeeRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class StoreEmployeeRequest extends FormRequest
 {
@@ -36,5 +37,17 @@ class StoreEmployeeRequest extends FormRequest
             'pin' => $this->string('pin')->trim()->toString(),
             'is_active' => $this->boolean('is_active'),
         ]);
+    }
+
+    /**
+     * @return array<int, callable(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                EmployeeRules::guardHomeScreen($validator);
+            },
+        ];
     }
 }

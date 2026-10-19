@@ -14,13 +14,13 @@ class PermissionAccessTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_signed_in_employee_can_open_the_dashboard_without_feature_permissions(): void
+    public function test_signed_in_employee_without_dashboard_access_is_forbidden(): void
     {
         $employee = Employee::factory()->create();
 
         $response = $this->actingAsEmployee($employee)->get('/backoffice/dashboard');
 
-        $response->assertOk();
+        $response->assertForbidden();
     }
 
     #[DataProvider('featureRoutes')]
@@ -84,6 +84,7 @@ class PermissionAccessTest extends TestCase
     public static function featureRoutes(): array
     {
         return [
+            'dashboard' => ['/backoffice/dashboard', 'dashboard.view'],
             'sales' => ['/backoffice/sales', 'sales.view'],
             'receipts' => ['/backoffice/sales/receipts', 'sales.view'],
             'sold items' => ['/backoffice/sales/items', 'sales.view'],
@@ -99,6 +100,7 @@ class PermissionAccessTest extends TestCase
             'stock assignments' => ['/backoffice/inventory/stock-assignments', 'inventory.stock-assignments'],
             'suppliers' => ['/backoffice/inventory/suppliers', 'inventory.suppliers'],
             'pos categories' => ['/backoffice/pos/categories', 'pos.categories'],
+            'sms history' => ['/backoffice/pos/sms-history', 'pos.sms-history'],
             'pos settings' => ['/backoffice/pos/settings', 'pos.settings'],
             'staff' => ['/backoffice/staff', 'staff.manage'],
             'roles' => ['/backoffice/staff/roles', 'roles.manage'],
