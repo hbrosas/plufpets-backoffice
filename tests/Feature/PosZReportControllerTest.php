@@ -73,4 +73,34 @@ class PosZReportControllerTest extends TestCase
             ->assertSee('Z-REPORT', false)
             ->assertDontSee('bt-other', false);
     }
+
+    public function test_json_print_payload_uses_the_shift_branch_receipt_printer(): void
+    {
+        $shift = PosShift::factory()->closed()->create();
+        Printer::factory()->bluetooth()->for($shift->branch)->create([
+            'name' => 'Front receipt',
+            'role' => PrinterRole::Receipt,
+            'is_default' => true,
+            'bluetooth_id' => 'bt-z-report',
+            'device_name' => 'RPP02N',
+        ]);
+        Printer::factory()->bluetooth()->create([
+            'name' => 'Other branch',
+            'role' => PrinterRole::Receipt,
+            'is_default' => true,
+            'bluetooth_id' => 'bt-other',
+        ]);
+
+        $response = $this->actingAsEmployee()->getJson(
+            "/backoffice/pos/register/{$shift->branch_id}/shifts/{$shift->id}/z-report?print=1",
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('printer.bluetooth_id', 'bt-z-report');
+        $response->assertJsonPath('printer.device_name', 'RPP02N');
+        $response->assertJsonPath('printer.connection', 'bluetooth');
+        $this->assertStringContainsString('Z-REPORT', (string) $response->json('receipt'));
+        $this->assertStringContainsString((string) $shift->branch?->name, (string) $response->json('receipt'));
+        $this->assertNotSame('bt-other', $response->json('printer.bluetooth_id'));
+    }
 }

@@ -3,7 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Enums\PosCashMovementType;
-use App\Http\Requests\SalesFilterRequest;
+use App\Enums\PrinterRole;
+use App\Http\Requests\SalesShiftFilterRequest;
 use App\Models\Branch;
 use App\Models\PosCashMovement;
 use App\Models\PosSale;
@@ -14,13 +15,18 @@ use Inertia\Response;
 
 class SalesShiftController extends Controller
 {
-    public function index(SalesFilterRequest $request): Response
+    public function index(SalesShiftFilterRequest $request): Response
     {
         $filters = $request->filters();
 
         $shifts = PosShift::query()
             ->with([
                 'branch:id,name',
+                'branch.printers' => fn ($query) => $query
+                    ->where('role', PrinterRole::Receipt)
+                    ->where('is_active', true)
+                    ->orderByDesc('is_default')
+                    ->orderBy('id'),
                 'sales' => fn ($query) => $query->orderBy('sold_at')->orderBy('id')->with([
                     'items:id,pos_sale_id,product_name,variant_name,quantity,line_total',
                     'payments:id,pos_sale_id,payment_method_name,amount',
@@ -66,6 +72,9 @@ class SalesShiftController extends Controller
             'z_report_print_href' => $shift->isOpen() || $shift->branch_id === null
                 ? null
                 : route('pos.shifts.z-report', [$shift->branch_id, $shift], false).'?print=1',
+            'receipt_printer' => $shift->isOpen()
+                ? null
+                : $shift->branch?->printers->first()?->toSettingsPayload(),
             'transactions' => $this->transactions($shift),
         ];
     }

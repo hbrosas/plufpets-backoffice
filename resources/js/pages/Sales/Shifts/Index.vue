@@ -3,6 +3,7 @@ import { Head, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import SalesFilters from '../../../components/SalesFilters.vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
+import { beginAssignedPrint, finishAssignedPrint } from '../../../printerConnection';
 
 defineOptions({
     layout: AdminLayout,
@@ -16,6 +17,42 @@ defineProps({
 });
 
 const openShift = ref(null);
+const printNotice = ref('');
+const printingShiftId = ref(null);
+
+async function printZReport(shift) {
+    if (!shift.z_report_print_href) {
+        return;
+    }
+
+    const session = beginAssignedPrint(shift.receipt_printer);
+    printingShiftId.value = shift.id;
+    printNotice.value = `Printing Z-Report for ${shift.branch}…`;
+
+    try {
+        const response = await fetch(shift.z_report_print_href, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Could not load the Z-Report for this shift.');
+        }
+
+        const payload = await response.json();
+        const printer = payload.printer ?? shift.receipt_printer;
+        await finishAssignedPrint(printer, payload.receipt ?? '', session);
+        printNotice.value = printer?.device_name
+            ? `Sent Z-Report to ${printer.device_name}.`
+            : 'Sent Z-Report to the assigned printer.';
+    } catch (error) {
+        printNotice.value = error instanceof Error ? error.message : 'Could not print on the assigned printer.';
+    } finally {
+        printingShiftId.value = null;
+    }
+}
 </script>
 
 <template>
@@ -27,6 +64,7 @@ const openShift = ref(null);
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <p class="text-sm text-ink/55 dark:text-foam/50">{{ period_label }}</p>
+        <p v-if="printNotice" class="text-sm text-pine dark:text-sand">{{ printNotice }}</p>
 
         <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
             <table class="w-full min-w-[56rem] text-left text-sm">
@@ -103,15 +141,15 @@ const openShift = ref(null);
                                 >
                                     View Z-Report
                                 </button>
-                                <a
+                                <button
                                     v-if="shift.z_report_print_href"
-                                    class="inline-flex h-9 items-center rounded-xl bg-pine px-3 text-sm font-medium text-foam"
-                                    :href="shift.z_report_print_href"
-                                    target="_blank"
-                                    rel="noreferrer"
+                                    class="h-9 rounded-xl bg-pine px-3 text-sm font-medium text-foam disabled:opacity-70"
+                                    type="button"
+                                    :disabled="printingShiftId === shift.id"
+                                    @click="printZReport(shift)"
                                 >
-                                    Print Z-Report
-                                </a>
+                                    {{ printingShiftId === shift.id ? 'Printing…' : 'Print Z-Report' }}
+                                </button>
                                 <button
                                     v-else
                                     class="h-9 cursor-not-allowed rounded-xl bg-pine px-3 text-sm font-medium text-foam opacity-40"

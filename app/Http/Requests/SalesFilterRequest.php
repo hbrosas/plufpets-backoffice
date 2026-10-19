@@ -66,10 +66,15 @@ class SalesFilterRequest extends FormRequest
         );
     }
 
+    protected function defaultPreset(): string
+    {
+        return 'today';
+    }
+
     protected function prepareForValidation(): void
     {
         $this->merge([
-            'preset' => $this->string('preset')->trim()->toString() ?: 'today',
+            'preset' => $this->string('preset')->trim()->toString() ?: $this->defaultPreset(),
             'from' => $this->string('from')->trim()->toString() ?: null,
             'to' => $this->string('to')->trim()->toString() ?: null,
             'branch_id' => $this->integer('branch_id') ?: null,

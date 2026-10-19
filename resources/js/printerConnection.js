@@ -128,25 +128,53 @@ async function writeChunks(characteristic, bytes) {
     }
 }
 
-async function printBluetooth(printer, bytes, allowPrompt) {
-    if (!bluetoothSupported()) {
-        throw new Error('Bluetooth printers need Chrome or Edge on this register, with Bluetooth turned on.');
+const bluetoothDevices = new Map();
+
+function rememberBluetoothDevice(device, printer = null) {
+    bluetoothDevices.set(device.id, device);
+
+    if (printer?.bluetooth_id) {
+        bluetoothDevices.set(printer.bluetooth_id, device);
     }
 
-    const known = typeof navigator.bluetooth.getDevices === 'function' ? await navigator.bluetooth.getDevices() : [];
-    let device = known.find((candidate) => candidate.id === printer.bluetooth_id);
+    return device;
+}
 
-    if (!device && allowPrompt) {
-        device = await navigator.bluetooth.requestDevice({
+if (typeof navigator !== 'undefined' && navigator.bluetooth && typeof navigator.bluetooth.getDevices === 'function') {
+    navigator.bluetooth
+        .getDevices()
+        .then((devices) => {
+            devices.forEach((device) => rememberBluetoothDevice(device));
+        })
+        .catch(() => {});
+}
+
+function resolveBluetoothDevice(printer, allowPrompt) {
+    if (!bluetoothSupported()) {
+        return Promise.reject(
+            new Error('Bluetooth printers need Chrome or Edge on this register, with Bluetooth turned on.'),
+        );
+    }
+
+    const cached = bluetoothDevices.get(printer.bluetooth_id);
+
+    if (cached) {
+        return Promise.resolve(cached);
+    }
+
+    if (!allowPrompt) {
+        return Promise.reject(new Error('This register is not paired with the assigned printer. Click Print to connect.'));
+    }
+
+    return navigator.bluetooth
+        .requestDevice({
             acceptAllDevices: true,
             optionalServices: BLE_PRINTER_SERVICES,
-        });
-    }
+        })
+        .then((device) => rememberBluetoothDevice(device, printer));
+}
 
-    if (!device) {
-        throw new Error('This register is not paired with the assigned printer. Click Print to connect.');
-    }
-
+async function writeBluetooth(device, bytes) {
     const server = await device.gatt.connect();
 
     try {
@@ -154,6 +182,43 @@ async function printBluetooth(printer, bytes, allowPrompt) {
     } finally {
         server.disconnect();
     }
+}
+
+async function printBluetooth(printer, bytes, allowPrompt) {
+    await writeBluetooth(await resolveBluetoothDevice(printer, allowPrompt), bytes);
+}
+
+export function beginAssignedPrint(printer) {
+    if (!printer) {
+        return Promise.reject(new Error('Assign a receipt printer for this branch in POS Settings.'));
+    }
+
+    if (printer.connection === 'bluetooth') {
+        return resolveBluetoothDevice(printer, true);
+    }
+
+    return Promise.resolve(null);
+}
+
+export async function finishAssignedPrint(printer, text, session) {
+    if (!printer) {
+        throw new Error('Assign a receipt printer for this branch in POS Settings.');
+    }
+
+    const bytes = encodeEscPos(text);
+    const device = await session;
+
+    if (printer.connection === 'bluetooth') {
+        await writeBluetooth(device, bytes);
+        return;
+    }
+
+    if (printer.connection === 'serial') {
+        await printSerial(printer, bytes);
+        return;
+    }
+
+    window.print();
 }
 
 export async function printEscPos(printer, text, allowPrompt = true) {
@@ -173,7 +238,11 @@ export async function printEscPos(printer, text, allowPrompt = true) {
 }
 
 export async function printToAssignedPrinter(printer, text, allowPrompt = true) {
-    if (!printer || printer.connection === 'browser') {
+    if (!printer) {
+        throw new Error('Assign a receipt printer for this branch in POS Settings.');
+    }
+
+    if (printer.connection === 'browser') {
         window.print();
         return;
     }
