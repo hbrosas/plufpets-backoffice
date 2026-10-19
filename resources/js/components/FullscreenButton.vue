@@ -65,7 +65,7 @@ onUnmounted(() => {
 <template>
     <button
         v-if="supported"
-        class="fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] z-[55] flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-mist bg-foam/95 text-ink shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-ink/95 dark:text-foam"
+        class="fixed right-[max(0.75rem,env(safe-area-inset-right))] bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-[55] flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-mist bg-foam/95 text-ink shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-ink/95 dark:text-foam"
         type="button"
         :aria-pressed="active"
         :aria-label="active ? 'Exit full screen' : 'Full screen'"

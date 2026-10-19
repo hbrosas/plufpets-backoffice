@@ -16,8 +16,38 @@ function usbLabel(info) {
     return `USB ${vendor}:${product}`.toUpperCase();
 }
 
-function encodeEscPos(text) {
-    return new TextEncoder().encode(`\x1b\x40${text}\n\n\n\x1d\x56\x41\x03`);
+function encodeEscPos(text, kickDrawer = false) {
+    const body = String(text ?? '').replace(/[ \t\r\n]+$/u, '');
+    const kick = kickDrawer ? '\x1b\x70\x00\x19\xfa' : '';
+
+    return new TextEncoder().encode(`\x1b\x40${kick}${body}\n\x1d\x56\x41\x00`);
+}
+
+function escapeReceipt(text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function printPlainText(text, widthMm = 80) {
+    const width = Number(widthMm) > 0 ? Number(widthMm) : 80;
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html><head><title>Receipt</title><style>
+@page { margin: 0; size: ${width}mm auto; }
+html, body { margin: 0; padding: 0; height: auto; }
+pre { margin: 0; padding: 2mm 2mm 0; font: 12px/1.2 ui-monospace, monospace; white-space: pre-wrap; }
+</style></head><body><pre>${escapeReceipt(text)}</pre></body></html>`);
+    doc.close();
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+    window.setTimeout(() => iframe.remove(), 1500);
 }
 
 function drawerKickBytes() {
@@ -209,6 +239,11 @@ export async function finishAssignedPrint(printer, text, session) {
         throw new Error('Assign a receipt printer for this branch in POS Settings.');
     }
 
+    if (printer.connection === 'browser') {
+        printPlainText(text, printer.paper_width_mm);
+        return;
+    }
+
     const bytes = encodeEscPos(text);
     const device = await session;
 
@@ -219,10 +254,7 @@ export async function finishAssignedPrint(printer, text, session) {
 
     if (printer.connection === 'serial') {
         await printSerial(printer, bytes);
-        return;
     }
-
-    window.print();
 }
 
 async function sendToPrinter(printer, bytes, allowPrompt) {
@@ -240,14 +272,42 @@ async function sendToPrinter(printer, bytes, allowPrompt) {
 }
 
 export async function printEscPos(printer, text, allowPrompt = true) {
-    const bytes = encodeEscPos(text);
-
     if (printer.connection === 'browser') {
-        window.print();
+        printPlainText(text, printer.paper_width_mm);
         return;
     }
 
-    await sendToPrinter(printer, bytes, allowPrompt);
+    await sendToPrinter(printer, encodeEscPos(text), allowPrompt);
+}
+
+export async function printReceipt(printer, text, { openDrawer = false, session = null } = {}) {
+    if (!printer) {
+        throw new Error('Assign a receipt printer for this branch in POS Settings.');
+    }
+
+    if (printer.connection === 'browser') {
+        if (openDrawer) {
+            window.open('/backoffice/pos/drawer', 'pos-drawer', 'width=420,height=320');
+        }
+
+        printPlainText(text, printer.paper_width_mm);
+        return;
+    }
+
+    const bytes = encodeEscPos(text, openDrawer);
+    const device = await session;
+
+    if (printer.connection === 'bluetooth') {
+        await writeBluetooth(device ?? (await resolveBluetoothDevice(printer, false)), bytes);
+        return;
+    }
+
+    if (printer.connection === 'serial') {
+        await printSerial(printer, bytes);
+        return;
+    }
+
+    throw new Error('This printer cannot send ESC/POS commands.');
 }
 
 export async function openAssignedDrawer(printer, allowPrompt = true) {
@@ -266,11 +326,6 @@ export async function openAssignedDrawer(printer, allowPrompt = true) {
 export async function printToAssignedPrinter(printer, text, allowPrompt = true) {
     if (!printer) {
         throw new Error('Assign a receipt printer for this branch in POS Settings.');
-    }
-
-    if (printer.connection === 'browser') {
-        window.print();
-        return;
     }
 
     await printEscPos(printer, text, allowPrompt);

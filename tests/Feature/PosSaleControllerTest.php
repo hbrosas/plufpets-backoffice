@@ -146,6 +146,53 @@ class PosSaleControllerTest extends TestCase
         $response->assertJsonPath('props.flash.open_drawer', true);
     }
 
+    public function test_json_sale_returns_checkout_success_without_a_redirect(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['type' => CatalogItemType::Product, 'name' => 'Kibble']))
+            ->create(['name' => 'Large', 'price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+        $payment = PaymentMethod::factory()->cash()->create();
+
+        $response = $this->actingAsEmployee()
+            ->postJson("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '100',
+                    'amount_tendered' => '100',
+                ]],
+            ]);
+
+        $sale = PosSale::query()->first();
+
+        $response->assertOk();
+        $response->assertJsonPath('status', 'Sale '.$sale->number.' recorded.');
+        $response->assertJsonPath('checkout_success.total', '₱100.00');
+        $response->assertJsonPath('checkout_success.change', '₱0.00');
+        $response->assertJsonPath('open_drawer', true);
+        $receipt = $response->json('receipt');
+        $this->assertIsString($receipt);
+        $this->assertStringContainsString($sale->number, $receipt);
+        $this->assertStringContainsString('Kibble Large', $receipt);
+        $this->assertStringContainsString('1  P100.00', $receipt);
+        $this->assertStringContainsString('Total', $receipt);
+        $this->assertStringContainsString('Tendered Amount', $receipt);
+        $this->assertStringContainsString('Change', $receipt);
+        $this->assertStringContainsString('Cash', $receipt);
+        $this->assertStringNotContainsString("\n\n", $receipt);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 4,
+        ]);
+    }
+
     public function test_sale_is_rejected_when_stock_is_insufficient(): void
     {
         $branch = Branch::factory()->create();

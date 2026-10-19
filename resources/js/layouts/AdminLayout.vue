@@ -1,5 +1,5 @@
 <script setup>
-import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import FlashToast from '../components/FlashToast.vue';
 
@@ -146,8 +146,8 @@ function logout() {
 }
 
 function openPos(branch) {
-    window.open(branch.href, '_blank');
     posModalOpen.value = false;
+    router.visit(branch.href);
 }
 
 watch(
@@ -274,7 +274,7 @@ watch(
                 </span>
             </nav>
 
-            <div class="flex shrink-0 flex-col gap-3 border-t border-foam/10 px-4 pt-5 pb-16">
+            <div class="flex shrink-0 flex-col gap-3 border-t border-foam/10 px-4 py-5">
                 <div class="flex flex-col gap-0.5 px-3">
                     <p class="truncate text-sm font-medium">{{ employee?.name }}</p>
                     <p class="text-xs text-foam/55">#{{ employee?.employee_number }}</p>

@@ -1,10 +1,11 @@
 <script setup>
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import BarcodeInput from '../../components/BarcodeInput.vue';
 import { formatPeso } from '../../formatPeso';
+import { jsonRequest } from '../../http';
 import PosLayout from '../../layouts/PosLayout.vue';
-import { openAssignedDrawer } from '../../printerConnection';
+import { beginAssignedPrint, openAssignedDrawer, printReceipt } from '../../printerConnection';
 import { showToast } from '../../toast';
 
 defineOptions({
@@ -85,6 +86,7 @@ const saleForm = useForm({
 
 const checkoutPayments = ref([]);
 const splitCheckout = ref(false);
+const charging = ref(false);
 const checkoutSuccess = ref(null);
 const draftPaymentMethodId = ref(props.paymentMethods.find((method) => method.is_cash)?.id ?? props.paymentMethods[0]?.id ?? '');
 const draftAmount = ref('');
@@ -575,6 +577,10 @@ function resetDraftPayment() {
 }
 
 function closeCheckout() {
+    if (charging.value) {
+        return;
+    }
+
     chargeOpen.value = false;
     splitCheckout.value = false;
     checkoutSuccess.value = null;
@@ -698,8 +704,18 @@ function payWithDenomination(value) {
     charge();
 }
 
-function charge() {
-    if (cart.value.length === 0) {
+function changeLabel(change) {
+    if (change === null || change === undefined || change === '') {
+        return null;
+    }
+
+    const amount = Number(String(change).replace(/[^\d.-]/g, ''));
+
+    return Number.isFinite(amount) && amount > 0.005 ? change : null;
+}
+
+async function charge() {
+    if (charging.value || cart.value.length === 0) {
         return;
     }
 
@@ -718,38 +734,91 @@ function charge() {
         }
     }
 
-    saleForm.items = saleItems();
-    saleForm.payments = checkoutPayments.value.map((payment) => ({
-        payment_method_id: payment.payment_method_id,
-        amount: payment.amount,
-        amount_tendered: payment.is_cash ? payment.amount_tendered : null,
-        reference_number: payment.reference_number,
-    }));
-    saleForm.pos_open_order_id = activeOpenOrderId.value;
+    const soldLines = cart.value.map((line) => ({ ...line }));
+    const changeAmount = checkoutPayments.value.reduce(
+        (sum, payment) => sum + Number(payment.change_due || 0),
+        0,
+    );
+    const printer = receiptPrinter.value;
+    const printSession = printer ? beginAssignedPrint(printer) : Promise.resolve(null);
 
-    if (saleForm.delivery_method_id === '') {
-        saleForm.delivery_method_id = null;
+    checkoutSuccess.value = {
+        total: formatPeso(saleTotal.value),
+        change: changeAmount > 0.005 ? formatPeso(changeAmount) : null,
+    };
+    chargeOpen.value = true;
+    charging.value = true;
+    checkoutError.value = '';
+    saleForm.clearErrors();
+
+    try {
+        const result = await jsonRequest(`${registerPath.value}/sales`, {
+            method: 'POST',
+            body: {
+                items: saleItems(),
+                payments: checkoutPayments.value.map((payment) => ({
+                    payment_method_id: payment.payment_method_id,
+                    amount: payment.amount,
+                    amount_tendered: payment.is_cash ? payment.amount_tendered : null,
+                    reference_number: payment.reference_number,
+                })),
+                delivery_method_id: saleForm.delivery_method_id,
+                delivery_fee: saleForm.delivery_fee,
+                pos_open_order_id: activeOpenOrderId.value,
+            },
+        });
+
+        checkoutSuccess.value = {
+            total: result.checkout_success?.total ?? checkoutSuccess.value.total,
+            change: changeLabel(result.checkout_success?.change),
+        };
+        applySoldQuantities(soldLines);
+        cart.value = [];
+        checkoutPayments.value = [];
+        splitCheckout.value = false;
+        activeOpenOrderId.value = null;
+        activeOpenOrderName.value = '';
+        saleForm.reset();
+
+        if (printer && result.receipt) {
+            void printReceipt(printer, result.receipt, {
+                openDrawer: Boolean(result.open_drawer),
+                session: printSession,
+            }).catch((error) => {
+                showToast(error instanceof Error ? error.message : 'Could not print the receipt.');
+            });
+        } else if (result.open_drawer) {
+            void openDrawer(false);
+            printSession.catch(() => {});
+        } else {
+            printSession.catch(() => {});
+        }
+
+        router.reload({
+            ...registerPartial,
+            only: [...registerPartial.only, 'variants'],
+        });
+    } catch (error) {
+        checkoutSuccess.value = null;
+        printSession.catch(() => {});
+
+        const errors = error?.errors ?? {};
+        const entries = Object.entries(errors);
+
+        if (entries.length > 0) {
+            entries.forEach(([key, value]) => {
+                const message = Array.isArray(value) ? value[0] : value;
+
+                if (message) {
+                    saleForm.setError(key, String(message));
+                }
+            });
+        } else {
+            checkoutError.value = error instanceof Error ? error.message : 'Could not record this sale.';
+        }
+    } finally {
+        charging.value = false;
     }
-
-    saleForm.post(`${registerPath.value}/sales`, {
-        ...registerPartial,
-        onSuccess: (page) => {
-            const success = page.props.flash?.checkout_success;
-
-            if (success) {
-                checkoutSuccess.value = success;
-                chargeOpen.value = true;
-            }
-
-            applySoldQuantities(cart.value);
-            cart.value = [];
-            checkoutPayments.value = [];
-            splitCheckout.value = false;
-            activeOpenOrderId.value = null;
-            activeOpenOrderName.value = '';
-            saleForm.reset();
-        },
-    });
 }
 
 function openSave() {
@@ -1383,15 +1452,30 @@ watch(countedCash, (value) => {
     </div>
 
     <div v-if="chargeOpen" class="fixed inset-0 z-50 flex flex-col bg-foam dark:bg-ink">
+        <div
+            v-if="checkoutSuccess"
+            class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
+        >
+            <p class="text-sm font-medium text-pine dark:text-sand">Payment successful</p>
+            <p class="text-4xl font-medium sm:text-5xl">{{ checkoutSuccess.total }}</p>
+            <p v-if="checkoutSuccess.change" class="text-lg">Change {{ checkoutSuccess.change }}</p>
+            <button
+                class="mt-4 h-11 rounded-xl bg-pine px-6 text-sm font-medium text-foam"
+                type="button"
+                @click="closeCheckout"
+            >
+                Done
+            </button>
+        </div>
+        <template v-else>
         <div class="flex shrink-0 items-center justify-between gap-4 border-b border-mist px-4 py-4 sm:px-6 dark:border-white/10">
-            <h2 class="text-lg font-medium">Checkout · {{ checkoutSuccess ? checkoutSuccess.total : formatPeso(saleTotal) }}</h2>
-            <button class="text-sm font-medium" type="button" @click="closeCheckout">Close</button>
+            <h2 class="text-lg font-medium">Checkout · {{ formatPeso(saleTotal) }}</h2>
+            <button class="text-sm font-medium disabled:opacity-70" type="button" :disabled="charging" @click="closeCheckout">Close</button>
         </div>
         <div class="grid min-h-0 flex-1 grid-cols-2">
             <section class="min-h-0 overflow-y-auto border-r border-mist p-4 sm:p-6 dark:border-white/10">
                 <p class="text-sm font-medium">Order</p>
-                <p v-if="checkoutSuccess" class="mt-6 text-sm text-ink/60">This sale is complete.</p>
-                <ul v-else class="mt-3 flex flex-col gap-3">
+                <ul class="mt-3 flex flex-col gap-3">
                     <li v-for="line in cart" :key="line.key" class="flex items-start justify-between gap-3 text-sm">
                         <div class="min-w-0">
                             <p class="truncate font-medium">{{ line.product_name }}</p>
@@ -1400,7 +1484,6 @@ watch(countedCash, (value) => {
                         <p class="shrink-0">{{ formatPeso(Number(line.price) * line.quantity) }}</p>
                     </li>
                 </ul>
-                <template v-if="!checkoutSuccess">
                     <div class="mt-6 flex flex-col gap-2">
                         <p class="text-sm font-medium">Delivery</p>
                         <div class="flex flex-wrap gap-2">
@@ -1447,22 +1530,8 @@ watch(countedCash, (value) => {
                             <div class="flex justify-between font-medium"><span>Remaining</span><span>{{ formatPeso(remainingTotal) }}</span></div>
                         </template>
                     </div>
-                </template>
             </section>
             <section class="flex min-h-0 flex-col gap-4 overflow-y-auto p-4 sm:p-6">
-                <div v-if="checkoutSuccess" class="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-                    <p class="text-sm font-medium text-pine dark:text-sand">Payment successful</p>
-                    <p class="text-4xl font-medium sm:text-5xl">{{ checkoutSuccess.total }}</p>
-                    <p v-if="checkoutSuccess.change" class="text-lg">Change {{ checkoutSuccess.change }}</p>
-                    <button
-                        class="mt-4 h-11 rounded-xl bg-pine px-6 text-sm font-medium text-foam"
-                        type="button"
-                        @click="closeCheckout"
-                    >
-                        Done
-                    </button>
-                </div>
-                <template v-else>
                     <div class="flex items-center justify-between gap-3">
                         <p class="text-sm font-medium">Payments</p>
                         <button
@@ -1542,10 +1611,10 @@ watch(countedCash, (value) => {
                                 <button
                                     class="h-11 shrink-0 rounded-xl bg-pine px-5 text-sm font-medium text-foam disabled:opacity-70"
                                     type="button"
-                                    :disabled="saleForm.processing"
+                                    :disabled="charging"
                                     @click="splitCheckout ? addCheckoutPayment() : charge()"
                                 >
-                                    {{ saleForm.processing ? 'Saving…' : (splitCheckout ? 'Add' : 'Charge') }}
+                                    {{ charging ? 'Saving…' : (splitCheckout ? 'Add' : 'Charge') }}
                                 </button>
                             </div>
                             <div class="grid grid-cols-3 gap-2">
@@ -1554,7 +1623,7 @@ watch(countedCash, (value) => {
                                     :key="bill"
                                     class="h-14 rounded-xl border border-mist text-sm font-medium dark:border-white/15"
                                     type="button"
-                                    :disabled="saleForm.processing"
+                                    :disabled="charging"
                                     @click="payWithDenomination(bill)"
                                 >
                                     {{ formatPeso(bill) }}
@@ -1574,10 +1643,10 @@ watch(countedCash, (value) => {
                                 <button
                                     class="h-11 shrink-0 rounded-xl bg-pine px-5 text-sm font-medium text-foam disabled:opacity-70"
                                     type="button"
-                                    :disabled="saleForm.processing"
+                                    :disabled="charging"
                                     @click="splitCheckout ? addCheckoutPayment() : charge()"
                                 >
-                                    {{ saleForm.processing ? 'Saving…' : (splitCheckout ? 'Add' : 'Charge') }}
+                                    {{ charging ? 'Saving…' : (splitCheckout ? 'Add' : 'Charge') }}
                                 </button>
                             </div>
                         </div>
@@ -1596,13 +1665,21 @@ watch(countedCash, (value) => {
                         v-if="splitCheckout && remainingTotal <= 0.005 && checkoutPayments.length > 0"
                         class="mt-auto h-11 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-70"
                         type="button"
-                        :disabled="saleForm.processing"
+                        :disabled="charging"
                         @click="charge"
                     >
-                        {{ saleForm.processing ? 'Saving…' : 'Charge' }}
+                        {{ charging ? 'Saving…' : 'Charge' }}
                     </button>
-                </template>
             </section>
+        </div>
+        </template>
+        <div
+            v-if="charging"
+            class="absolute inset-0 flex items-center justify-center bg-foam/80 dark:bg-ink/80"
+            role="status"
+            aria-live="polite"
+        >
+            <span class="h-10 w-10 animate-spin rounded-full border-2 border-mist border-t-pine dark:border-white/15" aria-label="Saving sale"></span>
         </div>
     </div>
 

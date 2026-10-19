@@ -5,6 +5,14 @@
     <title>Z-Report {{ $shift->id }}</title>
     <style>
         body { font-family: ui-sans-serif, system-ui, sans-serif; color: #14231f; margin: 40px; }
+        .receipt-text { display: none; margin: 0; white-space: pre-wrap; font: 12px/1.2 ui-monospace, monospace; }
+        @page { margin: 0; size: {{ is_array($printer) ? (int) ($printer['paper_width_mm'] ?? 80) : 80 }}mm auto; }
+        @media print {
+            html, body { margin: 0; height: auto; }
+            body { padding: 2mm 2mm 0; }
+            .actions, .screen-report { display: none; }
+            .receipt-text { display: block; }
+        }
         h1 { font-size: 28px; margin: 0 0 4px; }
         .muted { color: #5b6b66; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
@@ -13,7 +21,6 @@
         td.num, th.num { text-align: right; }
         .actions { margin-bottom: 24px; display: flex; gap: 12px; align-items: center; }
         .actions a, .actions button { border: 1px solid #1f6f68; background: #1f6f68; color: white; padding: 8px 14px; border-radius: 10px; text-decoration: none; font-size: 14px; }
-        @media print { .actions { display: none; } }
     </style>
     @php
         $zReportPrintManifest = json_decode((string) @file_get_contents(public_path('build/manifest.json')), true) ?? [];
@@ -36,6 +43,8 @@
     <script type="application/json" id="z-report-printer">@json($printer)</script>
     <script type="application/json" id="z-report-receipt">@json($receiptText)</script>
 
+    <pre class="receipt-text">{{ $receiptText }}</pre>
+    <div class="screen-report">
     <p class="muted">Z-Report</p>
     <h1>{{ $shift->branch?->name }}</h1>
     <p class="muted">Opened by {{ $shift->opened_by_name }} · {{ $shift->opened_at?->timezone(config('app.timezone'))->format('M j, Y g:i A') }}</p>
@@ -78,5 +87,6 @@
             <tr><td>Amount to remit</td><td class="num">{{ $remitAmount }}</td></tr>
         </tbody>
     </table>
+    </div>
 </body>
 </html>
