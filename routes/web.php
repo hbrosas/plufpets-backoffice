@@ -23,6 +23,8 @@ use App\Http\Controllers\PosOpenOrderController;
 use App\Http\Controllers\PosSaleController;
 use App\Http\Controllers\PosSettingController;
 use App\Http\Controllers\PosShiftController;
+use App\Http\Controllers\PosSmsController;
+use App\Http\Controllers\PosSmsTemplateController;
 use App\Http\Controllers\PosVariantCategoryController;
 use App\Http\Controllers\PosZReportController;
 use App\Http\Controllers\PrinterController;
@@ -71,6 +73,12 @@ Route::prefix('backoffice')->group(function () {
                 ->scopeBindings()
                 ->name('pos.open-orders.destroy');
             Route::post('/pos/register/{branch}/cash-movements', [PosCashMovementController::class, 'store'])->name('pos.cash-movements.store');
+            Route::post('/pos/register/{branch}/sms', [PosSmsController::class, 'store'])->name('pos.sms.store');
+            Route::get('/pos/sms/history', [PosSmsController::class, 'history'])->name('pos.sms.history');
+            Route::get('/pos/sms/templates', [PosSmsTemplateController::class, 'index'])->name('pos.sms.templates.index');
+            Route::post('/pos/sms/templates', [PosSmsTemplateController::class, 'store'])->name('pos.sms.templates.store');
+            Route::put('/pos/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'update'])->name('pos.sms.templates.update');
+            Route::delete('/pos/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'destroy'])->name('pos.sms.templates.destroy');
         });
 
         Route::middleware('employee.permission:pos.categories')->group(function () {

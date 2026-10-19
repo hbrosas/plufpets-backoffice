@@ -41,4 +41,9 @@ return [
         'secret' => env('SUPABASE_SERVICE_ROLE_KEY'),
     ],
 
+    'semaphore' => [
+        'key' => env('SEMAPHORE_API_KEY'),
+        'sender' => env('SEMAPHORE_SENDER_NAME', 'PLUFPETS'),
+    ],
+
 ];

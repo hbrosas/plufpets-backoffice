@@ -911,16 +911,7 @@ watch(countedCash, (value) => {
         </template>
         <template v-else-if="shift && closeOpen">
             <button
-                v-if="canOpenDrawer"
                 class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15 disabled:opacity-70"
-                type="button"
-                :disabled="openingDrawer"
-                @click="openDrawer(true)"
-            >
-                {{ openingDrawer ? 'Opening…' : 'Open drawer' }}
-            </button>
-            <button
-                class="h-10 shrink-0 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
                 form="close-shift-form"
                 type="submit"
                 :disabled="closeForm.processing"
@@ -937,34 +928,39 @@ watch(countedCash, (value) => {
         </template>
         <template v-else-if="shift">
             <button
+                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
+                type="button"
+                @click="closeOpen = true"
+            >
+                Close Shift
+            </button>
+        </template>
+    </Teleport>
+
+    <Teleport defer to="#pos-header-menu-items">
+        <template v-if="shift">
+            <button
                 v-if="canOpenDrawer"
-                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15 disabled:opacity-70"
+                class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 disabled:opacity-70 dark:hover:bg-white/10"
                 type="button"
                 :disabled="openingDrawer"
                 @click="openDrawer(true)"
             >
-                {{ openingDrawer ? 'Opening…' : 'Open drawer' }}
+                {{ openingDrawer ? 'Opening…' : 'Open Drawer' }}
             </button>
             <button
-                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
+                class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
                 type="button"
                 @click="cashOpen = true"
             >
                 Cash In / Out
             </button>
             <button
-                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
+                class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
                 type="button"
                 @click="salesOpen = true"
             >
                 Today's Transactions
-            </button>
-            <button
-                class="h-10 shrink-0 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam"
-                type="button"
-                @click="closeOpen = true"
-            >
-                Close Shift
             </button>
         </template>
     </Teleport>
