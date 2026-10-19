@@ -17,7 +17,8 @@ async function printZReport() {
 
     try {
         await printReceipt(printer, typeof receipt === 'string' ? receipt : '', {
-            allowPrompt: false,
+            openDrawer: document.getElementById('z-report-print')?.dataset.autoprint === '1',
+            allowPrompt: true,
         });
 
         if (printer && printer.connection !== 'browser') {

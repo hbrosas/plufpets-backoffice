@@ -3,7 +3,7 @@ import { Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import FlashToast from '../components/FlashToast.vue';
 import PosSmsControls from '../components/PosSmsControls.vue';
-import { hidePosChrome } from '../posChrome';
+import { hidePosChrome, hideSendText } from '../posChrome';
 
 const page = usePage();
 const form = useForm({});
@@ -53,7 +53,7 @@ function toggleMenu() {
             <div v-show="!hidePosChrome" id="pos-header-search" class="min-w-[8rem] flex-1 basis-40" />
 
             <div class="flex shrink-0 flex-nowrap items-center gap-2" :class="hidePosChrome ? 'ml-auto' : ''">
-                <div v-show="!hidePosChrome" class="contents">
+                <div v-show="!hidePosChrome && !hideSendText" class="contents">
                     <PosSmsControls />
                 </div>
 

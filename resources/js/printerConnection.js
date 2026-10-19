@@ -259,6 +259,50 @@ async function printBluetooth(printer, bytes, allowPrompt) {
     await writeBluetooth(await resolveBluetoothDevice(printer, allowPrompt), bytes);
 }
 
+export async function ensurePrinterConnection(printer) {
+    if (!printer || printer.connection === 'browser') {
+        return;
+    }
+
+    if (printer.connection === 'bluetooth') {
+        if (printer.bluetooth_id && bluetoothDevices.has(printer.bluetooth_id)) {
+            return;
+        }
+
+        if (!bluetoothSupported()) {
+            throw new Error('Bluetooth printers need Chrome or Edge on this register, with Bluetooth turned on.');
+        }
+
+        const device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: BLE_PRINTER_SERVICES,
+        });
+
+        rememberBluetoothDevice(device, printer);
+
+        return;
+    }
+
+    if (printer.connection !== 'serial') {
+        return;
+    }
+
+    if (!serialSupported()) {
+        throw new Error('USB serial printers need Chrome or Edge on this register.');
+    }
+
+    const ports = await navigator.serial.getPorts();
+    const matched = ports.some((candidate) => {
+        const info = candidate.getInfo();
+
+        return info.usbVendorId === printer.usb_vendor_id && info.usbProductId === printer.usb_product_id;
+    });
+
+    if (!matched) {
+        await navigator.serial.requestPort();
+    }
+}
+
 export function beginAssignedPrint(printer) {
     if (!printer) {
         return Promise.reject(new Error('Assign a receipt printer for this branch in POS Settings.'));

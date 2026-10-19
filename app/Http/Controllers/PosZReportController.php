@@ -84,6 +84,7 @@ class PosZReportController extends Controller
             'shift' => $posShift,
             'appName' => config('app.name'),
             'autoprint' => $request->boolean('print'),
+            'hidePrintButton' => $request->boolean('print') || $request->boolean('closed'),
             'printer' => $printer?->toSettingsPayload(),
             'receiptText' => $receiptText,
             'salesByPayment' => $salesByPayment,

@@ -9,6 +9,7 @@ use App\Http\Requests\StorePosShiftRequest;
 use App\Models\Branch;
 use App\Models\PosShift;
 use App\Support\EmployeeSession;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 
 class PosShiftController extends Controller
@@ -31,7 +32,7 @@ class PosShiftController extends Controller
             ->with('open_drawer', true);
     }
 
-    public function close(ClosePosShiftRequest $request, Branch $branch, PosShift $posShift, ClosePosShift $closePosShift): RedirectResponse
+    public function close(ClosePosShiftRequest $request, Branch $branch, PosShift $posShift, ClosePosShift $closePosShift): JsonResponse|RedirectResponse
     {
         abort_unless($posShift->branch_id === $branch->id, 404);
 
@@ -44,6 +45,18 @@ class PosShiftController extends Controller
             $request->boolean('confirm_variance'),
             $employee ?? ['employee_number' => '', 'name' => ''],
         );
+
+        if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+            return response()->json([
+                'status' => 'Shift closed.',
+                'open_drawer' => true,
+                'z_report_url' => route('pos.shifts.z-report', [
+                    'branch' => $branch,
+                    'pos_shift' => $shift,
+                    'closed' => 1,
+                ], false),
+            ]);
+        }
 
         return redirect()
             ->route('pos.shifts.z-report', [

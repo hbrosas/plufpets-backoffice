@@ -5,8 +5,9 @@ import BarcodeInput from '../../components/BarcodeInput.vue';
 import { formatPeso } from '../../formatPeso';
 import { jsonRequest } from '../../http';
 import PosLayout from '../../layouts/PosLayout.vue';
-import { hidePosChrome } from '../../posChrome';
+import { hidePosChrome, hideSendText } from '../../posChrome';
 import {
+    ensurePrinterConnection,
     openAssignedDrawer,
     printBluetoothTest,
     printReceipt,
@@ -1019,14 +1020,67 @@ function submitCash() {
     });
 }
 
-function submitClose() {
+async function submitClose() {
+    if (closeForm.processing || !props.shift) {
+        return;
+    }
+
     if (closeForm.remit_amount === '') {
         closeForm.remit_amount = countedCash.value.toFixed(2);
     }
 
-    closeForm.post(`${registerPath.value}/shifts/${props.shift.id}/close`, {
-        showProgress: false,
-    });
+    const printer = receiptPrinter.value;
+
+    closeForm.clearErrors();
+    closeForm.processing = true;
+
+    try {
+        if (printer) {
+            await ensurePrinterConnection(printer);
+        }
+
+        const closed = await jsonRequest(`${registerPath.value}/shifts/${props.shift.id}/close`, {
+            method: 'POST',
+            body: {
+                denominations: closeForm.denominations,
+                remit_amount: closeForm.remit_amount,
+                confirm_variance: closeForm.confirm_variance,
+            },
+        });
+        const report = await jsonRequest(closed.z_report_url);
+
+        try {
+            await printReceipt(printer ?? report.printer, report.receipt, {
+                openDrawer: Boolean(closed.open_drawer),
+                allowPrompt: false,
+            });
+        } catch (error) {
+            if (!(error instanceof PrinterUnavailableError)) {
+                showToast(error instanceof Error ? error.message : 'Could not print the Z-Report.');
+            } else {
+                showToast('No printer is connected.', { tone: 'warning' });
+            }
+        }
+
+        window.location.assign(closed.z_report_url);
+    } catch (error) {
+        const errors = error?.errors ?? {};
+        const entries = Object.entries(errors);
+
+        if (entries.length > 0) {
+            entries.forEach(([key, value]) => {
+                const message = Array.isArray(value) ? value[0] : value;
+
+                if (message) {
+                    closeForm.setError(key, String(message));
+                }
+            });
+        } else {
+            showToast(error instanceof Error ? error.message : 'Could not close this shift.');
+        }
+    } finally {
+        closeForm.processing = false;
+    }
 }
 
 watch(
@@ -1070,8 +1124,17 @@ watch(closeOpen, (value) => {
     hidePosChrome.value = value;
 });
 
+watch(
+    () => props.shift,
+    (shift) => {
+        hideSendText.value = shift === null;
+    },
+    { immediate: true },
+);
+
 onUnmounted(() => {
     hidePosChrome.value = false;
+    hideSendText.value = false;
 });
 </script>
 
@@ -1200,30 +1263,30 @@ onUnmounted(() => {
                                 <div class="flex items-center gap-1">
                                     <input
                                         v-model.number="openForm.denominations[index].quantity"
-                                        class="h-10 w-20 rounded-xl border border-mist bg-white px-3 text-center dark:border-white/10 dark:bg-white/5"
+                                        class="h-10 w-16 rounded-xl border border-mist bg-white px-3 text-center dark:border-white/10 dark:bg-white/5"
                                         inputmode="numeric"
                                         pattern="[0-9]*"
                                         type="text"
                                         @focus="selectInputValue"
                                         @click="selectInputValue"
                                     />
-                                    <div class="flex flex-col gap-0.5">
+                                    <div class="flex items-center gap-1">
                                         <button
-                                            class="flex h-5 w-7 items-center justify-center rounded-md border border-mist text-xs font-medium dark:border-white/15"
-                                            type="button"
-                                            aria-label="Increase quantity"
-                                            @click="changeOpenQty(index, 1)"
-                                        >
-                                            ▲
-                                        </button>
-                                        <button
-                                            class="flex h-5 w-7 items-center justify-center rounded-md border border-mist text-xs font-medium disabled:opacity-40 dark:border-white/15"
+                                            class="flex h-10 w-9 shrink-0 items-center justify-center rounded-xl border border-mist text-xs font-medium dark:border-white/15"
                                             type="button"
                                             aria-label="Decrease quantity"
                                             :disabled="Number(row.quantity || 0) <= 0"
                                             @click="changeOpenQty(index, -1)"
                                         >
                                             ▼
+                                        </button>
+                                        <button
+                                            class="flex h-10 w-9 shrink-0 items-center justify-center rounded-xl border border-mist text-xs font-medium dark:border-white/15"
+                                            type="button"
+                                            aria-label="Increase quantity"
+                                            @click="changeOpenQty(index, 1)"
+                                        >
+                                            ▲
                                         </button>
                                     </div>
                                 </div>
@@ -1462,30 +1525,30 @@ onUnmounted(() => {
                                 <div class="flex items-center gap-1">
                                     <input
                                         v-model.number="closeForm.denominations[index].quantity"
-                                        class="h-10 w-20 rounded-xl border border-mist bg-white px-3 text-center dark:border-white/10 dark:bg-white/5"
+                                        class="h-10 w-16 rounded-xl border border-mist bg-white px-3 text-center dark:border-white/10 dark:bg-white/5"
                                         inputmode="numeric"
                                         pattern="[0-9]*"
                                         type="text"
                                         @focus="selectInputValue"
                                         @click="selectInputValue"
                                     />
-                                    <div class="flex flex-col gap-0.5">
+                                    <div class="flex items-center gap-1">
                                         <button
-                                            class="flex h-5 w-7 items-center justify-center rounded-md border border-mist text-xs font-medium dark:border-white/15"
-                                            type="button"
-                                            aria-label="Increase quantity"
-                                            @click="changeCloseQty(index, 1)"
-                                        >
-                                            ▲
-                                        </button>
-                                        <button
-                                            class="flex h-5 w-7 items-center justify-center rounded-md border border-mist text-xs font-medium disabled:opacity-40 dark:border-white/15"
+                                            class="flex h-10 w-9 shrink-0 items-center justify-center rounded-xl border border-mist text-xs font-medium disabled:opacity-40 dark:border-white/15"
                                             type="button"
                                             aria-label="Decrease quantity"
                                             :disabled="Number(row.quantity || 0) <= 0"
                                             @click="changeCloseQty(index, -1)"
                                         >
                                             ▼
+                                        </button>
+                                        <button
+                                            class="flex h-10 w-9 shrink-0 items-center justify-center rounded-xl border border-mist text-xs font-medium dark:border-white/15"
+                                            type="button"
+                                            aria-label="Increase quantity"
+                                            @click="changeCloseQty(index, 1)"
+                                        >
+                                            ▲
                                         </button>
                                     </div>
                                 </div>

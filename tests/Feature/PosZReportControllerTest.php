@@ -46,6 +46,17 @@ class PosZReportControllerTest extends TestCase
             ->assertSee('Amount to remit');
     }
 
+    public function test_closed_shift_report_hides_the_print_button(): void
+    {
+        $shift = PosShift::factory()->closed()->create();
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/pos/register/{$shift->branch_id}/shifts/{$shift->id}/z-report?closed=1")
+            ->assertOk()
+            ->assertSee('data-autoprint="0"', false)
+            ->assertDontSee('id="print-z-report"', false);
+    }
+
     public function test_print_view_includes_the_assigned_branch_receipt_printer(): void
     {
         $shift = PosShift::factory()->closed()->create();

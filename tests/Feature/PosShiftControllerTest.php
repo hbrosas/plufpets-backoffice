@@ -134,6 +134,28 @@ class PosShiftControllerTest extends TestCase
         ]);
     }
 
+    public function test_json_close_returns_the_z_report_without_printing_again(): void
+    {
+        $branch = Branch::factory()->create();
+        $shift = PosShift::factory()->create([
+            'branch_id' => $branch->id,
+            'starting_cash' => 1000,
+        ]);
+
+        $response = $this->actingAsEmployee()->postJson("/backoffice/pos/register/{$branch->id}/shifts/{$shift->id}/close", [
+            'denominations' => $this->denominations('1000.00', 1),
+            'remit_amount' => '1000.00',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('status', 'Shift closed.');
+        $response->assertJsonPath('open_drawer', true);
+        $this->assertStringContainsString('/z-report', (string) $response->json('z_report_url'));
+        $this->assertStringContainsString('closed=1', (string) $response->json('z_report_url'));
+        $this->assertStringNotContainsString('print=1', (string) $response->json('z_report_url'));
+        $this->assertNotNull($shift->fresh()->closed_at);
+    }
+
     /**
      * @return list<array{denomination: string, quantity: int}>
      */

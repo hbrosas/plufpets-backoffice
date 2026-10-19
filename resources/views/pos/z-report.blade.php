@@ -37,7 +37,7 @@
         class="actions"
         data-autoprint="{{ ($autoprint ?? false) ? '1' : '0' }}"
     >
-        @unless ($autoprint ?? false)
+        @unless ($hidePrintButton ?? false)
             <button id="print-z-report" type="button">Print</button>
         @endunless
         <a href="{{ route('pos.index', $shift->branch) }}">Back to POS</a>
