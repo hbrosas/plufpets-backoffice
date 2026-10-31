@@ -32,7 +32,6 @@ defineProps({
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <div class="flex flex-col gap-1">
-            <Link class="text-sm font-medium text-pine dark:text-sand" href="/backoffice/shop/catalog">Back to catalog</Link>
             <h1 class="text-2xl font-medium">{{ catalogItem.name }}</h1>
             <p class="text-sm text-ink/60 dark:text-foam/60">
                 {{ catalogItem.type_label }}

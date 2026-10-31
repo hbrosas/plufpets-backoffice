@@ -35,6 +35,7 @@ const props = defineProps({
     todayTransactionsTotal: { type: String, required: true },
     openOrders: { type: Array, default: () => [] },
     printers: { type: Array, default: () => [] },
+    assignableEmployees: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -61,6 +62,8 @@ const customizing = ref(null);
 const customQty = ref(1);
 const customNotes = ref('');
 const customSelections = ref({});
+const assignedIds = ref([]);
+const assistedIds = ref([]);
 const editingLineKey = ref(null);
 const chargeOpen = ref(false);
 const printersOpen = ref(false);
@@ -101,6 +104,7 @@ const saleForm = useForm({
     pos_open_order_id: null,
 });
 
+const selectedTaxIds = ref([]);
 const checkoutPayments = ref([]);
 const splitCheckout = ref(false);
 const charging = ref(false);
@@ -176,17 +180,31 @@ const deliveryFee = computed(() => {
     return Number(saleForm.delivery_fee);
 });
 
-const taxTotal = computed(() => {
+function taxAmount(tax) {
     const base = cartSubtotal.value + deliveryFee.value;
 
-    return props.taxFees.reduce((sum, tax) => {
-        if (tax.type === 'percent') {
-            return sum + (base * Number(tax.rate)) / 100;
-        }
+    if (tax.type === 'percent') {
+        return (base * Number(tax.rate)) / 100;
+    }
 
-        return sum + Number(tax.rate);
-    }, 0);
-});
+    return Number(tax.rate);
+}
+
+function taxRateLabel(tax) {
+    if (tax.type === 'percent') {
+        return `${Number(tax.rate).toFixed(2)}%`;
+    }
+
+    return formatPeso(tax.rate);
+}
+
+const taxTotal = computed(() => props.taxFees.reduce((sum, tax) => {
+    if (!selectedTaxIds.value.includes(tax.id)) {
+        return sum;
+    }
+
+    return sum + taxAmount(tax);
+}, 0));
 
 const saleTotal = computed(() => cartSubtotal.value + deliveryFee.value + taxTotal.value);
 
@@ -356,6 +374,19 @@ async function testBranchPrinter(printer) {
     }
 }
 
+function recordDrawerOpen() {
+    return new Promise((resolve, reject) => {
+        router.post(`${registerPath.value}/drawer-opens`, {}, {
+            ...registerPartial,
+            onSuccess: () => resolve(),
+            onError: (errors) => {
+                const message = Object.values(errors)[0];
+                reject(new Error(Array.isArray(message) ? message[0] : (message || 'Could not record the drawer open.')));
+            },
+        });
+    });
+}
+
 async function openDrawer(prompt = false) {
     if (prompt && !canOpenDrawer.value) {
         return;
@@ -364,6 +395,10 @@ async function openDrawer(prompt = false) {
     openingDrawer.value = true;
 
     try {
+        if (prompt) {
+            await recordDrawerOpen();
+        }
+
         await openAssignedDrawer(receiptPrinter.value, prompt);
 
         if (prompt) {
@@ -398,7 +433,7 @@ function addVariant(variant) {
         return;
     }
 
-    if (hasModifiers(variant)) {
+    if (!variant.is_product || hasModifiers(variant)) {
         openCustomize(variant);
         return;
     }
@@ -411,6 +446,8 @@ function openCustomize(variant) {
     customQty.value = 1;
     customNotes.value = '';
     customSelections.value = Object.fromEntries((variant.modifiers ?? []).map((modifier) => [modifier.id, '']));
+    assignedIds.value = [];
+    assistedIds.value = [];
     customizeOpen.value = true;
 }
 
@@ -427,6 +464,70 @@ function selectOption(modifierId, optionName) {
         ...customSelections.value,
         [modifierId]: current === optionName ? '' : optionName,
     };
+}
+
+function toggleAssigned(id) {
+    const employeeId = Number(id);
+
+    if (assignedIds.value.includes(employeeId)) {
+        assignedIds.value = assignedIds.value.filter((row) => row !== employeeId);
+        return;
+    }
+
+    assignedIds.value = [...assignedIds.value, employeeId];
+    assistedIds.value = assistedIds.value.filter((row) => row !== employeeId);
+}
+
+function toggleAssisted(id) {
+    const employeeId = Number(id);
+
+    if (assistedIds.value.includes(employeeId)) {
+        assistedIds.value = assistedIds.value.filter((row) => row !== employeeId);
+        return;
+    }
+
+    assistedIds.value = [...assistedIds.value, employeeId];
+    assignedIds.value = assignedIds.value.filter((row) => row !== employeeId);
+}
+
+function selectedStaffIds() {
+    if (customizing.value?.is_product) {
+        return { assigned: [], assisted: [] };
+    }
+
+    return {
+        assigned: [...assignedIds.value],
+        assisted: [...assistedIds.value],
+    };
+}
+
+function staffSignature(assigned, assisted) {
+    const normalize = (ids) => [...ids].map(Number).sort((left, right) => left - right);
+
+    return JSON.stringify({
+        assigned: normalize(assigned),
+        assisted: normalize(assisted),
+    });
+}
+
+function employeeName(id) {
+    return props.assignableEmployees.find((row) => row.id === Number(id))?.name ?? 'Employee';
+}
+
+function lineStaffLabel(line) {
+    const assigned = (line.assigned_employee_ids ?? []).map(employeeName);
+    const assisted = (line.assisted_employee_ids ?? []).map(employeeName);
+    const parts = [];
+
+    if (assigned.length > 0) {
+        parts.push(`Assigned: ${assigned.join(', ')}`);
+    }
+
+    if (assisted.length > 0) {
+        parts.push(`Assisted: ${assisted.join(', ')}`);
+    }
+
+    return parts.join(' · ');
 }
 
 function selectedModifierRows() {
@@ -482,6 +583,7 @@ function confirmCustomize() {
     }
 
     const modifiers = selectedModifierRows();
+    const staff = selectedStaffIds();
 
     if (editingLineKey.value !== null) {
         const line = cart.value.find((item) => item.key === editingLineKey.value);
@@ -492,20 +594,27 @@ function confirmCustomize() {
             line.modifiers = modifiers;
             line.price = Number(variant.price) + extra;
             line.quantity = qty;
+            line.assigned_employee_ids = staff.assigned;
+            line.assisted_employee_ids = staff.assisted;
         }
 
         closeCustomize();
         return;
     }
 
-    pushCartLine(variant, qty, customNotes.value.trim(), modifiers);
+    pushCartLine(variant, qty, customNotes.value.trim(), modifiers, staff.assigned, staff.assisted);
     closeCustomize();
 }
 
-function pushCartLine(variant, quantity, notes, modifiers) {
+function pushCartLine(variant, quantity, notes, modifiers, assigned = [], assisted = []) {
     const signature = JSON.stringify(modifiers);
+    const people = staffSignature(assigned, assisted);
     const existing = cart.value.find(
-        (line) => line.id === variant.id && line.notes === notes && JSON.stringify(line.modifiers) === signature,
+        (line) =>
+            line.id === variant.id &&
+            line.notes === notes &&
+            JSON.stringify(line.modifiers) === signature &&
+            staffSignature(line.assigned_employee_ids ?? [], line.assisted_employee_ids ?? []) === people,
     );
 
     if (existing) {
@@ -531,6 +640,8 @@ function pushCartLine(variant, quantity, notes, modifiers) {
         quantity,
         notes,
         modifiers,
+        assigned_employee_ids: assigned,
+        assisted_employee_ids: assisted,
         is_product: variant.is_product,
         available: liveQuantity(variant),
     });
@@ -611,6 +722,8 @@ function openEditLine(line) {
             return [modifier.id, selected?.option ?? ''];
         }),
     );
+    assignedIds.value = (line.assigned_employee_ids ?? []).map(Number);
+    assistedIds.value = (line.assisted_employee_ids ?? []).map(Number);
     customizeOpen.value = true;
 }
 
@@ -623,6 +736,8 @@ function saleItems() {
             modifier_id: row.modifier_id,
             option: row.option,
         })),
+        assigned_employee_ids: line.assigned_employee_ids ?? [],
+        assisted_employee_ids: line.assisted_employee_ids ?? [],
     }));
 }
 
@@ -641,6 +756,8 @@ function openOrderItems() {
             option: row.option,
             price: Number(row.price).toFixed(2),
         })),
+        assigned_employee_ids: line.assigned_employee_ids ?? [],
+        assisted_employee_ids: line.assisted_employee_ids ?? [],
     }));
 }
 
@@ -825,6 +942,7 @@ async function charge() {
         })),
         delivery_method_id: saleForm.delivery_method_id,
         delivery_fee: saleForm.delivery_fee,
+        tax_fee_ids: selectedTaxIds.value,
         pos_open_order_id: activeOpenOrderId.value,
     };
 
@@ -860,6 +978,7 @@ async function charge() {
 
         applySoldQuantities(soldLines);
         cart.value = [];
+        selectedTaxIds.value = [];
         checkoutPayments.value = [];
         splitCheckout.value = false;
         activeOpenOrderId.value = null;
@@ -988,6 +1107,8 @@ function resumeOpenOrder(order) {
             quantity: item.quantity,
             notes: item.notes ?? '',
             modifiers: item.modifiers ?? [],
+            assigned_employee_ids: item.assigned_employee_ids ?? [],
+            assisted_employee_ids: item.assisted_employee_ids ?? [],
             is_product: item.is_product,
             available: variant?.quantity ?? null,
         };
@@ -1392,6 +1513,7 @@ onUnmounted(() => {
                                     {{ modifier.name }}: {{ modifier.option }}
                                 </p>
                                 <p v-if="line.notes" class="truncate text-xs text-ink/50">{{ line.notes }}</p>
+                                <p v-if="lineStaffLabel(line)" class="truncate text-xs text-ink/50">{{ lineStaffLabel(line) }}</p>
                                 <p class="text-xs">{{ formatPeso(line.price) }}</p>
                             </button>
                             <div class="flex shrink-0 items-center gap-1.5" @click.stop>
@@ -1422,6 +1544,22 @@ onUnmounted(() => {
                     <div class="flex flex-col gap-1 text-sm">
                         <div class="flex justify-between"><span>Subtotal</span><span>{{ formatPeso(cartSubtotal) }}</span></div>
                         <div class="flex justify-between"><span>Delivery</span><span>{{ formatPeso(deliveryFee) }}</span></div>
+                        <label
+                            v-for="tax in taxFees"
+                            :key="`summary-${tax.id}`"
+                            class="flex items-center justify-between gap-3"
+                        >
+                            <span class="flex min-w-0 items-center gap-2">
+                                <input
+                                    v-model="selectedTaxIds"
+                                    class="h-4 w-4 accent-pine"
+                                    type="checkbox"
+                                    :value="tax.id"
+                                />
+                                <span class="truncate">{{ tax.name }} · {{ taxRateLabel(tax) }}</span>
+                            </span>
+                            <span v-if="selectedTaxIds.includes(tax.id)">{{ formatPeso(taxAmount(tax)) }}</span>
+                        </label>
                         <div class="flex justify-between"><span>Tax</span><span>{{ formatPeso(taxTotal) }}</span></div>
                         <div class="flex justify-between font-medium"><span>Total</span><span>{{ formatPeso(saleTotal) }}</span></div>
                     </div>
@@ -1594,6 +1732,47 @@ onUnmounted(() => {
                 </div>
             </section>
 
+            <section v-if="!customizing.is_product" class="grid gap-4 sm:grid-cols-2">
+                <div class="flex flex-col gap-2">
+                    <p class="text-sm font-medium">Assigned to</p>
+                    <p v-if="assignableEmployees.length === 0" class="text-sm text-ink/60 dark:text-foam/60">
+                        No employee records yet.
+                    </p>
+                    <label
+                        v-for="person in assignableEmployees"
+                        :key="`assigned-${person.id}`"
+                        class="flex items-center gap-2 text-sm"
+                    >
+                        <input
+                            class="h-4 w-4 accent-pine"
+                            type="checkbox"
+                            :checked="assignedIds.includes(person.id)"
+                            @change="toggleAssigned(person.id)"
+                        />
+                        {{ person.name }}
+                    </label>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <p class="text-sm font-medium">Assisted by</p>
+                    <p v-if="assignableEmployees.length === 0" class="text-sm text-ink/60 dark:text-foam/60">
+                        No employee records yet.
+                    </p>
+                    <label
+                        v-for="person in assignableEmployees"
+                        :key="`assisted-${person.id}`"
+                        class="flex items-center gap-2 text-sm"
+                    >
+                        <input
+                            class="h-4 w-4 accent-pine"
+                            type="checkbox"
+                            :checked="assistedIds.includes(person.id)"
+                            @change="toggleAssisted(person.id)"
+                        />
+                        {{ person.name }}
+                    </label>
+                </div>
+            </section>
+
             <div class="flex flex-col gap-2">
                 <label class="text-sm font-medium" for="pos-item-notes">Notes</label>
                 <textarea
@@ -1717,9 +1896,25 @@ onUnmounted(() => {
                             placeholder="Delivery fee"
                         />
                     </div>
-                    <div class="mt-6 flex flex-col gap-1 text-sm">
+                    <div class="mt-6 flex flex-col gap-2 text-sm">
                         <div class="flex justify-between"><span>Subtotal</span><span>{{ formatPeso(cartSubtotal) }}</span></div>
                         <div class="flex justify-between"><span>Delivery</span><span>{{ formatPeso(deliveryFee) }}</span></div>
+                        <label
+                            v-for="tax in taxFees"
+                            :key="`charge-${tax.id}`"
+                            class="flex items-center justify-between gap-3"
+                        >
+                            <span class="flex min-w-0 items-center gap-2">
+                                <input
+                                    v-model="selectedTaxIds"
+                                    class="h-4 w-4 accent-pine"
+                                    type="checkbox"
+                                    :value="tax.id"
+                                />
+                                <span class="truncate">{{ tax.name }} · {{ taxRateLabel(tax) }}</span>
+                            </span>
+                            <span v-if="selectedTaxIds.includes(tax.id)">{{ formatPeso(taxAmount(tax)) }}</span>
+                        </label>
                         <div class="flex justify-between"><span>Tax</span><span>{{ formatPeso(taxTotal) }}</span></div>
                         <div class="flex justify-between font-medium"><span>Total</span><span>{{ formatPeso(saleTotal) }}</span></div>
                         <template v-if="splitCheckout">

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Branch;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
+use App\Models\Employee;
 use App\Models\PosOpenOrder;
 use App\Models\PosShift;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -104,6 +105,30 @@ class PosOpenOrderControllerTest extends TestCase
             'subtotal' => '200.00',
         ]);
         $this->assertDatabaseCount('pos_open_orders', 1);
+    }
+
+    public function test_open_order_keeps_the_employees_assigned_to_a_service(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->service()->create(['name' => 'Full groom']))
+            ->create(['name' => 'Standard', 'price' => 1000]);
+        $employee = Employee::factory()->create();
+        $employee->profile()->create(['pay_basis' => 'month']);
+        $payload = $this->itemPayload($variant);
+        $payload['items'][0]['is_product'] = false;
+        $payload['items'][0]['assigned_employee_ids'] = [$employee->id];
+        $payload['items'][0]['assisted_employee_ids'] = [];
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/open-orders", $payload);
+
+        $response->assertRedirect(route('pos.index', $branch));
+        $order = PosOpenOrder::query()->where('branch_id', $branch->id)->firstOrFail();
+        $this->assertSame([$employee->id], $order->items[0]['assigned_employee_ids']);
+        $this->assertSame([], $order->items[0]['assisted_employee_ids']);
     }
 
     public function test_register_lists_open_orders_for_the_branch(): void

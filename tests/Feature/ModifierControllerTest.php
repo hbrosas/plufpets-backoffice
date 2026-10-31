@@ -78,6 +78,23 @@ class ModifierControllerTest extends TestCase
         $this->assertNotNull($modifier);
         $this->assertTrue($modifier->is_active);
         $this->assertSame(['Standard', 'Premium'], $modifier->options);
+        $this->assertFalse($modifier->included_in_commission);
+    }
+
+    public function test_modifier_can_be_included_in_commission(): void
+    {
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/modifiers')->post('/backoffice/shop/modifiers', [
+            'name' => 'Nail grind',
+            'options' => ['Yes'],
+            'is_active' => true,
+            'included_in_commission' => true,
+        ]);
+
+        $response->assertRedirect('/backoffice/shop/modifiers');
+        $this->assertDatabaseHas('modifiers', [
+            'name' => 'Nail grind',
+            'included_in_commission' => true,
+        ]);
     }
 
     public function test_duplicate_modifier_name_is_rejected(): void

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'pos_sale_id',
@@ -52,5 +53,13 @@ class PosSaleItem extends Model
     public function variant(): BelongsTo
     {
         return $this->belongsTo(CatalogItemVariant::class, 'catalog_item_variant_id');
+    }
+
+    /**
+     * @return HasMany<PosSaleItemCommission, $this>
+     */
+    public function commissions(): HasMany
+    {
+        return $this->hasMany(PosSaleItemCommission::class);
     }
 }

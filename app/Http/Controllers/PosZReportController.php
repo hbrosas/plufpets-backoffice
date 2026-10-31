@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\PrinterRole;
 use App\Models\Branch;
+use App\Models\Business;
 use App\Models\PosSale;
 use App\Models\PosShift;
 use App\Models\Printer;
@@ -56,7 +57,7 @@ class PosZReportController extends Controller
         $variance = Peso::format($posShift->variance);
         $remitAmount = Peso::format($posShift->remit_amount);
         $receiptText = ZReportReceipt::text([
-            'app' => (string) config('app.name'),
+            'app' => Business::documentName(),
             'branch' => (string) $posShift->branch?->name,
             'opened' => 'Opened by '.$posShift->opened_by_name.' · '.$posShift->opened_at?->timezone($timezone)->format('M j, Y g:i A'),
             'closed' => 'Closed by '.$posShift->closed_by_name.' · '.$posShift->closed_at?->timezone($timezone)->format('M j, Y g:i A'),
@@ -82,7 +83,7 @@ class PosZReportController extends Controller
 
         return view('pos.z-report', [
             'shift' => $posShift,
-            'appName' => config('app.name'),
+            'appName' => Business::documentName(),
             'autoprint' => $request->boolean('print'),
             'hidePrintButton' => $request->boolean('print') || $request->boolean('closed'),
             'printer' => $printer?->toSettingsPayload(),

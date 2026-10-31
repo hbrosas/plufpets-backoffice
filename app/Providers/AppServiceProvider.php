@@ -2,10 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\Business;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 
@@ -56,6 +58,10 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('catalog-import', function (Request $request) {
             return Limit::perMinute(10)->by($request->ip());
+        });
+
+        View::composer('app', function ($view): void {
+            $view->with('faviconUrl', Business::current()?->faviconUrl());
         });
     }
 }

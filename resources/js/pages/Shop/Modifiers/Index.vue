@@ -25,6 +25,7 @@ const form = useForm({
     name: '',
     options: [],
     is_active: true,
+    included_in_commission: false,
 });
 
 function openCreate() {
@@ -32,6 +33,7 @@ function openCreate() {
     form.reset();
     form.options = [];
     form.is_active = true;
+    form.included_in_commission = false;
     form.clearErrors();
     modalOpen.value = true;
 }
@@ -41,6 +43,7 @@ function openEdit(modifier) {
     form.name = modifier.name;
     form.options = [...(modifier.options ?? [])];
     form.is_active = modifier.is_active;
+    form.included_in_commission = modifier.included_in_commission;
     form.clearErrors();
     modalOpen.value = true;
 }
@@ -94,13 +97,14 @@ function deleteModifier(modifier) {
                         <th class="px-4 py-3 font-medium">Modifier name</th>
                         <th class="px-4 py-3 font-medium">Options</th>
                         <th class="px-4 py-3 font-medium">Status</th>
+                        <th class="px-4 py-3 font-medium">Commission</th>
                         <th class="px-4 py-3 font-medium">Products</th>
                         <th class="px-4 py-3 font-medium"><span class="sr-only">Actions</span></th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr v-if="props.modifiers.length === 0">
-                        <td class="px-4 py-8 text-ink/60 dark:text-foam/60" colspan="5">No modifiers yet.</td>
+                        <td class="px-4 py-8 text-ink/60 dark:text-foam/60" colspan="6">No modifiers yet.</td>
                     </tr>
                     <tr
                         v-for="modifier in props.modifiers"
@@ -121,6 +125,7 @@ function deleteModifier(modifier) {
                             </div>
                         </td>
                         <td class="px-4 py-3">{{ modifier.is_active ? 'Active' : 'Inactive' }}</td>
+                        <td class="px-4 py-3">{{ modifier.included_in_commission ? 'Included' : 'Excluded' }}</td>
                         <td class="px-4 py-3">{{ modifier.item_count }}</td>
                         <td class="px-4 py-3">
                             <div class="flex justify-end gap-3">
@@ -169,6 +174,13 @@ function deleteModifier(modifier) {
                     <input v-model="form.is_active" class="h-4 w-4 accent-pine" type="checkbox" />
                     Active
                 </label>
+                <label class="flex items-center gap-2 text-sm font-medium">
+                    <input v-model="form.included_in_commission" class="h-4 w-4 accent-pine" type="checkbox" />
+                    Included in commission
+                </label>
+                <p class="text-sm text-ink/60 dark:text-foam/60">
+                    When this is on, the selected option's price is added to the service amount used for commission.
+                </p>
                 <button
                     class="h-11 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-70"
                     type="submit"

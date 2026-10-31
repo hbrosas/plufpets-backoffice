@@ -97,113 +97,123 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 <template>
     <Head title="Sign in" />
 
-    <main class="mx-auto flex h-dvh max-h-dvh w-full max-w-md flex-col gap-[clamp(0.5rem,1.6vh,1rem)] overflow-hidden px-4 py-[clamp(0.75rem,2vh,1.25rem)]">
-        <div class="flex shrink-0 flex-col items-center gap-1 text-center">
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-pine text-sm font-semibold text-foam">PP</span>
-            <div class="flex flex-col">
-                <p class="text-xs font-medium tracking-[0.18em] text-pine uppercase dark:text-sand">{{ appName }}</p>
-                <h1 class="text-xl font-medium [@media(min-height:760px)]:text-2xl">Sign in</h1>
+    <main class="flex min-h-dvh flex-col items-center px-4">
+        <div class="m-auto flex w-full max-w-4xl flex-col gap-8 py-10">
+            <div class="flex flex-col items-center gap-2 text-center">
+                <img
+                    v-if="page.props.businessLogoUrl"
+                    :src="page.props.businessLogoUrl"
+                    alt=""
+                    class="h-11 w-11 rounded-xl object-contain"
+                />
+                <span v-else class="flex h-11 w-11 items-center justify-center rounded-xl bg-pine text-base font-semibold text-foam">PP</span>
+                <div class="flex flex-col">
+                    <p class="text-xs font-medium tracking-[0.18em] text-pine uppercase dark:text-sand">{{ appName }}</p>
+                    <h1 class="text-2xl font-medium">Sign in</h1>
+                </div>
             </div>
-        </div>
 
-        <p
-            v-if="formError"
-            class="shrink-0 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-center text-sm text-danger"
-            role="alert"
-        >
-            {{ formError }}
-        </p>
-
-        <div class="grid shrink-0 grid-cols-1 gap-2 [@media(max-height:720px)]:grid-cols-2">
-            <button
-                class="flex shrink-0 flex-col gap-0.5 rounded-2xl border px-3 py-2 text-left transition"
-                :class="
-                    activeField === 'employee_number'
-                        ? 'border-pine bg-white ring-2 ring-sand/80 dark:border-sand dark:bg-white/10'
-                        : 'border-mist bg-white dark:border-white/10 dark:bg-white/5'
-                "
-                type="button"
-                :aria-pressed="activeField === 'employee_number'"
-                @click="selectField('employee_number')"
+            <p
+                v-if="formError"
+                class="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-center text-sm text-danger"
+                role="alert"
             >
-                <span class="text-sm font-medium text-ink/70 dark:text-foam/70">Employee number</span>
-                <span class="min-h-7 truncate text-[clamp(1.15rem,3.4vh,1.5rem)] tracking-[0.14em] tabular-nums">
-                    {{ form.employee_number || '—' }}
-                </span>
-            </button>
+                {{ formError }}
+            </p>
 
-            <div
-                class="flex shrink-0 cursor-pointer flex-col gap-0.5 rounded-2xl border px-3 py-2 text-left transition"
-                :class="
-                    activeField === 'pin'
-                        ? 'border-pine bg-white ring-2 ring-sand/80 dark:border-sand dark:bg-white/10'
-                        : 'border-mist bg-white dark:border-white/10 dark:bg-white/5'
-                "
-                @click="selectField('pin')"
-            >
-                <span class="flex items-center justify-between gap-3">
-                    <span class="text-sm font-medium text-ink/70 dark:text-foam/70">PIN code</span>
+            <div class="grid items-stretch gap-6 sm:grid-cols-2 sm:gap-8">
+                <div class="flex h-full flex-col gap-3">
                     <button
-                        class="text-sm font-medium text-pine dark:text-sand"
+                        class="flex min-h-32 flex-1 flex-col justify-center gap-3 rounded-2xl border px-5 py-6 text-left transition"
+                        :class="
+                            activeField === 'employee_number'
+                                ? 'border-pine bg-white ring-2 ring-sand/80 dark:border-sand dark:bg-white/10'
+                                : 'border-mist bg-white dark:border-white/10 dark:bg-white/5'
+                        "
                         type="button"
-                        @click.stop="pinVisible = !pinVisible"
+                        :aria-pressed="activeField === 'employee_number'"
+                        @click="selectField('employee_number')"
                     >
-                        {{ pinVisible ? 'Hide' : 'Show' }}
+                        <span class="text-sm font-medium text-ink/70 dark:text-foam/70">Employee number</span>
+                        <span class="truncate text-3xl tracking-[0.14em] tabular-nums">
+                            {{ form.employee_number || '—' }}
+                        </span>
                     </button>
-                </span>
-                <span class="min-h-7 truncate text-[clamp(1.15rem,3.4vh,1.5rem)] tracking-[0.2em]">
-                    {{ pinDisplay || '—' }}
-                </span>
+
+                    <div
+                        class="flex min-h-32 flex-1 cursor-pointer flex-col justify-center gap-3 rounded-2xl border px-5 py-6 text-left transition"
+                        :class="
+                            activeField === 'pin'
+                                ? 'border-pine bg-white ring-2 ring-sand/80 dark:border-sand dark:bg-white/10'
+                                : 'border-mist bg-white dark:border-white/10 dark:bg-white/5'
+                        "
+                        @click="selectField('pin')"
+                    >
+                        <span class="flex items-center justify-between gap-3">
+                            <span class="text-sm font-medium text-ink/70 dark:text-foam/70">PIN code</span>
+                            <button
+                                class="text-sm font-medium text-pine dark:text-sand"
+                                type="button"
+                                @click.stop="pinVisible = !pinVisible"
+                            >
+                                {{ pinVisible ? 'Hide' : 'Show' }}
+                            </button>
+                        </span>
+                        <span class="truncate text-3xl tracking-[0.2em]">
+                            {{ pinDisplay || '—' }}
+                        </span>
+                    </div>
+
+                    <button
+                        class="flex h-16 shrink-0 items-center justify-center rounded-2xl bg-pine text-xl font-semibold text-foam transition hover:bg-pine/90 disabled:cursor-not-allowed disabled:opacity-50 sm:h-20"
+                        type="button"
+                        :disabled="!canSignIn"
+                        @click="submit"
+                    >
+                        {{ form.processing ? 'Signing in…' : 'Sign in' }}
+                    </button>
+                </div>
+
+                <div class="grid h-full grid-cols-3 grid-rows-4 gap-3">
+                    <button
+                        v-for="digit in digitKeys"
+                        :key="digit"
+                        class="flex h-full min-h-20 items-center justify-center rounded-2xl border border-mist bg-white text-3xl font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 sm:min-h-24 dark:border-white/10 dark:bg-white/5"
+                        type="button"
+                        :disabled="form.processing"
+                        @click="appendDigit(digit)"
+                    >
+                        {{ digit }}
+                    </button>
+
+                    <button
+                        class="flex h-full min-h-20 items-center justify-center rounded-2xl border border-mist bg-white text-lg font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 sm:min-h-24 dark:border-white/10 dark:bg-white/5"
+                        type="button"
+                        aria-label="Delete"
+                        :disabled="form.processing"
+                        @click="backspace"
+                    >
+                        Delete
+                    </button>
+                    <button
+                        class="flex h-full min-h-20 items-center justify-center rounded-2xl border border-mist bg-white text-3xl font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 sm:min-h-24 dark:border-white/10 dark:bg-white/5"
+                        type="button"
+                        :disabled="form.processing"
+                        @click="appendDigit('0')"
+                    >
+                        0
+                    </button>
+                    <button
+                        class="flex h-full min-h-20 items-center justify-center rounded-2xl border border-mist bg-white text-lg font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 sm:min-h-24 dark:border-white/10 dark:bg-white/5"
+                        type="button"
+                        aria-label="Clear"
+                        :disabled="form.processing"
+                        @click="clearActiveField"
+                    >
+                        Clear
+                    </button>
+                </div>
             </div>
         </div>
-
-        <div class="grid min-h-0 flex-1 grid-cols-3 grid-rows-4 gap-2">
-            <button
-                v-for="digit in digitKeys"
-                :key="digit"
-                class="h-full min-h-0 rounded-2xl border border-mist bg-white text-[clamp(1.05rem,3vh,1.5rem)] font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 dark:border-white/10 dark:bg-white/5"
-                type="button"
-                :disabled="form.processing"
-                @click="appendDigit(digit)"
-            >
-                {{ digit }}
-            </button>
-
-            <button
-                class="h-full min-h-0 rounded-2xl border border-mist bg-white text-[clamp(0.8rem,2.2vh,1rem)] font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 dark:border-white/10 dark:bg-white/5"
-                type="button"
-                aria-label="Delete"
-                :disabled="form.processing"
-                @click="backspace"
-            >
-                Delete
-            </button>
-            <button
-                class="h-full min-h-0 rounded-2xl border border-mist bg-white text-[clamp(1.05rem,3vh,1.5rem)] font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 dark:border-white/10 dark:bg-white/5"
-                type="button"
-                :disabled="form.processing"
-                @click="appendDigit('0')"
-            >
-                0
-            </button>
-            <button
-                class="h-full min-h-0 rounded-2xl border border-mist bg-white text-[clamp(0.8rem,2.2vh,1rem)] font-medium transition active:scale-[0.98] active:bg-sand/30 disabled:opacity-60 dark:border-white/10 dark:bg-white/5"
-                type="button"
-                aria-label="Clear"
-                :disabled="form.processing"
-                @click="clearActiveField"
-            >
-                Clear
-            </button>
-        </div>
-
-        <button
-            class="h-[clamp(2.5rem,7vh,3rem)] shrink-0 rounded-2xl bg-pine text-base font-medium text-foam transition hover:bg-pine/90 disabled:cursor-not-allowed disabled:opacity-50"
-            type="button"
-            :disabled="!canSignIn"
-            @click="submit"
-        >
-            {{ form.processing ? 'Signing in…' : 'Sign in' }}
-        </button>
     </main>
 </template>

@@ -13,6 +13,7 @@ class PermissionCatalog
     {
         return [
             ['key' => 'dashboard.view', 'name' => 'View the dashboard', 'group' => 'Dashboard'],
+            ['key' => 'business.manage', 'name' => 'Manage business information', 'group' => 'Business'],
             ['key' => 'sales.view', 'name' => 'View sales', 'group' => 'Sales'],
             ['key' => 'sales.refund', 'name' => 'Refund receipts', 'group' => 'Sales'],
             ['key' => 'shop.catalog', 'name' => 'Manage catalog', 'group' => 'Shop'],

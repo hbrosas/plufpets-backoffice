@@ -90,6 +90,12 @@ function deleteOrder() {
             </div>
             <div class="rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
                 <p class="text-sm text-ink/60 dark:text-foam/60">Business information</p>
+                <img
+                    v-if="purchaseOrder.business.logo_url"
+                    :src="purchaseOrder.business.logo_url"
+                    alt=""
+                    class="mt-3 h-14 w-auto object-contain"
+                />
                 <h2 class="mt-1 text-lg font-medium">
                     {{ purchaseOrder.business.registered_business_name || purchaseOrder.business.branch || '—' }}
                 </h2>
@@ -98,6 +104,12 @@ function deleteOrder() {
                 </p>
                 <p v-if="purchaseOrder.business.address" class="mt-2 text-sm text-ink/70 dark:text-foam/70">
                     {{ purchaseOrder.business.address }}
+                </p>
+                <p v-if="purchaseOrder.business.phone" class="text-sm text-ink/70 dark:text-foam/70">
+                    {{ purchaseOrder.business.phone }}
+                </p>
+                <p v-if="purchaseOrder.business.email" class="text-sm text-ink/70 dark:text-foam/70">
+                    {{ purchaseOrder.business.email }}
                 </p>
                 <p v-if="purchaseOrder.business.tin" class="text-sm text-ink/70 dark:text-foam/70">
                     TIN {{ purchaseOrder.business.tin }}

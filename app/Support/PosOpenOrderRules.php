@@ -24,6 +24,10 @@ class PosOpenOrderRules
             'items.*.modifiers.*.name' => ['required', 'string', 'max:255'],
             'items.*.modifiers.*.option' => ['required', 'string', 'max:255'],
             'items.*.modifiers.*.price' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
+            'items.*.assigned_employee_ids' => ['nullable', 'array'],
+            'items.*.assigned_employee_ids.*' => ['integer', 'distinct', 'exists:employees,id'],
+            'items.*.assisted_employee_ids' => ['nullable', 'array'],
+            'items.*.assisted_employee_ids.*' => ['integer', 'distinct', 'exists:employees,id'],
         ];
     }
 

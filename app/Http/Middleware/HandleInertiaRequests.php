@@ -2,9 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Business;
 use App\Models\PosCategory;
 use App\Support\EmployeeSession;
-use App\Support\PosLaunchPads;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -46,8 +46,8 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'appName' => config('app.name'),
+            'businessLogoUrl' => Business::current()?->logoUrl(),
             'employee' => EmployeeSession::current(),
-            'posBranches' => EmployeeSession::allows('pos.access') && $onAdminShell ? PosLaunchPads::branches() : [],
             'posCategories' => EmployeeSession::check() && $onAdminShell
                 ? PosCategory::query()
                     ->where('is_active', true)

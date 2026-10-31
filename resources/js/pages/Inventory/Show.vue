@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AdminLayout from '../../layouts/AdminLayout.vue';
 
@@ -73,7 +73,6 @@ const stats = computed(() => [
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <div class="flex flex-col gap-1">
-            <Link class="text-sm font-medium text-pine dark:text-sand" href="/backoffice/inventory">Back to inventory</Link>
             <h1 class="text-2xl font-medium">{{ product.name }}</h1>
             <p class="text-sm text-ink/60 dark:text-foam/60">
                 {{ product.variant }}

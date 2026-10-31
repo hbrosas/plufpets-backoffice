@@ -20,7 +20,9 @@ class RecordPosCashMovement
 
             if (! $shift->isOpen()) {
                 throw ValidationException::withMessages([
-                    'status' => 'Open a shift before recording cash in or cash out.',
+                    'status' => $type === PosCashMovementType::OpenDrawer
+                        ? 'Open a shift before opening the drawer.'
+                        : 'Open a shift before recording cash in or cash out.',
                 ]);
             }
 

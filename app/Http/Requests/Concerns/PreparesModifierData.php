@@ -22,6 +22,7 @@ trait PreparesModifierData
         $this->merge([
             'name' => $this->string('name')->trim()->toString(),
             'is_active' => $this->boolean('is_active'),
+            'included_in_commission' => $this->boolean('included_in_commission'),
             'options' => $options,
         ]);
     }

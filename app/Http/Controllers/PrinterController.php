@@ -6,6 +6,7 @@ use App\Http\Requests\ConnectPrinterRequest;
 use App\Http\Requests\StorePrinterRequest;
 use App\Http\Requests\UpdatePrinterRequest;
 use App\Models\Branch;
+use App\Models\Business;
 use App\Models\Printer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -58,6 +59,7 @@ class PrinterController extends Controller
     {
         return view('printers.test', [
             'printer' => $printer,
+            'businessName' => Business::documentName(),
             'widthMm' => $printer->paper_width_mm,
             'heightMm' => $printer->paper_height_mm ?? 200,
         ]);

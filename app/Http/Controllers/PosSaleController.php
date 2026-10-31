@@ -31,6 +31,7 @@ class PosSaleController extends Controller
                 'payments',
                 'delivery_method_id',
                 'delivery_fee',
+                'tax_fee_ids',
             ]),
         );
         $printer = Printer::defaultFor(PrinterRole::Receipt, $branch);
@@ -47,6 +48,7 @@ class PosSaleController extends Controller
                 'sold_at' => now()->timezone((string) config('app.timezone'))->format('M j, Y g:i A'),
                 'number' => $quote['number'],
                 'items' => $quote['items'],
+                'taxes' => $quote['taxes'],
                 'total' => Peso::format($quote['total']),
                 'tendered' => Peso::format($quote['amount_tendered']),
                 'change' => Peso::format($quote['change_due']),
@@ -65,6 +67,7 @@ class PosSaleController extends Controller
                 'payments',
                 'delivery_method_id',
                 'delivery_fee',
+                'tax_fee_ids',
                 'number',
             ]),
             $employee ?? ['employee_number' => '', 'name' => ''],
@@ -109,7 +112,7 @@ class PosSaleController extends Controller
 
     private function receiptText(PosSale $sale, Branch $branch): string
     {
-        $sale->loadMissing(['items', 'payments']);
+        $sale->loadMissing(['items', 'payments', 'taxes']);
         $printer = Printer::defaultFor(PrinterRole::Receipt, $branch);
         $width = $printer !== null && $printer->paper_width_mm <= 58 ? 32 : 48;
         $soldAt = $sale->sold_at?->timezone((string) config('app.timezone'))->format('M j, Y g:i A') ?? '';
@@ -122,6 +125,12 @@ class PosSaleController extends Controller
                     'name' => trim($item->product_name.' '.$item->variant_name),
                     'quantity' => $item->quantity,
                     'subtotal' => Peso::format($item->line_total),
+                ])
+                ->all(),
+            'taxes' => $sale->taxes
+                ->map(fn ($tax): array => [
+                    'name' => $tax->name,
+                    'amount' => Peso::format($tax->amount),
                 ])
                 ->all(),
             'total' => Peso::format($sale->total),

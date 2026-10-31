@@ -9,6 +9,7 @@ class SaleReceipt
      *     sold_at: string,
      *     number: string,
      *     items: list<array{name: string, quantity: int|string, subtotal: string}>,
+     *     taxes?: list<array{name: string, amount: string}>,
      *     total: string,
      *     tendered: string,
      *     change: string,
@@ -29,6 +30,10 @@ class SaleReceipt
                 trim((string) $item['quantity']).'  '.self::ascii((string) $item['subtotal']),
                 $width,
             );
+        }
+
+        foreach ($sale['taxes'] ?? [] as $tax) {
+            $lines[] = self::pair((string) $tax['name'], self::ascii((string) $tax['amount']), $width);
         }
 
         $lines[] = self::pair('Total', self::ascii($sale['total']), $width);

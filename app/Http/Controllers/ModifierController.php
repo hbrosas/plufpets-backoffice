@@ -24,6 +24,7 @@ class ModifierController extends Controller
                     'name' => $modifier->name,
                     'options' => $modifier->options ?? [],
                     'is_active' => $modifier->is_active,
+                    'included_in_commission' => $modifier->included_in_commission,
                     'item_count' => $modifier->catalog_items_count,
                 ]),
         ]);
@@ -31,7 +32,7 @@ class ModifierController extends Controller
 
     public function store(StoreModifierRequest $request): RedirectResponse
     {
-        Modifier::query()->create($request->safe()->only(['name', 'options', 'is_active']));
+        Modifier::query()->create($request->safe()->only(['name', 'options', 'is_active', 'included_in_commission']));
 
         return redirect()
             ->route('shop.modifiers.index')
@@ -40,7 +41,7 @@ class ModifierController extends Controller
 
     public function update(UpdateModifierRequest $request, Modifier $modifier): RedirectResponse
     {
-        $modifier->update($request->safe()->only(['name', 'options', 'is_active']));
+        $modifier->update($request->safe()->only(['name', 'options', 'is_active', 'included_in_commission']));
 
         return redirect()
             ->route('shop.modifiers.index')

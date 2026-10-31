@@ -3,12 +3,15 @@
 namespace App\Actions;
 
 use App\Enums\CatalogItemType;
+use App\Enums\CommissionRole;
 use App\Enums\TaxFeeType;
 use App\Models\BranchInventory;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemModifierOptionPrice;
 use App\Models\CatalogItemVariant;
 use App\Models\DeliveryMethod;
+use App\Models\Employee;
+use App\Models\EmployeeServiceCommission;
 use App\Models\Modifier;
 use App\Models\PaymentMethod;
 use App\Models\PosSale;
@@ -23,6 +26,8 @@ use Illuminate\Validation\ValidationException;
 
 class RecordPosSale
 {
+    public function __construct(private CalculateServiceCommission $calculateServiceCommission) {}
+
     /**
      * @param  array{employee_number: string, name: string}  $employee
      * @param  array{
@@ -85,7 +90,7 @@ class RecordPosSale
                     'quantity' => $prepared['quantity'],
                     'unit_price' => $prepared['unit_price'],
                     'line_total' => $prepared['line_total'],
-                ]);
+                ])->commissions()->createMany($prepared['commissions']);
 
                 if ($prepared['decrement_inventory']) {
                     BranchInventory::query()
@@ -119,7 +124,7 @@ class RecordPosSale
                 ]);
             }
 
-            return $sale->load(['items', 'taxes', 'payments']);
+            return $sale->load(['items.commissions', 'taxes', 'payments']);
         });
     }
 
@@ -200,12 +205,13 @@ class RecordPosSale
 
     /**
      * @param  list<array{modifier_id?: mixed, option?: mixed}>  $selections
-     * @return array{extra: float, snapshot: list<array{name: string, option: string, price: string}>}
+     * @return array{extra: float, included: float, snapshot: list<array{name: string, option: string, price: string}>}
      */
     private function selectedModifiers(CatalogItemVariant $variant, array $selections, int $index, int $branchId): array
     {
         $catalogItem = $variant->catalogItem;
         $extra = 0.0;
+        $included = 0.0;
         $snapshot = [];
 
         foreach ($selections as $selection) {
@@ -238,6 +244,11 @@ class RecordPosSale
 
             $price = $this->modifierOptionPrice($catalogItem, $modifierId, $option, $branchId);
             $extra += $price;
+
+            if ($modifier->included_in_commission) {
+                $included += $price;
+            }
+
             $snapshot[] = [
                 'name' => $modifier->name,
                 'option' => $option,
@@ -247,6 +258,7 @@ class RecordPosSale
 
         return [
             'extra' => $extra,
+            'included' => $included,
             'snapshot' => $snapshot,
         ];
     }
@@ -285,6 +297,79 @@ class RecordPosSale
     }
 
     /**
+     * @param  array<string, mixed>  $item
+     * @return list<array{employee_id: int, employee_number: string, employee_name: string, role: string, rate: string, pool_size: int, commissionable_amount: string, amount: string}>
+     */
+    private function commissionsFor(CatalogItemVariant $variant, bool $isProduct, float $commissionable, array $item, int $index): array
+    {
+        $assignedIds = $this->employeeIds($item['assigned_employee_ids'] ?? []);
+        $assistedIds = $this->employeeIds($item['assisted_employee_ids'] ?? []);
+
+        if ($assignedIds === [] && $assistedIds === []) {
+            return [];
+        }
+
+        if ($isProduct) {
+            throw ValidationException::withMessages([
+                "items.{$index}.assigned_employee_ids" => 'Products do not take assigned staff.',
+            ]);
+        }
+
+        if (array_intersect($assignedIds, $assistedIds) !== []) {
+            throw ValidationException::withMessages([
+                "items.{$index}.assigned_employee_ids" => 'Choose each employee for only one role on a service.',
+            ]);
+        }
+
+        $ids = [...$assignedIds, ...$assistedIds];
+        $employees = Employee::query()
+            ->whereKey($ids)
+            ->where('is_active', true)
+            ->whereHas('profile')
+            ->get()
+            ->keyBy('id');
+
+        if ($employees->count() !== count($ids)) {
+            throw ValidationException::withMessages([
+                "items.{$index}.assigned_employee_ids" => 'Choose an active employee with a record.',
+            ]);
+        }
+
+        $rates = EmployeeServiceCommission::query()
+            ->where('catalog_item_id', $variant->catalog_item_id)
+            ->whereIn('employee_id', $ids)
+            ->get()
+            ->keyBy('employee_id');
+
+        $assigned = array_map(fn (int $id): array => [
+            'employee' => $employees[$id],
+            'rate' => (float) ($rates->get($id)?->assigned_rate ?? 0),
+        ], $assignedIds);
+
+        $assisted = array_map(fn (int $id): array => [
+            'employee' => $employees[$id],
+            'rate' => (float) ($rates->get($id)?->assisted_rate ?? 0),
+        ], $assistedIds);
+
+        return [
+            ...$this->calculateServiceCommission->forPool($commissionable, CommissionRole::Assigned, $assigned),
+            ...$this->calculateServiceCommission->forPool($commissionable, CommissionRole::Assisted, $assisted),
+        ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function employeeIds(mixed $ids): array
+    {
+        if (! is_array($ids)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map(intval(...), $ids)));
+    }
+
+    /**
      * @param  array{
      *     items: list<array{catalog_item_variant_id: int, quantity: int, notes?: string|null, modifiers?: list<array{modifier_id: int, option: string}>}>,
      *     payments: list<array{payment_method_id: int, amount: mixed, amount_tendered?: mixed, reference_number?: string|null}>,
@@ -306,7 +391,8 @@ class RecordPosSale
      *     items: list<array{catalog_item_variant_id: int, quantity: int, notes?: string|null, modifiers?: list<array{modifier_id: int, option: string}>}>,
      *     payments: list<array{payment_method_id: int, amount: mixed, amount_tendered?: mixed, reference_number?: string|null}>,
      *     delivery_method_id?: int|null,
-     *     delivery_fee?: mixed
+     *     delivery_fee?: mixed,
+     *     tax_fee_ids?: list<int>
      * }  $attributes
      * @return array{
      *     delivery_method: DeliveryMethod|null,
@@ -388,8 +474,10 @@ class RecordPosSale
             }
 
             $selectedModifiers = $this->selectedModifiers($variant, $item['modifiers'] ?? [], $index, $shift->branch_id);
-            $unitPrice = $this->unitPrice($variant, $shift->branch_id) + $selectedModifiers['extra'];
+            $basePrice = $this->unitPrice($variant, $shift->branch_id);
+            $unitPrice = $basePrice + $selectedModifiers['extra'];
             $lineTotal = round($unitPrice * $quantity, 2);
+            $commissionable = round(($basePrice + $selectedModifiers['included']) * $quantity, 2);
             $subtotal += $lineTotal;
 
             $preparedItems[] = [
@@ -402,14 +490,16 @@ class RecordPosSale
                 'unit_price' => number_format($unitPrice, 2, '.', ''),
                 'line_total' => number_format($lineTotal, 2, '.', ''),
                 'decrement_inventory' => $isProduct,
+                'commissions' => $this->commissionsFor($variant, $isProduct, $commissionable, $item, $index),
             ];
         }
 
         $taxable = round($subtotal + $deliveryFee, 2);
         $taxRows = [];
         $taxTotal = 0.0;
+        $taxFeeIds = array_values(array_unique(array_map(intval(...), $attributes['tax_fee_ids'] ?? [])));
 
-        foreach (TaxFee::query()->where('is_active', true)->orderBy('name')->orderBy('id')->get() as $taxFee) {
+        foreach (TaxFee::query()->where('is_active', true)->whereIn('id', $taxFeeIds)->orderBy('name')->orderBy('id')->get() as $taxFee) {
             $amount = $taxFee->type === TaxFeeType::Percent
                 ? round($taxable * ((float) $taxFee->rate) / 100, 2)
                 : (float) $taxFee->rate;
@@ -488,6 +578,10 @@ class RecordPosSale
                 'name' => $payment['payment_method_name'],
                 'reference' => $payment['reference_number'],
             ], $prepared['payments']),
+            'taxes' => array_map(fn (array $row): array => [
+                'name' => $row['tax_fee']->name,
+                'amount' => Peso::format($row['amount']),
+            ], $prepared['tax_rows']),
         ];
     }
 

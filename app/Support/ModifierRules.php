@@ -22,6 +22,7 @@ class ModifierRules
             'options' => ['required', 'array', 'min:1'],
             'options.*' => ['required', 'string', 'max:255', 'distinct'],
             'is_active' => ['required', 'boolean'],
+            'included_in_commission' => ['required', 'boolean'],
         ];
     }
 

@@ -121,7 +121,7 @@ class SalesShiftController extends Controller
 
         foreach ($shift->cashMovements as $movement) {
             /** @var PosCashMovement $movement */
-            $isCashOut = $movement->type === PosCashMovementType::CashOut;
+            $amount = Peso::format($movement->amount);
             $rows->push([
                 'key' => 'cash-'.$movement->id,
                 'sort' => $movement->recorded_at?->timestamp ?? 0,
@@ -130,7 +130,11 @@ class SalesShiftController extends Controller
                 'time' => $movement->recorded_at?->timezone($timezone)->format('g:i A'),
                 'actor' => $movement->employee_name,
                 'detail' => $movement->reason,
-                'amount' => ($isCashOut ? '-' : '').Peso::format($movement->amount),
+                'amount' => match ($movement->type) {
+                    PosCashMovementType::CashOut => '-'.$amount,
+                    PosCashMovementType::OpenDrawer => '',
+                    PosCashMovementType::CashIn => $amount,
+                },
             ]);
         }
 

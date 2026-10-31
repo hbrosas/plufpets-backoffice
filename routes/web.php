@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthenticatedSessionController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BrandController;
+use App\Http\Controllers\BusinessController;
 use App\Http\Controllers\CatalogItemController;
 use App\Http\Controllers\CatalogItemImportController;
 use App\Http\Controllers\CatalogMetaController;
@@ -11,6 +12,9 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeliveryMethodController;
 use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\EmployeePayrollController;
+use App\Http\Controllers\EmployeeProfileController;
+use App\Http\Controllers\HolidayController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\ModifierController;
@@ -32,6 +36,7 @@ use App\Http\Controllers\PosZReportController;
 use App\Http\Controllers\PrinterController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\PwaController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SalesItemController;
 use App\Http\Controllers\SalesOverviewController;
@@ -80,7 +85,67 @@ Route::prefix('backoffice')->group(function () {
             ->middleware('employee.permission:dashboard.view')
             ->name('dashboard');
 
+        Route::get('/reports/sales', [ReportController::class, 'sales'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.sales');
+        Route::get('/reports/sales/export', [ReportController::class, 'exportSales'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.sales.export');
+        Route::get('/reports/commissions', [ReportController::class, 'commissions'])
+            ->middleware('employee.permission:dashboard.view')
+            ->name('reports.commissions');
+        Route::get('/reports/commissions/export', [ReportController::class, 'exportCommissions'])
+            ->middleware('employee.permission:dashboard.view')
+            ->name('reports.commissions.export');
+        Route::get('/reports/profit', [ReportController::class, 'profit'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.profit');
+        Route::get('/reports/profit/export', [ReportController::class, 'exportProfit'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.profit.export');
+        Route::get('/reports/inventory', [ReportController::class, 'inventory'])
+            ->middleware('employee.permission:inventory.view')
+            ->name('reports.inventory');
+        Route::get('/reports/inventory/export', [ReportController::class, 'exportInventory'])
+            ->middleware('employee.permission:inventory.view')
+            ->name('reports.inventory.export');
+        Route::get('/reports/products', [ReportController::class, 'products'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.products');
+        Route::get('/reports/products/export', [ReportController::class, 'exportProducts'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.products.export');
+        Route::get('/reports/purchasing', [ReportController::class, 'purchasing'])
+            ->middleware('employee.permission:inventory.purchase-orders')
+            ->name('reports.purchasing');
+        Route::get('/reports/purchasing/export', [ReportController::class, 'exportPurchasing'])
+            ->middleware('employee.permission:inventory.purchase-orders')
+            ->name('reports.purchasing.export');
+        Route::get('/reports/staff', [ReportController::class, 'staff'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.staff');
+        Route::get('/reports/staff/export', [ReportController::class, 'exportStaff'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.staff.export');
+        Route::get('/reports/reconciliation', [ReportController::class, 'reconciliation'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.reconciliation');
+        Route::get('/reports/reconciliation/export', [ReportController::class, 'exportReconciliation'])
+            ->middleware('employee.permission:sales.view')
+            ->name('reports.reconciliation.export');
+        Route::get('/reports/payables', [ReportController::class, 'payables'])
+            ->middleware('employee.permission:inventory.purchase-orders')
+            ->name('reports.payables');
+        Route::get('/reports/payables/export', [ReportController::class, 'exportPayables'])
+            ->middleware('employee.permission:inventory.purchase-orders')
+            ->name('reports.payables.export');
+
         Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
+
+        Route::middleware('employee.permission:business.manage')->group(function () {
+            Route::get('/business', [BusinessController::class, 'edit'])->name('business.edit');
+            Route::post('/business', [BusinessController::class, 'update'])->name('business.update');
+        });
 
         Route::middleware('employee.permission:pos.access')->group(function () {
             Route::get('/pos', [PosLaunchController::class, 'index'])->name('pos.launch');
@@ -101,6 +166,9 @@ Route::prefix('backoffice')->group(function () {
                 ->scopeBindings()
                 ->name('pos.open-orders.destroy');
             Route::post('/pos/register/{branch}/cash-movements', [PosCashMovementController::class, 'store'])->name('pos.cash-movements.store');
+            Route::post('/pos/register/{branch}/drawer-opens', [PosCashMovementController::class, 'openDrawer'])
+                ->middleware('employee.permission:pos.open-drawer')
+                ->name('pos.drawer-opens.store');
             Route::post('/pos/register/{branch}/sms', [PosSmsController::class, 'store'])->name('pos.sms.store');
             Route::post('/pos/sms/{sms_message}/resend', [PosSmsController::class, 'resend'])->name('pos.sms.resend');
             Route::get('/pos/register/{branch}/sms/history', [PosSmsController::class, 'history'])->name('pos.sms.history');
@@ -237,7 +305,19 @@ Route::prefix('backoffice')->group(function () {
 
         Route::middleware('employee.permission:staff.manage')->group(function () {
             Route::get('/staff', [EmployeeController::class, 'index'])->name('staff.index');
+            Route::get('/staff/records', [EmployeeProfileController::class, 'index'])->name('staff.records.index');
+            Route::get('/staff/holidays', [HolidayController::class, 'index'])->name('staff.holidays.index');
+            Route::post('/staff/holidays', [HolidayController::class, 'store'])->name('staff.holidays.store');
+            Route::post('/staff/holidays/import', [HolidayController::class, 'import'])->name('staff.holidays.import');
+            Route::delete('/staff/holidays/{holiday}', [HolidayController::class, 'destroy'])->name('staff.holidays.destroy');
             Route::post('/staff', [EmployeeController::class, 'store'])->name('staff.store');
+            Route::post('/staff/{employee}/record', [EmployeeProfileController::class, 'store'])->name('staff.record.store');
+            Route::get('/staff/{employee}/record', [EmployeeProfileController::class, 'show'])->name('staff.record.show');
+            Route::put('/staff/{employee}/record', [EmployeeProfileController::class, 'update'])->name('staff.record.update');
+            Route::post('/staff/{employee}/payroll', [EmployeePayrollController::class, 'store'])->name('staff.payroll.store');
+            Route::post('/staff/{employee}/payroll/finalize', [EmployeePayrollController::class, 'finalize'])->name('staff.payroll.finalize');
+            Route::get('/staff/{employee}/payroll/download', [EmployeePayrollController::class, 'download'])->name('staff.payroll.download');
+            Route::get('/staff/payrolls/{employeePayroll}/download', [EmployeePayrollController::class, 'downloadFinalized'])->name('staff.payrolls.download');
             Route::put('/staff/{employee}', [EmployeeController::class, 'update'])->name('staff.update');
             Route::delete('/staff/{employee}', [EmployeeController::class, 'destroy'])->name('staff.destroy');
         });

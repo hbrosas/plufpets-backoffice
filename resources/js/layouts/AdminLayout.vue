@@ -1,22 +1,21 @@
 <script setup>
-import { Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import FlashToast from '../components/FlashToast.vue';
 
 const page = usePage();
 const appName = computed(() => page.props.appName);
 const employee = computed(() => page.props.employee);
-const posBranches = computed(() => page.props.posBranches ?? []);
 const form = useForm({});
 const sidebarOpen = ref(false);
 const openGroups = ref({
     sales: false,
+    reports: false,
     shop: false,
     inventory: false,
     pos: false,
     staff: false,
 });
-const posModalOpen = ref(false);
 const permissions = computed(() => page.props.employee?.permissions ?? []);
 
 function can(permission) {
@@ -33,6 +32,22 @@ const navigation = [
             { name: 'Receipts', href: '/backoffice/sales/receipts', match: '/backoffice/sales/receipts', permission: 'sales.view' },
             { name: 'Items', href: '/backoffice/sales/items', match: '/backoffice/sales/items', permission: 'sales.view' },
             { name: 'Shifts', href: '/backoffice/sales/shifts', match: '/backoffice/sales/shifts', permission: 'sales.view' },
+        ],
+    },
+    {
+        id: 'reports',
+        name: 'Reports',
+        prefix: '/backoffice/reports',
+        items: [
+            { name: 'Sales', href: '/backoffice/reports/sales', match: '/backoffice/reports/sales', permission: 'sales.view' },
+            { name: 'Profit', href: '/backoffice/reports/profit', match: '/backoffice/reports/profit', permission: 'sales.view' },
+            { name: 'Inventory', href: '/backoffice/reports/inventory', match: '/backoffice/reports/inventory', permission: 'inventory.view' },
+            { name: 'Products', href: '/backoffice/reports/products', match: '/backoffice/reports/products', permission: 'sales.view' },
+            { name: 'Purchasing', href: '/backoffice/reports/purchasing', match: '/backoffice/reports/purchasing', permission: 'inventory.purchase-orders' },
+            { name: 'Staff', href: '/backoffice/reports/staff', match: '/backoffice/reports/staff', permission: 'sales.view' },
+            { name: 'Reconciliation', href: '/backoffice/reports/reconciliation', match: '/backoffice/reports/reconciliation', permission: 'sales.view' },
+            { name: 'Payables', href: '/backoffice/reports/payables', match: '/backoffice/reports/payables', permission: 'inventory.purchase-orders' },
+            { name: 'Commissions', href: '/backoffice/reports/commissions', match: '/backoffice/reports/commissions', permission: 'dashboard.view' },
         ],
     },
     {
@@ -75,6 +90,8 @@ const navigation = [
         prefix: '/backoffice/staff',
         items: [
             { name: 'Staff', href: '/backoffice/staff', match: '/backoffice/staff', permission: 'staff.manage' },
+            { name: 'Employees Records', href: '/backoffice/staff/records', match: '/backoffice/staff/records', permission: 'staff.manage' },
+            { name: 'Holidays', href: '/backoffice/staff/holidays', match: '/backoffice/staff/holidays', permission: 'staff.manage' },
             { name: 'Roles', href: '/backoffice/staff/roles', match: '/backoffice/staff/roles', permission: 'roles.manage' },
         ],
     },
@@ -87,14 +104,43 @@ const navigationGroups = computed(() => navigation
     }))
     .filter((group) => group.items.length > 0));
 
-const upcomingItems = ['Pets', 'Orders', 'Customers'];
-
 const currentPath = computed(() => page.url.split('?')[0]);
 
+const backLink = computed(() => {
+    const path = currentPath.value;
+    const links = [
+        [/^\/backoffice\/reports\//, '/backoffice/dashboard', 'Back to overview'],
+        [/^\/backoffice\/sales\/receipts\/.+/, '/backoffice/sales/receipts', 'Back to receipts'],
+        [/^\/backoffice\/inventory\/products\/.+/, '/backoffice/inventory', 'Back to inventory'],
+        [/^\/backoffice\/inventory\/purchase-orders\/.+/, '/backoffice/inventory/purchase-orders', 'Back to purchase orders'],
+        [/^\/backoffice\/inventory\/delivery-orders\/.+/, '/backoffice/inventory/delivery-orders', 'Back to delivery orders'],
+        [/^\/backoffice\/shop\/catalog\/.+/, '/backoffice/shop/catalog', 'Back to catalog'],
+        [/^\/backoffice\/staff\/\d+\/record$/, '/backoffice/staff/records', 'Back to records'],
+    ];
+    const match = links.find(([pattern]) => pattern.test(path));
+
+    return match ? { href: match[1], label: match[2] } : null;
+});
+
 const pageTitle = computed(() => {
+    if (/^\/backoffice\/staff\/\d+\/record$/.test(currentPath.value)) {
+        return 'Employee record';
+    }
+
     const titles = [
+        ['/backoffice/staff/records', 'Employees Records'],
+        ['/backoffice/staff/holidays', 'Holidays'],
         ['/backoffice/staff/roles', 'Roles'],
         ['/backoffice/staff', 'Staff'],
+        ['/backoffice/reports/sales', 'Sales report'],
+        ['/backoffice/reports/profit', 'Profit'],
+        ['/backoffice/reports/inventory', 'Inventory'],
+        ['/backoffice/reports/products', 'Products'],
+        ['/backoffice/reports/purchasing', 'Purchasing'],
+        ['/backoffice/reports/staff', 'Staff report'],
+        ['/backoffice/reports/reconciliation', 'Reconciliation'],
+        ['/backoffice/reports/payables', 'Payables'],
+        ['/backoffice/reports/commissions', 'Commissions'],
         ['/backoffice/sales/receipts', 'Receipts'],
         ['/backoffice/sales/items', 'Sold items'],
         ['/backoffice/sales/shifts', 'Shifts'],
@@ -112,6 +158,7 @@ const pageTitle = computed(() => {
         ['/backoffice/shop/catalog-meta', 'Categories & Brands'],
         ['/backoffice/shop/modifiers', 'Modifiers'],
         ['/backoffice/shop/catalog', 'Catalog'],
+        ['/backoffice/business', 'Business'],
     ];
 
     const match = titles.find(
@@ -122,8 +169,16 @@ const pageTitle = computed(() => {
 });
 
 function isCurrent(item) {
-    if (item.match === '/backoffice/inventory' || item.match === '/backoffice/sales' || item.match === '/backoffice/staff') {
+    if (item.match === '/backoffice/inventory' || item.match === '/backoffice/sales') {
         return currentPath.value === item.match;
+    }
+
+    if (item.match === '/backoffice/staff') {
+        return currentPath.value === item.match;
+    }
+
+    if (item.match === '/backoffice/staff/records') {
+        return currentPath.value === item.match || /^\/backoffice\/staff\/\d+\/record$/.test(currentPath.value);
     }
 
     if (item.match) {
@@ -143,11 +198,6 @@ function toggleGroup(id) {
 
 function logout() {
     form.post('/backoffice/logout');
-}
-
-function openPos(branch) {
-    posModalOpen.value = false;
-    router.visit(branch.href);
 }
 
 watch(
@@ -180,7 +230,13 @@ watch(
             :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
         >
             <div class="flex shrink-0 items-center gap-3 px-6 py-6">
-                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-sand text-sm font-semibold text-pine">PP</span>
+                <img
+                    v-if="page.props.businessLogoUrl"
+                    :src="page.props.businessLogoUrl"
+                    alt=""
+                    class="h-10 w-10 rounded-xl object-contain"
+                />
+                <span v-else class="flex h-10 w-10 items-center justify-center rounded-xl bg-sand text-sm font-semibold text-pine">PP</span>
                 <div class="flex min-w-0 flex-col gap-0.5">
                     <p class="truncate text-sm font-medium">{{ appName }}</p>
                     <p class="text-xs text-foam/60">Admin dashboard</p>
@@ -188,17 +244,16 @@ watch(
             </div>
 
             <nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-4" aria-label="Admin">
-                <button
+                <Link
                     v-if="can('pos.access')"
+                    href="/backoffice/pos"
                     class="mb-1 flex items-center gap-2 rounded-xl bg-sand px-3 py-2.5 text-sm font-semibold text-pine transition hover:bg-sand/90"
-                    type="button"
-                    @click="posModalOpen = true"
                 >
                     <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                         <path d="M3.5 3.75A.75.75 0 0 1 4.25 3h11.5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-.75.75H4.25a.75.75 0 0 1-.75-.75v-3.5ZM4 9.5h12v6.75a.75.75 0 0 1-.75.75H4.75a.75.75 0 0 1-.75-.75V9.5Zm3 2.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5H7Z" />
                     </svg>
                     Open POS
-                </button>
+                </Link>
                 <Link
                     v-if="can('dashboard.view')"
                     href="/backoffice/dashboard"
@@ -210,6 +265,18 @@ watch(
                     "
                 >
                     Overview
+                </Link>
+                <Link
+                    v-if="can('business.manage')"
+                    href="/backoffice/business"
+                    class="rounded-xl px-3 py-2.5 text-sm font-medium transition"
+                    :class="
+                        currentPath === '/backoffice/business'
+                            ? 'bg-foam/15 text-foam'
+                            : 'text-foam/70 hover:bg-foam/10 hover:text-foam'
+                    "
+                >
+                    Business
                 </Link>
 
                 <div v-for="group in navigationGroups" :key="group.id" class="flex flex-col gap-1">
@@ -263,15 +330,6 @@ watch(
                         </Link>
                     </div>
                 </div>
-
-                <span
-                    v-for="item in upcomingItems"
-                    :key="item"
-                    class="flex items-center justify-between rounded-xl px-3 py-2.5 text-sm text-foam/40"
-                >
-                    {{ item }}
-                    <span class="rounded-full bg-foam/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-foam/55 uppercase">Soon</span>
-                </span>
             </nav>
 
             <div class="flex shrink-0 flex-col gap-3 border-t border-foam/10 px-4 py-5">
@@ -312,7 +370,21 @@ watch(
                             />
                         </svg>
                     </button>
-                    <p class="text-sm font-medium">{{ pageTitle }}</p>
+                    <Link
+                        v-if="backLink"
+                        :href="backLink.href"
+                        class="inline-flex items-center gap-1.5 text-sm font-medium"
+                    >
+                        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path
+                                fill-rule="evenodd"
+                                d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z"
+                                clip-rule="evenodd"
+                            />
+                        </svg>
+                        {{ backLink.label }}
+                    </Link>
+                    <p v-else class="text-sm font-medium">{{ pageTitle }}</p>
                 </div>
 
                 <div id="admin-header-actions" class="flex min-w-0 flex-wrap items-center justify-end gap-3" />
@@ -324,42 +396,4 @@ watch(
         </div>
     </div>
 
-    <div v-if="posModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center bg-ink/50 px-4">
-        <div class="flex w-full max-w-md flex-col gap-4 rounded-2xl bg-foam p-6 dark:bg-ink">
-            <div class="flex items-start justify-between gap-4">
-                <h2 class="text-lg font-medium">Open POS</h2>
-                <button class="text-sm font-medium" type="button" @click="posModalOpen = false">Close</button>
-            </div>
-            <div class="flex flex-col gap-2" role="group" aria-label="Branches">
-                <p v-if="posBranches.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No active branches yet.</p>
-                <button
-                    v-for="branch in posBranches"
-                    :key="branch.id"
-                    class="flex flex-col gap-2 rounded-2xl border border-mist px-4 py-3 text-left transition hover:border-pine dark:border-white/10 dark:hover:border-sand"
-                    type="button"
-                    @click="openPos(branch)"
-                >
-                    <div class="flex items-center justify-between gap-3">
-                        <span class="font-medium">{{ branch.name }}</span>
-                        <span
-                            class="rounded-full px-2 py-0.5 text-[11px] font-medium tracking-wide uppercase"
-                            :class="
-                                branch.is_open
-                                    ? 'bg-pine/15 text-pine dark:bg-sand/20 dark:text-sand'
-                                    : 'bg-mist text-ink/60 dark:bg-white/10 dark:text-foam/60'
-                            "
-                        >
-                            {{ branch.status }}
-                        </span>
-                    </div>
-                    <p class="text-xs text-ink/50 dark:text-foam/50">
-                        <template v-if="branch.date || branch.user">
-                            {{ [branch.date, branch.user].filter(Boolean).join(' · ') }}
-                        </template>
-                        <template v-else>No shift yet</template>
-                    </p>
-                </button>
-            </div>
-        </div>
-    </div>
 </template>

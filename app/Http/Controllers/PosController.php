@@ -9,6 +9,7 @@ use App\Models\CatalogItem;
 use App\Models\CatalogItemModifierOptionPrice;
 use App\Models\CatalogItemVariant;
 use App\Models\DeliveryMethod;
+use App\Models\Employee;
 use App\Models\Modifier;
 use App\Models\PaymentMethod;
 use App\Models\PosCashMovement;
@@ -148,6 +149,21 @@ class PosController extends Controller
                 ->orderByDesc('id')
                 ->get()
                 ->map(fn (PosOpenOrder $order): array => $this->openOrderPayload($order));
+        }
+
+        if ($wants('assignableEmployees')) {
+            $props['assignableEmployees'] = Employee::query()
+                ->where('is_active', true)
+                ->whereHas('profile')
+                ->orderBy('name')
+                ->orderBy('id')
+                ->get(['id', 'name', 'employee_number'])
+                ->map(fn (Employee $employee): array => [
+                    'id' => $employee->id,
+                    'name' => $employee->name,
+                    'employee_number' => $employee->employee_number,
+                ])
+                ->all();
         }
 
         if ($wants('flash') || $notice !== []) {
@@ -390,7 +406,6 @@ class PosController extends Controller
             'payments' => [],
             'items' => [],
         ])->concat($movements->map(function (PosCashMovement $movement): array {
-            $isCashOut = $movement->type === PosCashMovementType::CashOut;
             $amountLabel = Peso::format($movement->amount);
 
             return [
@@ -400,8 +415,12 @@ class PosController extends Controller
                 'sort' => $movement->recorded_at?->timestamp ?? 0,
                 'time' => $this->clockLabel($movement->recorded_at),
                 'actor_name' => $movement->employee_name,
-                'detail' => $movement->reason,
-                'amount_label' => $isCashOut ? '-'.$amountLabel : $amountLabel,
+                'detail' => $movement->reason !== '' ? $movement->reason : null,
+                'amount_label' => match ($movement->type) {
+                    PosCashMovementType::CashOut => '-'.$amountLabel,
+                    PosCashMovementType::OpenDrawer => '',
+                    PosCashMovementType::CashIn => $amountLabel,
+                },
                 'payments' => [],
                 'items' => [],
             ];

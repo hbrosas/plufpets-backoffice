@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { Head, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import DeliveryReceiptHistory from '../../../components/DeliveryReceiptHistory.vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
@@ -120,6 +120,5 @@ function submit() {
 
         <DeliveryReceiptHistory :receipts="order.receipts" />
 
-        <Link class="text-sm font-medium text-sand" href="/backoffice/inventory/delivery-orders">Back to delivery orders</Link>
     </div>
 </template>

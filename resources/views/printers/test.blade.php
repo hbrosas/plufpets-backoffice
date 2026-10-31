@@ -31,7 +31,7 @@
         <button type="button" onclick="window.print()">Print</button>
     </div>
     <article class="ticket">
-        <h1>Pluf Pets</h1>
+        <h1>{{ $businessName }}</h1>
         <p>{{ $printer->name }}</p>
         <p>{{ $printer->role->label() }} · {{ $printer->paperLabel() }}</p>
         <p>{{ now()->timezone(config('app.timezone'))->format('M j, Y g:i A') }}</p>

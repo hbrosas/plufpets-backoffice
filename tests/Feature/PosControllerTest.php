@@ -110,17 +110,18 @@ class PosControllerTest extends TestCase
             'closed_by_name' => 'Night Cashier',
         ]);
 
-        $response = $this->actingAsEmployee()->get('/backoffice/dashboard');
+        $response = $this->actingAsEmployee()->get('/backoffice/pos');
 
         $response->assertOk();
         $response->assertInertia(fn (Assert $page) => $page
-            ->where('posBranches.0.name', 'Greenheights')
-            ->where('posBranches.0.status', 'Open')
-            ->where('posBranches.0.user', 'Sample Employee')
-            ->where('posBranches.0.href', route('pos.index', $openBranch))
-            ->where('posBranches.1.name', 'San Pedro')
-            ->where('posBranches.1.status', 'Close')
-            ->where('posBranches.1.user', 'Night Cashier'));
+            ->component('Pos/Launch')
+            ->where('branches.0.name', 'Greenheights')
+            ->where('branches.0.status', 'Open')
+            ->where('branches.0.user', 'Sample Employee')
+            ->where('branches.0.href', route('pos.index', $openBranch))
+            ->where('branches.1.name', 'San Pedro')
+            ->where('branches.1.status', 'Close')
+            ->where('branches.1.user', 'Night Cashier'));
     }
 
     public function test_register_lists_todays_sales_cash_movements_and_starting_cash(): void

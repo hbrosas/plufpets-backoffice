@@ -9,6 +9,7 @@ use App\Models\Branch;
 use App\Models\PosShift;
 use App\Support\EmployeeSession;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Response;
 
@@ -33,7 +34,22 @@ class PosCashMovementController extends Controller
         ]);
     }
 
-    private function openShift(Branch $branch): PosShift
+    public function openDrawer(Request $request, Branch $branch, RecordPosCashMovement $recordPosCashMovement, PosController $posController): RedirectResponse|Response
+    {
+        $employee = EmployeeSession::current();
+
+        $recordPosCashMovement->handle(
+            $this->openShift($branch, 'Open a shift before opening the drawer.'),
+            PosCashMovementType::OpenDrawer,
+            '0',
+            '',
+            $employee ?? ['employee_number' => '', 'name' => ''],
+        );
+
+        return $posController->fromMutation($request, $branch);
+    }
+
+    private function openShift(Branch $branch, string $message = 'Open a shift before recording cash in or cash out.'): PosShift
     {
         $shift = PosShift::query()
             ->where('branch_id', $branch->id)
@@ -42,7 +58,7 @@ class PosCashMovementController extends Controller
 
         if ($shift === null) {
             throw ValidationException::withMessages([
-                'status' => 'Open a shift before recording cash in or cash out.',
+                'status' => $message,
             ]);
         }
 

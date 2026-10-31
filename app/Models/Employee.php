@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
@@ -65,9 +67,28 @@ class Employee extends Model
         return route('pos.launch');
     }
 
+    /**
+     * @return BelongsTo<Role, $this>
+     */
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
+    }
+
+    /**
+     * @return HasOne<EmployeeProfile, $this>
+     */
+    public function profile(): HasOne
+    {
+        return $this->hasOne(EmployeeProfile::class);
+    }
+
+    /**
+     * @return HasMany<EmployeeServiceCommission, $this>
+     */
+    public function serviceCommissions(): HasMany
+    {
+        return $this->hasMany(EmployeeServiceCommission::class);
     }
 
     public function hasPermission(string $key): bool

@@ -1,5 +1,5 @@
 <script setup>
-import { Head, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AdminLayout from '../../layouts/AdminLayout.vue';
 
@@ -71,6 +71,12 @@ function submit() {
     form.post('/backoffice/staff', options);
 }
 
+function generateRecord(employee) {
+    router.post(`/backoffice/staff/${employee.id}/record`, {}, {
+        preserveScroll: true,
+    });
+}
+
 function deleteEmployee(employee) {
     if (!window.confirm(`Delete ${employee.name}?`)) {
         return;
@@ -131,6 +137,21 @@ function formatDate(value) {
                         <td class="px-4 py-3">{{ employee.is_active ? 'Active' : 'Inactive' }}</td>
                         <td class="px-4 py-3">
                             <div class="flex justify-end gap-3">
+                                <Link
+                                    v-if="employee.has_profile"
+                                    class="font-medium text-pine dark:text-sand"
+                                    :href="`/backoffice/staff/${employee.id}/record`"
+                                >
+                                    Employee record
+                                </Link>
+                                <button
+                                    v-else
+                                    class="font-medium text-pine dark:text-sand"
+                                    type="button"
+                                    @click="generateRecord(employee)"
+                                >
+                                    Generate record
+                                </button>
                                 <button class="font-medium text-pine dark:text-sand" type="button" @click="openEdit(employee)">
                                     Edit
                                 </button>

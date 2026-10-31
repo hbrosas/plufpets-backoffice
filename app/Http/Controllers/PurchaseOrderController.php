@@ -11,6 +11,7 @@ use App\Http\Requests\StorePurchaseOrderRequest;
 use App\Http\Requests\UpdatePurchaseOrderRequest;
 use App\Models\Branch;
 use App\Models\Brand;
+use App\Models\Business;
 use App\Models\CatalogItemVariant;
 use App\Models\Category;
 use App\Models\PurchaseOrder;
@@ -125,6 +126,7 @@ class PurchaseOrderController extends Controller
 
         $view = view('inventory.purchase-orders.print', [
             'purchaseOrder' => $purchaseOrder,
+            'business' => $this->businessInformation($purchaseOrder->branch),
             'appName' => config('app.name'),
         ]);
 
@@ -219,6 +221,36 @@ class PurchaseOrderController extends Controller
     }
 
     /**
+     * @return array{branch: ?string, registered_business_name: ?string, address: ?string, phone: ?string, email: ?string, tin: ?string, logo_url: ?string}
+     */
+    private function businessInformation(?Branch $branch): array
+    {
+        $profile = Business::current();
+
+        if ($profile instanceof Business && filled($profile->name)) {
+            return [
+                'branch' => $branch?->name,
+                'registered_business_name' => $profile->name,
+                'address' => $profile->address,
+                'phone' => $profile->phone,
+                'email' => $profile->email,
+                'tin' => $profile->tin,
+                'logo_url' => $profile->logoUrl(),
+            ];
+        }
+
+        return [
+            'branch' => $branch?->name,
+            'registered_business_name' => $branch?->registered_business_name,
+            'address' => $branch?->address,
+            'phone' => null,
+            'email' => null,
+            'tin' => $branch?->tin,
+            'logo_url' => null,
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function detail(PurchaseOrder $order): array
@@ -240,12 +272,7 @@ class PurchaseOrderController extends Controller
                 'remaining' => $item->remainingToReceive(),
                 'line_total' => Peso::format($item->lineTotal()),
             ])->all(),
-            'business' => [
-                'branch' => $order->branch?->name,
-                'registered_business_name' => $order->branch?->registered_business_name,
-                'address' => $order->branch?->address,
-                'tin' => $order->branch?->tin,
-            ],
+            'business' => $this->businessInformation($order->branch),
             'receipts' => $order->receiptHistory(),
             'supplier_detail' => [
                 'name' => $order->supplier?->name,

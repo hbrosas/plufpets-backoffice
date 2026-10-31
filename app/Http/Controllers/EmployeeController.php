@@ -18,6 +18,7 @@ class EmployeeController extends Controller
         return Inertia::render('Staff/Index', [
             'employees' => Employee::query()
                 ->with('role:id,name')
+                ->withExists('profile')
                 ->orderBy('name')
                 ->orderBy('id')
                 ->get()
@@ -31,6 +32,7 @@ class EmployeeController extends Controller
                     'role_name' => $employee->role->name,
                     'is_active' => $employee->is_active,
                     'home_screen' => $employee->home_screen->value,
+                    'has_profile' => (bool) $employee->profile_exists,
                 ]),
             'roles' => Role::query()
                 ->orderBy('name')

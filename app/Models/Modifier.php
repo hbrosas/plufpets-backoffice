@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-#[Fillable(['name', 'options', 'is_active'])]
+#[Fillable(['name', 'options', 'is_active', 'included_in_commission'])]
 class Modifier extends Model
 {
     /** @use HasFactory<ModifierFactory> */
@@ -20,6 +20,7 @@ class Modifier extends Model
     protected $attributes = [
         'options' => '[]',
         'is_active' => true,
+        'included_in_commission' => false,
     ];
 
     /**
@@ -30,6 +31,7 @@ class Modifier extends Model
         return [
             'options' => 'array',
             'is_active' => 'boolean',
+            'included_in_commission' => 'boolean',
         ];
     }
 

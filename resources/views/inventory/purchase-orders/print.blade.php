@@ -55,16 +55,25 @@
 
         <section class="party">
             <p class="label">Business information</p>
-            @if ($purchaseOrder->branch)
-                <h2>{{ $purchaseOrder->branch->registered_business_name ?: $purchaseOrder->branch->name }}</h2>
-                @if ($purchaseOrder->branch->registered_business_name && $purchaseOrder->branch->name)
-                    <p>{{ $purchaseOrder->branch->name }}</p>
+            @if (filled($business['registered_business_name'] ?? null) || filled($business['branch'] ?? null))
+                @if (! empty($business['logo_url']))
+                    <img src="{{ $business['logo_url'] }}" alt="" style="height: 48px; margin-bottom: 8px;">
                 @endif
-                @if ($purchaseOrder->branch->address)
-                    <p class="muted">{{ $purchaseOrder->branch->address }}</p>
+                <h2>{{ $business['registered_business_name'] ?: $business['branch'] }}</h2>
+                @if (! empty($business['branch']) && ! empty($business['registered_business_name']))
+                    <p>{{ $business['branch'] }}</p>
                 @endif
-                @if ($purchaseOrder->branch->tin)
-                    <p class="muted">TIN {{ $purchaseOrder->branch->tin }}</p>
+                @if (! empty($business['address']))
+                    <p class="muted">{{ $business['address'] }}</p>
+                @endif
+                @if (! empty($business['phone']))
+                    <p class="muted">{{ $business['phone'] }}</p>
+                @endif
+                @if (! empty($business['email']))
+                    <p class="muted">{{ $business['email'] }}</p>
+                @endif
+                @if (! empty($business['tin']))
+                    <p class="muted">TIN {{ $business['tin'] }}</p>
                 @endif
             @else
                 <h2>{{ $appName }}</h2>

@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import SalesRefundModal from '../../../components/SalesRefundModal.vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
@@ -20,7 +20,6 @@ const refundOpen = ref(false);
 
     <div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
         <div class="flex items-center justify-between gap-4">
-            <Link class="text-sm font-medium text-pine dark:text-sand" href="/backoffice/sales/receipts">Back to receipts</Link>
             <button
                 v-if="!receipt.is_refunded"
                 class="h-10 rounded-xl bg-danger px-4 text-sm font-medium text-foam"
