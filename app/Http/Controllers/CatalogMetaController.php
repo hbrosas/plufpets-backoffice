@@ -23,6 +23,7 @@ class CatalogMetaController extends Controller
                     'name' => $category->name,
                     'pos_category_id' => $category->pos_category_id,
                     'pos_category_name' => $category->posCategory?->name ?? 'Unassigned',
+                    'show_on_shop' => $category->show_on_shop,
                     'item_count' => $category->catalog_items_count,
                 ]),
             'brands' => Brand::query()

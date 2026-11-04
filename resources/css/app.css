@@ -13,6 +13,9 @@
     --color-mist: oklch(0.92 0.012 160);
     --color-sand: oklch(0.74 0.09 85);
     --color-danger: oklch(0.52 0.16 25);
+    --color-cream: #f7f5f0;
+    --color-ember: #ff8a1b;
+    --color-navy: #053b63;
 }
 
 @layer base {

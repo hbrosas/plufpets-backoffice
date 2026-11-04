@@ -29,6 +29,7 @@ class UpdateCategoryRequest extends FormRequest
                 Rule::unique('categories', 'name')->ignore($category instanceof Category ? $category->id : null),
             ],
             'pos_category_id' => ['required', 'integer', 'exists:pos_categories,id'],
+            'show_on_shop' => ['sometimes', 'boolean'],
         ];
     }
 

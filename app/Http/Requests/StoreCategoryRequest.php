@@ -21,6 +21,7 @@ class StoreCategoryRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255', Rule::unique('categories', 'name')],
             'pos_category_id' => ['required', 'integer', 'exists:pos_categories,id'],
+            'show_on_shop' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -41,6 +42,7 @@ class StoreCategoryRequest extends FormRequest
     {
         $this->merge([
             'name' => $this->string('name')->trim()->toString(),
+            'show_on_shop' => $this->has('show_on_shop') ? $this->boolean('show_on_shop') : true,
         ]);
     }
 }

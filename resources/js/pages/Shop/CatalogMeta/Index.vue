@@ -28,6 +28,7 @@ const posCategories = computed(() => page.props.posCategories ?? []);
 const categoryForm = useForm({
     name: '',
     pos_category_id: '',
+    show_on_shop: true,
 });
 
 const brandModalOpen = ref(false);
@@ -50,6 +51,7 @@ function openEditCategory(category) {
     editingCategory.value = category;
     categoryForm.name = category.name;
     categoryForm.pos_category_id = category.pos_category_id ?? '';
+    categoryForm.show_on_shop = category.show_on_shop;
     categoryForm.clearErrors();
     categoryModalOpen.value = true;
 }
@@ -171,12 +173,13 @@ function deleteBrand(brand) {
                                 <th class="px-4 py-3 font-medium">Name</th>
                                 <th class="px-4 py-3 font-medium">POS category</th>
                                 <th class="px-4 py-3 font-medium">Items</th>
+                                <th class="px-4 py-3 font-medium">Public shop</th>
                                 <th class="px-4 py-3 font-medium"><span class="sr-only">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-if="categories.length === 0">
-                                <td class="px-4 py-8 text-ink/60 dark:text-foam/60" colspan="4">No categories yet.</td>
+                                <td class="px-4 py-8 text-ink/60 dark:text-foam/60" colspan="5">No categories yet.</td>
                             </tr>
                             <tr
                                 v-for="category in categories"
@@ -186,6 +189,7 @@ function deleteBrand(brand) {
                                 <td class="px-4 py-3 font-medium">{{ category.name }}</td>
                                 <td class="px-4 py-3">{{ category.pos_category_name }}</td>
                                 <td class="px-4 py-3">{{ category.item_count }}</td>
+                                <td class="px-4 py-3">{{ category.show_on_shop ? 'Shown' : 'Hidden' }}</td>
                                 <td class="px-4 py-3">
                                     <div class="flex justify-end gap-3">
                                         <button class="font-medium text-pine dark:text-sand" type="button" @click="openEditCategory(category)">
@@ -290,6 +294,10 @@ function deleteBrand(brand) {
                         Add a POS category first in POS Management.
                     </p>
                 </div>
+                <label class="flex items-center gap-3 text-sm font-medium">
+                    <input v-model="categoryForm.show_on_shop" class="h-4 w-4 accent-pine" type="checkbox" />
+                    Show on the public shop
+                </label>
                 <button
                     class="h-11 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-70"
                     type="submit"

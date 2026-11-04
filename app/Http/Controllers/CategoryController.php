@@ -11,14 +11,14 @@ class CategoryController extends Controller
 {
     public function store(StoreCategoryRequest $request): RedirectResponse
     {
-        $category = Category::query()->create($request->safe()->only(['name', 'pos_category_id']));
+        $category = Category::query()->create($request->safe()->only(['name', 'pos_category_id', 'show_on_shop']));
 
         return back()->with('status', 'Category created.')->with('created_category', $category->name);
     }
 
     public function update(UpdateCategoryRequest $request, Category $category): RedirectResponse
     {
-        $category->update($request->safe()->only(['name', 'pos_category_id']));
+        $category->update($request->safe()->only(['name', 'pos_category_id', 'show_on_shop']));
 
         return back()->with('status', 'Category updated.');
     }

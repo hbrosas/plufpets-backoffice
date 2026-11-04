@@ -84,6 +84,29 @@ class CategoryControllerTest extends TestCase
         $this->assertDatabaseCount('categories', 1);
     }
 
+    public function test_category_can_be_hidden_from_the_public_shop(): void
+    {
+        $posCategory = PosCategory::factory()->create();
+
+        $this->actingAsEmployee()->post('/backoffice/shop/categories', [
+            'name' => 'Supplies',
+            'pos_category_id' => $posCategory->id,
+            'show_on_shop' => false,
+        ]);
+
+        $category = Category::query()->where('name', 'Supplies')->first();
+        $this->assertNotNull($category);
+        $this->assertFalse($category->show_on_shop);
+
+        $this->actingAsEmployee()->put("/backoffice/shop/categories/{$category->id}", [
+            'name' => 'Supplies',
+            'pos_category_id' => $posCategory->id,
+            'show_on_shop' => true,
+        ]);
+
+        $this->assertTrue($category->refresh()->show_on_shop);
+    }
+
     public function test_category_can_be_updated(): void
     {
         $category = Category::factory()->create(['name' => 'Food']);

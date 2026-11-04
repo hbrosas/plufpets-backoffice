@@ -70,6 +70,9 @@ Route::withoutMiddleware([
 });
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::post('/checkout', [HomeController::class, 'store'])
+    ->middleware('throttle:10,1')
+    ->name('shop.checkout');
 
 Route::prefix('backoffice')->group(function () {
     Route::middleware('employee.guest')->group(function () {
