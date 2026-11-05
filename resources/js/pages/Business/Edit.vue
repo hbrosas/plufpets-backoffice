@@ -30,6 +30,20 @@ const form = useForm({
 
 const logoPreview = ref(props.business.logo_url);
 const faviconPreview = ref(props.business.favicon_url);
+const resetOpen = ref(false);
+const resetForm = useForm({
+    confirmation: '',
+});
+
+function openReset() {
+    resetForm.reset();
+    resetForm.clearErrors();
+    resetOpen.value = true;
+}
+
+function submitReset() {
+    resetForm.post('/backoffice/business/reset');
+}
 
 function onLogoChange(event) {
     const file = event.target.files?.[0] ?? null;
@@ -66,11 +80,11 @@ function submit() {
 </script>
 
 <template>
-    <Head title="Business" />
+    <Head title="Business Information" />
 
     <form class="mx-auto flex w-full max-w-2xl flex-col gap-6" @submit.prevent="submit">
         <div class="flex flex-col gap-1">
-            <h1 class="text-2xl font-medium">Business information</h1>
+            <h1 class="text-2xl font-medium">Business Information</h1>
             <p class="text-sm text-ink/70 dark:text-foam/70">
                 Payroll, purchase orders, and other printed documents use this name, address, and logo.
             </p>
@@ -189,5 +203,41 @@ function submit() {
         >
             {{ form.processing ? 'Saving…' : 'Save business information' }}
         </button>
+
+        <button class="h-12 w-fit rounded-xl border border-danger/40 px-5 text-sm font-medium text-danger" type="button" @click="openReset">
+            Reset
+        </button>
     </form>
+
+    <div v-if="resetOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
+        <form class="flex w-full max-w-lg flex-col gap-4 rounded-2xl bg-foam p-6 dark:bg-ink" @submit.prevent="submitReset">
+            <div class="flex items-start justify-between gap-4">
+                <h2 class="text-lg font-medium">Reset</h2>
+                <button class="text-sm font-medium" type="button" @click="resetOpen = false">Cancel</button>
+            </div>
+            <p class="text-sm text-ink/70 dark:text-foam/70">
+                This deletes every record: products, history, transactions, employees, and everything else stored in the database.
+                You will be signed out. The first staff account is created again: employee number 10001, PIN 1234.
+            </p>
+            <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium" for="reset-confirmation">Type DELETE ACCOUNT</label>
+                <input
+                    id="reset-confirmation"
+                    v-model="resetForm.confirmation"
+                    autocomplete="off"
+                    class="h-12 rounded-xl border border-mist bg-white px-4 text-base outline-none transition focus:border-pine focus:ring-2 focus:ring-sand/70 dark:border-white/10 dark:bg-white/5"
+                    placeholder="DELETE ACCOUNT"
+                    type="text"
+                />
+                <p v-if="resetForm.errors.confirmation" class="text-sm text-danger">{{ resetForm.errors.confirmation }}</p>
+            </div>
+            <button
+                class="h-12 rounded-xl bg-danger px-5 text-sm font-medium text-white disabled:opacity-60"
+                type="submit"
+                :disabled="resetForm.processing || resetForm.confirmation !== 'DELETE ACCOUNT'"
+            >
+                {{ resetForm.processing ? 'Resetting…' : 'Reset account' }}
+            </button>
+        </form>
+    </div>
 </template>

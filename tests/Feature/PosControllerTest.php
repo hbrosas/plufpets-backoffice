@@ -7,12 +7,16 @@ use App\Models\Branch;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
 use App\Models\Category;
+use App\Models\Employee;
 use App\Models\PosCashMovement;
 use App\Models\PosCategory;
+use App\Models\PosOpenOrder;
 use App\Models\PosSale;
 use App\Models\PosShift;
 use App\Models\Printer;
+use App\Support\SmsDisclaimer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -195,5 +199,187 @@ class PosControllerTest extends TestCase
             ->missing('paymentMethods')
             ->missing('deliveryMethods')
             ->missing('taxFees'));
+    }
+
+    public function test_guest_is_redirected_from_shop_order_alerts(): void
+    {
+        $branch = Branch::factory()->create();
+
+        $this->get("/backoffice/pos/register/{$branch->id}/shop-orders")
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_employee_without_pos_access_cannot_read_shop_order_alerts(): void
+    {
+        $branch = Branch::factory()->create();
+        $employee = Employee::factory()->create();
+
+        $this->actingAsEmployee($employee)
+            ->getJson("/backoffice/pos/register/{$branch->id}/shop-orders")
+            ->assertForbidden();
+    }
+
+    public function test_register_lists_shop_orders_placed_after_the_last_seen_one(): void
+    {
+        $branch = Branch::factory()->create();
+        $otherBranch = Branch::factory()->create();
+        PosOpenOrder::factory()->for($branch)->create([
+            'status' => null,
+            'saved_by_name' => 'Parked',
+        ]);
+        $seen = PosOpenOrder::factory()->for($branch)->create([
+            'number' => 'OPEN-SEEN',
+            'status' => 'placed',
+            'saved_by_name' => 'Earlier',
+            'total' => 10,
+        ]);
+        $fresh = PosOpenOrder::factory()->for($branch)->create([
+            'number' => 'OPEN-NEW',
+            'status' => 'placed',
+            'saved_by_name' => 'Ada Reyes',
+            'total' => 240,
+        ]);
+        PosOpenOrder::factory()->for($otherBranch)->create([
+            'number' => 'OPEN-OTHER',
+            'status' => 'placed',
+            'saved_by_name' => 'Other Branch',
+        ]);
+
+        $baseline = $this->actingAsEmployee()->getJson("/backoffice/pos/register/{$branch->id}/shop-orders");
+
+        $baseline->assertOk();
+        $baseline->assertJsonPath('latest_id', $fresh->id);
+        $baseline->assertJsonPath('orders', []);
+
+        $response = $this->actingAsEmployee()->getJson("/backoffice/pos/register/{$branch->id}/shop-orders?after={$seen->id}");
+
+        $response->assertOk();
+        $response->assertJsonPath('latest_id', $fresh->id);
+        $response->assertJsonCount(1, 'orders');
+        $response->assertJsonPath('orders.0.number', 'OPEN-NEW');
+        $response->assertJsonPath('orders.0.customer', 'Ada Reyes');
+        $response->assertJsonPath('orders.0.total_label', '₱240.00');
+    }
+
+    public function test_register_lists_online_orders_for_its_branch(): void
+    {
+        $branch = Branch::factory()->create();
+        $otherBranch = Branch::factory()->create();
+        PosOpenOrder::factory()->for($branch)->create([
+            'status' => null,
+            'saved_by_name' => 'Parked',
+        ]);
+        $order = PosOpenOrder::factory()->for($branch)->create([
+            'number' => 'OPEN-SHOP',
+            'status' => 'placed',
+            'saved_by_name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'total' => 80,
+        ]);
+        PosOpenOrder::factory()->for($otherBranch)->create([
+            'number' => 'OPEN-OTHER',
+            'status' => 'placed',
+        ]);
+
+        $response = $this->actingAsEmployee()->getJson("/backoffice/pos/register/{$branch->id}/online-orders");
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'orders');
+        $response->assertJsonPath('orders.0.id', $order->id);
+        $response->assertJsonPath('orders.0.number', 'OPEN-SHOP');
+        $response->assertJsonPath('orders.0.customer', 'Ada Reyes');
+        $response->assertJsonPath('orders.0.status', 'placed');
+        $response->assertJsonPath('statuses.0.value', 'placed');
+    }
+
+    public function test_online_orders_separate_preorder_lines_from_items_ready_to_sell(): void
+    {
+        $branch = Branch::factory()->create();
+        PosOpenOrder::factory()->for($branch)->create([
+            'status' => 'placed',
+            'items' => [
+                [
+                    'catalog_item_variant_id' => 11,
+                    'product_name' => 'Kibble',
+                    'variant_name' => 'Large',
+                    'price' => '80.00',
+                    'quantity' => 1,
+                    'notes' => null,
+                    'is_product' => true,
+                    'modifiers' => [],
+                ],
+                [
+                    'catalog_item_variant_id' => 12,
+                    'product_name' => 'Aozi Dog',
+                    'variant_name' => 'Beef',
+                    'price' => '75.00',
+                    'quantity' => 3,
+                    'notes' => 'Preorder',
+                    'is_product' => true,
+                    'modifiers' => [],
+                ],
+            ],
+        ]);
+
+        $response = $this->actingAsEmployee()->getJson("/backoffice/pos/register/{$branch->id}/online-orders");
+
+        $response->assertOk();
+        $response->assertJsonPath('orders.0.lines.0.preorder', false);
+        $response->assertJsonPath('orders.0.lines.0.product_name', 'Kibble');
+        $response->assertJsonPath('orders.0.lines.1.preorder', true);
+        $response->assertJsonPath('orders.0.lines.1.quantity', 3);
+        $response->assertJsonPath('orders.0.items.1', 'Aozi Dog · Beef × 3 · Preorder');
+        $response->assertJsonPath('orders.0.sale_number', null);
+    }
+
+    public function test_register_status_change_texts_the_customer(): void
+    {
+        Http::preventStrayRequests();
+        config([
+            'services.semaphore.key' => 'test-key',
+            'services.semaphore.sender' => 'PLUFPETS',
+        ]);
+        Http::fake([
+            'https://api.semaphore.co/api/v4/messages' => Http::response([
+                ['message_id' => 1, 'status' => 'Queued'],
+            ]),
+        ]);
+        $branch = Branch::factory()->create();
+        $order = PosOpenOrder::factory()->for($branch)->create([
+            'name' => 'Ada Reyes · 09171234567',
+            'phone' => '09171234567',
+            'status' => 'placed',
+            'total' => 80,
+            'saved_by_name' => 'Ada Reyes',
+        ]);
+
+        $response = $this->actingAsEmployee()->putJson("/backoffice/pos/register/{$branch->id}/online-orders/{$order->id}", [
+            'status' => 'preparing',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('order.status', 'preparing');
+        $this->assertSame('preparing', $order->fresh()->status);
+        $this->assertDatabaseHas('sms_messages', [
+            'number' => '09171234567',
+            'body' => SmsDisclaimer::append('Hi Ada Reyes, we are preparing order '.$order->number.'.'),
+        ]);
+    }
+
+    public function test_register_cannot_update_another_branch_order(): void
+    {
+        $branch = Branch::factory()->create();
+        $otherBranch = Branch::factory()->create();
+        $order = PosOpenOrder::factory()->for($otherBranch)->create([
+            'status' => 'placed',
+        ]);
+
+        $this->actingAsEmployee()
+            ->putJson("/backoffice/pos/register/{$branch->id}/online-orders/{$order->id}", [
+                'status' => 'preparing',
+            ])
+            ->assertNotFound();
+
+        $this->assertSame('placed', $order->fresh()->status);
     }
 }

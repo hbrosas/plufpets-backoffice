@@ -51,6 +51,7 @@ const receiptPrinter = computed(
 const openingDrawer = ref(false);
 
 const selectedCategoryId = ref(null);
+const selectedProductCategory = ref('');
 const search = ref('');
 const cart = ref([]);
 const salesOpen = ref(false);
@@ -74,6 +75,18 @@ const saveOpen = ref(false);
 const activeOpenOrderId = ref(null);
 const activeOpenOrderName = ref('');
 let cartLineSeq = 0;
+const shopOrderAlerts = ref([]);
+let seenShopOrderId = null;
+const onlineOrdersOpen = ref(false);
+const onlineOrders = ref([]);
+const onlineOrderStatuses = ref([]);
+const onlineOrdersLoading = ref(false);
+const onlineOrdersNotice = ref('');
+const partialDelivery = ref('');
+const viewedOnlineOrderId = ref(null);
+const updatingOrderId = ref(null);
+let shopOrderTimer = null;
+let shopOrderPollInFlight = false;
 
 const registerPath = computed(() => `/backoffice/pos/register/${props.branch.id}`);
 const soldQuantities = ref({});
@@ -91,6 +104,12 @@ watch(
         soldQuantities.value = {};
     },
 );
+
+watch(cart, (lines) => {
+    if (lines.length === 0) {
+        partialDelivery.value = '';
+    }
+});
 
 const openForm = useForm({
     denominations: emptyDenominations(props.denominations),
@@ -142,26 +161,54 @@ const selectedDelivery = computed(() =>
     props.deliveryMethods.find((method) => String(method.id) === String(saleForm.delivery_method_id)),
 );
 
+const productCategories = computed(() => {
+    const names = new Set();
+
+    for (const variant of props.variants) {
+        if (!matchesPosCategory(variant)) {
+            continue;
+        }
+
+        names.add(variant.shop_category_name || 'Uncategorized');
+    }
+
+    return [...names].sort((left, right) => left.localeCompare(right));
+});
+
 const filteredVariants = computed(() => {
     const query = search.value.trim().toLowerCase();
 
     return props.variants.filter((variant) => {
+        if (selectedProductCategory.value && (variant.shop_category_name || 'Uncategorized') !== selectedProductCategory.value) {
+            return false;
+        }
+
         if (!query) {
-            if (selectedCategoryId.value === 'none' && variant.pos_category_id) {
-                return false;
-            }
-
-            if (selectedCategoryId.value && selectedCategoryId.value !== 'none' && variant.pos_category_id !== selectedCategoryId.value) {
-                return false;
-            }
-
-            return true;
+            return matchesPosCategory(variant);
         }
 
         return [variant.product_name, variant.variant_name, variant.sku, variant.barcode]
             .filter(Boolean)
             .some((value) => String(value).toLowerCase().includes(query));
     });
+});
+
+function matchesPosCategory(variant) {
+    if (selectedCategoryId.value === 'none') {
+        return !variant.pos_category_id;
+    }
+
+    if (selectedCategoryId.value) {
+        return variant.pos_category_id === selectedCategoryId.value;
+    }
+
+    return true;
+}
+
+watch(productCategories, (categories) => {
+    if (selectedProductCategory.value && !categories.includes(selectedProductCategory.value)) {
+        selectedProductCategory.value = '';
+    }
 });
 
 const cartSubtotal = computed(() =>
@@ -1094,6 +1141,8 @@ function resumeOpenOrder(order) {
         return;
     }
 
+    partialDelivery.value = '';
+
     cart.value = (order.items ?? []).map((item) => {
         cartLineSeq += 1;
         const variant = props.variants.find((row) => row.id === item.catalog_item_variant_id);
@@ -1253,7 +1302,177 @@ watch(
     { immediate: true },
 );
 
+async function pollShopOrders() {
+    if (document.hidden || shopOrderPollInFlight) {
+        return;
+    }
+
+    shopOrderPollInFlight = true;
+
+    try {
+        const query = seenShopOrderId === null ? '' : `?after=${seenShopOrderId}`;
+        const response = await fetch(`${registerPath.value}/shop-orders${query}`, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        if (!response.ok) {
+            return;
+        }
+
+        const payload = await response.json();
+        const latestId = Number(payload.latest_id ?? 0);
+
+        if (seenShopOrderId === null) {
+            seenShopOrderId = latestId;
+
+            return;
+        }
+
+        for (const order of payload.orders ?? []) {
+            shopOrderAlerts.value.push(order);
+        }
+
+        seenShopOrderId = latestId;
+    } catch {
+        // The next poll retries.
+    } finally {
+        shopOrderPollInFlight = false;
+    }
+}
+
+shopOrderTimer = window.setInterval(pollShopOrders, 4000);
+pollShopOrders();
+
+function dismissShopOrderAlert() {
+    shopOrderAlerts.value.shift();
+}
+
+async function loadOnlineOrders() {
+    onlineOrdersLoading.value = true;
+
+    try {
+        const response = await fetch(`${registerPath.value}/online-orders`, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        if (!response.ok) {
+            onlineOrdersNotice.value = 'Could not load online orders.';
+
+            return;
+        }
+
+        const payload = await response.json();
+        onlineOrders.value = payload.orders ?? [];
+        onlineOrderStatuses.value = payload.statuses ?? [];
+    } catch {
+        onlineOrdersNotice.value = 'Could not load online orders.';
+    } finally {
+        onlineOrdersLoading.value = false;
+    }
+}
+
+const viewedOnlineOrder = computed(() => onlineOrders.value.find((order) => order.id === viewedOnlineOrderId.value) ?? null);
+
+function openOnlineOrders() {
+    onlineOrdersNotice.value = '';
+    viewedOnlineOrderId.value = null;
+    onlineOrdersOpen.value = true;
+    loadOnlineOrders();
+}
+
+async function updateOnlineOrder(order, status) {
+    updatingOrderId.value = order.id;
+    onlineOrdersNotice.value = '';
+
+    try {
+        const payload = await jsonRequest(`${registerPath.value}/online-orders/${order.id}`, {
+            method: 'PUT',
+            body: { status },
+        });
+        const index = onlineOrders.value.findIndex((item) => item.id === order.id);
+
+        if (index >= 0 && payload.order) {
+            onlineOrders.value.splice(index, 1, payload.order);
+        }
+
+        onlineOrdersNotice.value = payload.message || 'Order status saved.';
+    } catch (error) {
+        onlineOrdersNotice.value = error instanceof Error ? error.message : 'Could not save the order status.';
+    } finally {
+        updatingOrderId.value = null;
+    }
+}
+
+function lineLabel(line) {
+    const variant = String(line.variant_name ?? '').trim();
+    const name = variant && variant.toLowerCase() !== 'default'
+        ? `${line.product_name} · ${variant}`
+        : line.product_name;
+
+    return `${name} × ${line.quantity}`;
+}
+
+function orderHasStock(order) {
+    return (order.lines ?? []).some((line) => !line.preorder);
+}
+
+function createSaleFromOnlineOrder(order) {
+    const stocked = (order.lines ?? []).filter((line) => !line.preorder);
+    const held = (order.lines ?? []).filter((line) => line.preorder);
+
+    if (order.sale_number) {
+        onlineOrdersNotice.value = `Sale ${order.sale_number} is already recorded for this order.`;
+
+        return;
+    }
+
+    if (stocked.length === 0) {
+        onlineOrdersNotice.value = 'Every item on this order is a pre-order, so there is nothing to sell yet.';
+
+        return;
+    }
+
+    if (cart.value.length > 0) {
+        onlineOrdersNotice.value = 'Clear the cart before creating this sale.';
+
+        return;
+    }
+
+    cart.value = stocked.map((item) => {
+        cartLineSeq += 1;
+        const variant = props.variants.find((row) => row.id === item.catalog_item_variant_id);
+
+        return {
+            key: cartLineSeq,
+            id: item.catalog_item_variant_id,
+            product_name: item.product_name,
+            variant_name: item.variant_name,
+            price: Number(item.price),
+            quantity: item.quantity,
+            notes: item.notes ?? '',
+            modifiers: item.modifiers ?? [],
+            assigned_employee_ids: item.assigned_employee_ids ?? [],
+            assisted_employee_ids: item.assisted_employee_ids ?? [],
+            is_product: item.is_product,
+            available: variant?.quantity ?? null,
+        };
+    });
+    activeOpenOrderId.value = order.id;
+    activeOpenOrderName.value = order.number;
+    partialDelivery.value = held.length > 0
+        ? `Partial delivery. Pre-order items stay on ${order.number}: ${held.map(lineLabel).join(', ')}.`
+        : '';
+    onlineOrdersOpen.value = false;
+}
+
 onUnmounted(() => {
+    window.clearInterval(shopOrderTimer);
     hidePosChrome.value = false;
     hideSendText.value = false;
 });
@@ -1273,19 +1492,46 @@ onUnmounted(() => {
     </Teleport>
 
     <Teleport defer to="#admin-header-actions">
+        <button
+            class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
+            type="button"
+            @click="openOnlineOrders"
+        >
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M3.5 5h13l-1.2 8.5a1 1 0 0 1-1 .8H6.2a1 1 0 0 1-1-.8L3.5 5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                <path d="M7 5 8 2.5h4L13 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+            Online Orders
+        </button>
+        <button
+            class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
+            type="button"
+            @click="printersOpen = true"
+        >
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M6 7V3.5h8V7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                <path d="M5 12.5h10V17H5v-4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                <path d="M4 7.5h12a1.5 1.5 0 0 1 1.5 1.5v3.5H2.5V9A1.5 1.5 0 0 1 4 7.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                <circle cx="14.5" cy="9.5" r="0.6" fill="currentColor" />
+            </svg>
+            Devices
+        </button>
         <template v-if="!shift">
             <button
-                class="h-10 shrink-0 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
+                class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
                 form="open-shift-form"
                 type="submit"
                 :disabled="openForm.processing"
             >
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M4 10h12M10 4v12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
                 {{ openForm.processing ? 'Opening…' : 'Open Shift' }}
             </button>
         </template>
         <template v-else-if="shift && closeOpen">
             <button
-                class="h-10 shrink-0 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
+                class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
                 form="close-shift-form"
                 type="submit"
                 :disabled="closeForm.processing"
@@ -1293,55 +1539,66 @@ onUnmounted(() => {
                 {{ closeForm.processing ? 'Closing…' : 'Close Shift' }}
             </button>
             <button
-                class="h-10 shrink-0 rounded-xl px-3 text-sm font-medium whitespace-nowrap"
+                class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-medium whitespace-nowrap"
                 type="button"
                 @click="closeOpen = false"
             >
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
                 Cancel
-            </button>
-        </template>
-        <template v-else-if="shift">
-            <button
-                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
-                type="button"
-                @click="closeOpen = true"
-            >
-                Close Shift
             </button>
         </template>
     </Teleport>
 
     <Teleport defer to="#pos-header-menu-items">
-        <button
-            class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
-            type="button"
-            @click="printersOpen = true"
-        >
-            Printers
-        </button>
         <template v-if="shift">
             <button
                 v-if="canOpenDrawer"
-                class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 disabled:opacity-70 dark:hover:bg-white/10"
+                class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 disabled:opacity-70 dark:hover:bg-white/10"
                 type="button"
                 :disabled="openingDrawer"
                 @click="openDrawer(true)"
             >
+                <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M3 6.5h14v7.2a1.3 1.3 0 0 1-1.3 1.3H4.3A1.3 1.3 0 0 1 3 13.7V6.5Z" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M3 6.5 4.4 4h11.2L17 6.5M8 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
                 {{ openingDrawer ? 'Opening…' : 'Open Drawer' }}
             </button>
             <button
-                class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
+                class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
                 type="button"
                 @click="cashOpen = true"
             >
+                <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <rect x="2.5" y="5" width="15" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+                    <circle cx="10" cy="10" r="2" stroke="currentColor" stroke-width="1.5" />
+                </svg>
                 Cash In / Out
             </button>
             <button
-                class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
+                class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
                 type="button"
                 @click="salesOpen = true"
             >
+                <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M6 3.5h8l1 2.5H5L6 3.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                    <path d="M4.5 6h11v10.5H4.5V6Z" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M8 9.5h4M8 12.5h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
                 Today's Transactions
+            </button>
+            <button
+                class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
+                type="button"
+                @click="closeOpen = true"
+            >
+                <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <rect x="3.5" y="4" width="13" height="12" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M7 4V3.2A1.2 1.2 0 0 1 8.2 2h3.6A1.2 1.2 0 0 1 13 3.2V4M3.5 8.5h13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
+                Close Shift
             </button>
         </template>
     </Teleport>
@@ -1426,25 +1683,36 @@ onUnmounted(() => {
             class="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(14rem,48dvh)] gap-3 sm:gap-4 min-[48rem]:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] min-[48rem]:grid-rows-none"
         >
             <section class="@container flex min-h-0 flex-col gap-3">
-                <div class="flex shrink-0 gap-2 overflow-x-auto pb-0.5">
-                    <button
-                        class="h-10 shrink-0 rounded-xl px-3 text-sm font-medium whitespace-nowrap"
-                        :class="selectedCategoryId === null ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
-                        type="button"
-                        @click="selectedCategoryId = null"
+                <div class="flex shrink-0 items-center gap-2">
+                    <div class="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5">
+                        <button
+                            class="h-10 shrink-0 rounded-xl px-3 text-sm font-medium whitespace-nowrap"
+                            :class="selectedCategoryId === null ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                            type="button"
+                            @click="selectedCategoryId = null"
+                        >
+                            All
+                        </button>
+                        <button
+                            v-for="category in categories"
+                            :key="category.id"
+                            class="h-10 shrink-0 rounded-xl px-3 text-sm font-medium whitespace-nowrap"
+                            :class="selectedCategoryId === category.id ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                            type="button"
+                            @click="selectedCategoryId = category.id"
+                        >
+                            {{ category.name }}
+                        </button>
+                    </div>
+                    <label class="sr-only" for="product-category">Product category</label>
+                    <select
+                        id="product-category"
+                        v-model="selectedProductCategory"
+                        class="h-10 w-44 shrink-0 rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/15 dark:bg-white/5"
                     >
-                        All
-                    </button>
-                    <button
-                        v-for="category in categories"
-                        :key="category.id"
-                        class="h-10 shrink-0 rounded-xl px-3 text-sm font-medium whitespace-nowrap"
-                        :class="selectedCategoryId === category.id ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
-                        type="button"
-                        @click="selectedCategoryId = category.id"
-                    >
-                        {{ category.name }}
-                    </button>
+                        <option value="">All categories</option>
+                        <option v-for="category in productCategories" :key="category" :value="category">{{ category }}</option>
+                    </select>
                 </div>
                 <div class="min-h-0 flex-1 overflow-y-auto">
                 <div class="grid grid-cols-2 gap-3 @min-[21rem]:grid-cols-3 @min-[40rem]:grid-cols-4">
@@ -1496,6 +1764,8 @@ onUnmounted(() => {
                         <p class="truncate text-xs text-ink/55 dark:text-foam/55">
                             {{ employee?.name }} · #{{ employee?.employee_number }}
                         </p>
+                        <p v-if="activeOpenOrderName" class="truncate text-xs font-medium">{{ activeOpenOrderName }}</p>
+                        <p v-if="partialDelivery" class="mt-1 text-xs text-ink/70 dark:text-foam/70">{{ partialDelivery }}</p>
                     </div>
                     <div v-if="cart.length === 0" class="min-h-0 flex-1 overflow-y-auto px-4 py-6 text-sm text-ink/60 sm:px-5">
                         Add a variant to the cart.
@@ -1540,28 +1810,9 @@ onUnmounted(() => {
                     </ul>
                 </aside>
                 <aside class="flex shrink-0 flex-col gap-3 rounded-2xl border border-mist bg-white p-4 sm:p-5 dark:border-white/10 dark:bg-white/5">
-                    <p class="text-sm font-medium">Order Summary</p>
-                    <div class="flex flex-col gap-1 text-sm">
-                        <div class="flex justify-between"><span>Subtotal</span><span>{{ formatPeso(cartSubtotal) }}</span></div>
-                        <div class="flex justify-between"><span>Delivery</span><span>{{ formatPeso(deliveryFee) }}</span></div>
-                        <label
-                            v-for="tax in taxFees"
-                            :key="`summary-${tax.id}`"
-                            class="flex items-center justify-between gap-3"
-                        >
-                            <span class="flex min-w-0 items-center gap-2">
-                                <input
-                                    v-model="selectedTaxIds"
-                                    class="h-4 w-4 accent-pine"
-                                    type="checkbox"
-                                    :value="tax.id"
-                                />
-                                <span class="truncate">{{ tax.name }} · {{ taxRateLabel(tax) }}</span>
-                            </span>
-                            <span v-if="selectedTaxIds.includes(tax.id)">{{ formatPeso(taxAmount(tax)) }}</span>
-                        </label>
-                        <div class="flex justify-between"><span>Tax</span><span>{{ formatPeso(taxTotal) }}</span></div>
-                        <div class="flex justify-between font-medium"><span>Total</span><span>{{ formatPeso(saleTotal) }}</span></div>
+                    <div class="flex justify-between text-sm font-medium">
+                        <span>Total</span>
+                        <span>{{ formatPeso(cartSubtotal) }}</span>
                     </div>
                     <p v-if="openOrderForm.errors.items" class="text-sm text-danger">{{ openOrderForm.errors.items }}</p>
                     <p v-if="openOrderForm.errors.status" class="text-sm text-danger">{{ openOrderForm.errors.status }}</p>
@@ -2067,11 +2318,116 @@ onUnmounted(() => {
         </template>
     </div>
 
+    <div
+        v-if="shopOrderAlerts.length > 0"
+        class="fixed inset-0 z-[80] flex items-center justify-center bg-navy px-6 text-white"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="shop-order-alert-title"
+    >
+        <div class="flex w-full max-w-xl flex-col items-center gap-5 text-center">
+            <p class="text-sm font-semibold tracking-[0.2em] text-ember uppercase">New online order</p>
+            <h2 id="shop-order-alert-title" class="text-5xl font-semibold tracking-tight sm:text-6xl">{{ shopOrderAlerts[0].number }}</h2>
+            <p class="text-2xl">{{ shopOrderAlerts[0].customer }}</p>
+            <p v-if="shopOrderAlerts[0].items_label" class="max-w-md text-base text-white/80">{{ shopOrderAlerts[0].items_label }}</p>
+            <p class="text-4xl font-semibold text-ember">{{ shopOrderAlerts[0].total_label }}</p>
+            <p v-if="shopOrderAlerts.length > 1" class="text-sm text-white/70">{{ shopOrderAlerts.length }} new orders</p>
+            <button class="h-14 min-w-40 rounded-2xl bg-ember px-8 text-lg font-semibold text-black" type="button" @click="dismissShopOrderAlert">
+                Okay
+            </button>
+        </div>
+    </div>
+
+    <div v-if="onlineOrdersOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
+        <div class="flex max-h-[90dvh] w-full max-w-2xl flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 dark:bg-ink">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-medium">Online Orders</h2>
+                    <p class="text-sm text-ink/60 dark:text-foam/60">{{ branch.name }}</p>
+                </div>
+                <button class="text-sm font-medium" type="button" @click="onlineOrdersOpen = false; viewedOnlineOrderId = null">Close</button>
+            </div>
+            <p v-if="onlineOrdersNotice" class="rounded-xl border border-pine/20 bg-white px-4 py-3 text-sm dark:border-white/10 dark:bg-white/5">{{ onlineOrdersNotice }}</p>
+            <p v-if="onlineOrdersLoading" class="text-sm text-ink/60 dark:text-foam/60">Loading orders…</p>
+            <p v-else-if="onlineOrders.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No online orders yet.</p>
+            <ul v-else class="flex min-h-0 flex-col gap-3 overflow-y-auto">
+                <li
+                    v-for="order in onlineOrders"
+                    :key="order.id"
+                    class="flex flex-col gap-2 rounded-xl border border-mist p-3 dark:border-white/10"
+                >
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="font-medium">{{ order.number }}</p>
+                            <p class="text-xs text-ink/50 dark:text-foam/50">{{ order.placed_at }} · {{ order.total_label }}</p>
+                        </div>
+                        <div class="flex w-40 shrink-0 flex-col gap-2">
+                            <label class="sr-only" :for="`pos-order-status-${order.id}`">Status for {{ order.number }}</label>
+                            <select
+                                :id="`pos-order-status-${order.id}`"
+                                class="h-10 rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5"
+                                :disabled="updatingOrderId === order.id"
+                                :value="order.status"
+                                @change="updateOnlineOrder(order, $event.target.value)"
+                            >
+                                <option v-for="status in onlineOrderStatuses" :key="status.value" :value="status.value">{{ status.label }}</option>
+                            </select>
+                            <button
+                                class="h-10 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-50"
+                                type="button"
+                                :disabled="Boolean(order.sale_number) || !orderHasStock(order)"
+                                @click="createSaleFromOnlineOrder(order)"
+                            >
+                                Create Sale
+                            </button>
+                            <button
+                                class="h-10 rounded-xl border border-mist text-sm font-medium dark:border-white/15"
+                                type="button"
+                                @click="viewedOnlineOrderId = order.id"
+                            >
+                                View
+                            </button>
+                        </div>
+                    </div>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <div v-if="viewedOnlineOrder" class="fixed inset-0 z-[60] flex items-center justify-center bg-ink/50 px-4">
+        <div class="flex max-h-[90dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-foam p-6 dark:bg-ink">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-medium">{{ viewedOnlineOrder.number }}</h2>
+                    <p class="text-sm text-ink/60 dark:text-foam/60">{{ viewedOnlineOrder.placed_at }} · {{ viewedOnlineOrder.total_label }}</p>
+                </div>
+                <button class="text-sm font-medium" type="button" @click="viewedOnlineOrderId = null">Close</button>
+            </div>
+            <div class="flex flex-col gap-1 text-sm">
+                <p class="font-medium">{{ viewedOnlineOrder.customer }}</p>
+                <p v-if="viewedOnlineOrder.phone" class="text-ink/70 dark:text-foam/70">{{ viewedOnlineOrder.phone }}</p>
+            </div>
+            <div v-if="viewedOnlineOrder.items.length" class="flex flex-col gap-1 text-sm">
+                <p class="font-medium">Items</p>
+                <p v-for="item in viewedOnlineOrder.items" :key="item">{{ item }}</p>
+            </div>
+            <div v-if="viewedOnlineOrder.delivery || viewedOnlineOrder.payment" class="flex flex-col gap-1 text-sm">
+                <p v-if="viewedOnlineOrder.delivery">{{ viewedOnlineOrder.delivery }}</p>
+                <p v-if="viewedOnlineOrder.address" class="text-ink/70 dark:text-foam/70">{{ viewedOnlineOrder.address }}</p>
+                <p v-if="viewedOnlineOrder.payment">{{ viewedOnlineOrder.payment }}</p>
+            </div>
+            <p v-if="viewedOnlineOrder.sale_number" class="text-sm">Sale {{ viewedOnlineOrder.sale_number }}</p>
+            <p v-else-if="(viewedOnlineOrder.lines ?? []).some((line) => line.preorder)" class="text-sm text-ink/70 dark:text-foam/70">
+                Partial delivery. Pre-order items stay on the order.
+            </p>
+        </div>
+    </div>
+
     <div v-if="printersOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
         <div class="flex max-h-[90dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-foam p-6 dark:bg-ink">
             <div class="flex items-start justify-between gap-4">
                 <div>
-                    <h2 class="text-lg font-medium">Printers</h2>
+                    <h2 class="text-lg font-medium">Devices</h2>
                     <p class="text-sm text-ink/60 dark:text-foam/60">{{ branch.name }}</p>
                 </div>
                 <button class="text-sm font-medium" type="button" @click="printersOpen = false">Close</button>
@@ -2084,9 +2440,9 @@ onUnmounted(() => {
                 <li
                     v-for="printer in branchPrinters"
                     :key="printer.id"
-                    class="flex flex-col gap-3 rounded-xl border border-mist p-3 dark:border-white/10"
+                    class="flex items-center justify-between gap-3 rounded-xl border border-mist p-3 dark:border-white/10"
                 >
-                    <div>
+                    <div class="min-w-0">
                         <p class="font-medium">{{ printer.name }}</p>
                         <p class="text-xs text-ink/50 dark:text-foam/50">
                             {{ printer.role_label }} · {{ printer.connection_label }} · {{ printer.paper_label }}
@@ -2094,7 +2450,7 @@ onUnmounted(() => {
                             <span v-else-if="usesPairedDevice(printer)"> · Not connected</span>
                         </p>
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex shrink-0 gap-2">
                         <button
                             class="h-10 rounded-xl bg-pine px-3 text-sm font-medium text-foam disabled:opacity-70"
                             type="button"

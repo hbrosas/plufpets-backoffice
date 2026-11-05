@@ -30,7 +30,7 @@ class CatalogItemController extends Controller
     {
         $request->merge([
             'search' => $request->string('search')->trim()->toString() ?: null,
-            'type' => $request->string('type')->trim()->toString() ?: null,
+            'type' => $request->string('type')->trim()->toString() ?: CatalogItemType::Product->value,
         ]);
 
         $filters = $request->validate([
@@ -105,6 +105,7 @@ class CatalogItemController extends Controller
                 'description' => $catalogItem->description ?? '',
                 'category' => $catalogItem->category?->name,
                 'brand' => $catalogItem->brand?->name,
+                'badge' => $catalogItem->badge,
                 'is_active' => $catalogItem->is_active,
                 'variants' => $catalogItem->variants->map(fn ($variant): array => [
                     'id' => $variant->id,
@@ -181,6 +182,7 @@ class CatalogItemController extends Controller
                 'category_name' => $catalogItem->category?->name ?? '',
                 'brand_name' => $catalogItem->brand?->name ?? '',
                 'description' => $catalogItem->description ?? '',
+                'badge' => $catalogItem->badge ?? '',
                 'is_active' => $catalogItem->is_active,
                 'has_branch_pricing' => $catalogItem->has_branch_pricing,
                 'modifier_ids' => $catalogItem->modifiers->pluck('id')->all(),

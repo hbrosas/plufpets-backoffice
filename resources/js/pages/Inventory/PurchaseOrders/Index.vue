@@ -1,6 +1,5 @@
 <script setup>
-import { Head, Link, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
 defineOptions({
@@ -12,10 +11,19 @@ defineProps({
         type: Object,
         required: true,
     },
+    filters: {
+        type: Object,
+        required: true,
+    },
+    tabs: {
+        type: Array,
+        required: true,
+    },
 });
 
-const page = usePage();
-const flash = computed(() => page.props.flash ?? {});
+function selectTab(tab) {
+    router.get('/backoffice/inventory/purchase-orders', { tab }, { preserveState: true, replace: true });
+}
 </script>
 
 <template>
@@ -31,7 +39,22 @@ const flash = computed(() => page.props.flash ?? {});
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
+        <div class="flex flex-wrap gap-2" role="tablist" aria-label="Purchase order status">
+            <button
+                v-for="tab in tabs"
+                :id="`purchase-orders-tab-${tab.value}`"
+                :key="tab.value"
+                class="h-10 rounded-xl px-4 text-sm font-medium"
+                :class="filters.tab === tab.value ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                type="button"
+                role="tab"
+                :aria-selected="filters.tab === tab.value"
+                @click="selectTab(tab.value)"
+            >
+                {{ tab.label }}
+            </button>
+        </div>
+        <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5" role="tabpanel" :aria-labelledby="`purchase-orders-tab-${filters.tab}`">
             <table class="w-full min-w-[48rem] text-left text-sm">
                 <thead class="text-ink/50 dark:text-foam/50">
                     <tr class="border-b border-mist dark:border-white/10">
@@ -46,7 +69,7 @@ const flash = computed(() => page.props.flash ?? {});
                 <tbody>
                     <tr v-if="purchaseOrders.data.length === 0">
                         <td class="px-4 py-10 text-ink/60 dark:text-foam/60" colspan="6">
-                            No purchase orders yet.
+                            No purchase orders with this status.
                         </td>
                     </tr>
                     <tr

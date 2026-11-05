@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\Branch;
 use App\Models\Business;
+use App\Models\CatalogItem;
 use App\Models\Employee;
 use App\Models\EmployeeProfile;
+use App\Models\PosSale;
 use App\Models\PurchaseOrder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -214,7 +216,7 @@ class BusinessControllerTest extends TestCase
                 ->where('purchaseOrder.business.registered_business_name', 'Harbor Grooming')
                 ->where('purchaseOrder.business.address', 'Ayala Avenue')
                 ->where('purchaseOrder.business.tin', '999-888-777-00000')
-                ->where('purchaseOrder.business.branch', 'Makati Branch')
+                ->missing('purchaseOrder.business.branch')
                 ->where('purchaseOrder.business.logo_url', $business->logoUrl()));
 
         $this->actingAsEmployee()
@@ -223,7 +225,81 @@ class BusinessControllerTest extends TestCase
             ->assertSee('Harbor Grooming', false)
             ->assertSee('Ayala Avenue', false)
             ->assertSee('TIN 999-888-777-00000', false)
+            ->assertDontSee('Makati Branch', false)
             ->assertDontSee('Branch Trading', false)
             ->assertDontSee('Branch Street', false);
+    }
+
+    public function test_guest_cannot_reset_the_account(): void
+    {
+        $this->post('/backoffice/business/reset', [
+            'confirmation' => 'DELETE ACCOUNT',
+        ])->assertRedirect(route('login'));
+    }
+
+    public function test_employee_without_business_access_cannot_reset_the_account(): void
+    {
+        $employee = Employee::factory()->create();
+        CatalogItem::factory()->create();
+
+        $this->actingAsEmployee($employee)
+            ->post('/backoffice/business/reset', [
+                'confirmation' => 'DELETE ACCOUNT',
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('catalog_items', 1);
+    }
+
+    public function test_reset_requires_the_delete_account_phrase(): void
+    {
+        CatalogItem::factory()->create();
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/business')
+            ->post('/backoffice/business/reset', [
+                'confirmation' => 'delete account',
+            ])
+            ->assertRedirect('/backoffice/business')
+            ->assertSessionHasErrors([
+                'confirmation' => 'Type DELETE ACCOUNT to reset the account.',
+            ]);
+
+        $this->assertDatabaseCount('catalog_items', 1);
+    }
+
+    public function test_reset_deletes_every_record_and_signs_out(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('catalog-images/kibble.webp', 'image');
+        Storage::disk('public')->put('business/logo.png', 'logo');
+
+        CatalogItem::factory()->create();
+        PosSale::factory()->create();
+        Business::factory()->create(['name' => 'Harbor Grooming']);
+        Employee::factory()->create(['name' => 'Ada Groomer']);
+
+        $this->actingAsEmployee()
+            ->post('/backoffice/business/reset', [
+                'confirmation' => 'DELETE ACCOUNT',
+            ])
+            ->assertRedirect(route('login'));
+
+        $this->assertDatabaseCount('catalog_items', 0);
+        $this->assertDatabaseCount('pos_sales', 0);
+        $this->assertDatabaseCount('businesses', 0);
+        $this->assertDatabaseCount('employees', 1);
+        $this->assertDatabaseHas('employees', [
+            'employee_number' => '10001',
+            'name' => 'Sample Employee',
+        ]);
+        $this->assertDatabaseMissing('employees', ['name' => 'Ada Groomer']);
+        Storage::disk('public')->assertMissing('catalog-images/kibble.webp');
+        Storage::disk('public')->assertMissing('business/logo.png');
+
+        $this->get('/backoffice')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('flash.status', 'The account was reset. Sign in with employee number 10001 and PIN 1234.'));
     }
 }

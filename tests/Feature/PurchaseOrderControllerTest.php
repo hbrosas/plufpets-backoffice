@@ -265,13 +265,96 @@ class PurchaseOrderControllerTest extends TestCase
     public function test_index_lists_purchase_orders(): void
     {
         PurchaseOrder::factory()->create(['number' => 'PO-0042']);
+        PurchaseOrder::factory()->confirmed()->create(['number' => 'PO-0099']);
 
         $response = $this->actingAsEmployee()->get('/backoffice/inventory/purchase-orders');
 
         $response->assertOk();
         $response->assertInertia(fn (Assert $page) => $page
             ->component('Inventory/PurchaseOrders/Index')
+            ->where('filters.tab', 'draft')
+            ->where('tabs.0.value', 'draft')
+            ->where('tabs.1.value', 'confirmed')
+            ->where('tabs.2.value', 'closed')
+            ->has('purchaseOrders.data', 1)
             ->where('purchaseOrders.data.0.number', 'PO-0042'));
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/inventory/purchase-orders?tab=confirmed')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.tab', 'confirmed')
+                ->has('purchaseOrders.data', 1)
+                ->where('purchaseOrders.data.0.number', 'PO-0099'));
+    }
+
+    public function test_guest_cannot_close_a_purchase_order(): void
+    {
+        $order = PurchaseOrder::factory()->confirmed()->create();
+
+        $this->post("/backoffice/inventory/purchase-orders/{$order->id}/close")
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_purchase_order_closes_with_a_reason(): void
+    {
+        $order = PurchaseOrder::factory()->confirmed()->create(['number' => 'PO-0077']);
+
+        $this->actingAsEmployee()
+            ->post("/backoffice/inventory/purchase-orders/{$order->id}/close", [
+                'reason' => '  Supplier cancelled the remaining items.  ',
+            ])
+            ->assertRedirect(route('inventory.purchase-orders.show', $order))
+            ->assertSessionHas('status', 'Purchase order closed.');
+
+        $order->refresh();
+        $this->assertSame(PurchaseOrderStatus::Closed, $order->status);
+        $this->assertSame('Supplier cancelled the remaining items.', $order->closed_reason);
+        $this->assertNotNull($order->closed_at);
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/inventory/purchase-orders?tab=closed')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.tab', 'closed')
+                ->where('purchaseOrders.data.0.number', 'PO-0077'));
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/inventory/purchase-orders/{$order->id}/print")
+            ->assertOk()
+            ->assertSee('Closed: Supplier cancelled the remaining items.', false);
+    }
+
+    public function test_closing_a_purchase_order_requires_a_reason(): void
+    {
+        $order = PurchaseOrder::factory()->create();
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/inventory/purchase-orders/{$order->id}")
+            ->post("/backoffice/inventory/purchase-orders/{$order->id}/close", [
+                'reason' => '   ',
+            ])
+            ->assertRedirect("/backoffice/inventory/purchase-orders/{$order->id}")
+            ->assertSessionHasErrors([
+                'reason' => 'Enter a reason for closing this purchase order.',
+            ]);
+
+        $this->assertSame(PurchaseOrderStatus::Draft, $order->fresh()->status);
+    }
+
+    public function test_closed_purchase_order_cannot_be_closed_again(): void
+    {
+        $order = PurchaseOrder::factory()->closed()->create();
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/inventory/purchase-orders/{$order->id}")
+            ->post("/backoffice/inventory/purchase-orders/{$order->id}/close", [
+                'reason' => 'Again',
+            ])
+            ->assertRedirect("/backoffice/inventory/purchase-orders/{$order->id}")
+            ->assertSessionHasErrors([
+                'reason' => 'This purchase order is already closed.',
+            ]);
     }
 
     private function productVariant(): CatalogItemVariant

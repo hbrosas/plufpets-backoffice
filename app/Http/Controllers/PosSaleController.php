@@ -76,10 +76,16 @@ class PosSaleController extends Controller
         $openOrderId = $request->validated('pos_open_order_id');
 
         if ($openOrderId !== null) {
-            PosOpenOrder::query()
+            $openOrder = PosOpenOrder::query()
                 ->where('branch_id', $branch->id)
                 ->whereKey($openOrderId)
-                ->delete();
+                ->first();
+
+            if ($openOrder instanceof PosOpenOrder && is_string($openOrder->status) && $openOrder->status !== '') {
+                $openOrder->update(['pos_sale_id' => $sale->id]);
+            } elseif ($openOrder instanceof PosOpenOrder) {
+                $openOrder->delete();
+            }
         }
 
         $notice = [

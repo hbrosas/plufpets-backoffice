@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Employee;
 use App\Models\SmsTemplate;
+use App\Support\ShopOrderMessages;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class PosSmsTemplateControllerTest extends TestCase
@@ -64,5 +66,68 @@ class PosSmsTemplateControllerTest extends TestCase
             ->assertOk();
 
         $this->assertDatabaseMissing('sms_templates', ['id' => $template->id]);
+    }
+
+    public function test_guest_cannot_open_the_template_page(): void
+    {
+        $this->get('/backoffice/sms/templates')->assertRedirect(route('login'));
+    }
+
+    public function test_employee_without_permission_cannot_open_the_template_page(): void
+    {
+        $employee = Employee::factory()->create();
+
+        $this->actingAsEmployee($employee)->get('/backoffice/sms/templates')->assertForbidden();
+    }
+
+    public function test_template_page_groups_pos_templates_and_delivery_templates(): void
+    {
+        SmsTemplate::factory()->create([
+            'name' => 'Pickup ready',
+            'body' => 'Your order is ready for pickup.',
+            'key' => null,
+        ]);
+        ShopOrderMessages::ensure();
+
+        $response = $this->actingAsEmployee()->get('/backoffice/sms/templates');
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('Sms/Templates/Index')
+            ->where('templates.0.name', 'Pickup ready')
+            ->where('deliveryTemplates.0.key', 'shop.placed')
+            ->where('deliveryTemplates.0.name', 'Order Placed'));
+    }
+
+    public function test_template_page_can_save_a_pos_template(): void
+    {
+        $response = $this->actingAsEmployee()
+            ->from('/backoffice/sms/templates')
+            ->post('/backoffice/sms/templates', [
+                'name' => 'Pickup ready',
+                'body' => 'Your order is ready for pickup.',
+            ]);
+
+        $response->assertRedirect('/backoffice/sms/templates');
+        $this->assertDatabaseHas('sms_templates', [
+            'name' => 'Pickup ready',
+            'body' => 'Your order is ready for pickup.',
+            'key' => null,
+        ]);
+    }
+
+    public function test_delivery_template_save_returns_to_the_template_page(): void
+    {
+        ShopOrderMessages::ensure();
+        $template = SmsTemplate::query()->where('key', 'shop.placed')->firstOrFail();
+
+        $response = $this->actingAsEmployee()
+            ->from('/backoffice/sms/templates')
+            ->put('/backoffice/pos/order-texts/'.$template->id, [
+                'body' => 'Hi {name}, order {order} is placed.',
+            ]);
+
+        $response->assertRedirect(route('sms.templates.index'));
+        $this->assertSame('Hi {name}, order {order} is placed.', $template->fresh()->body);
     }
 }

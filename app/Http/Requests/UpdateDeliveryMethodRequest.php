@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\PreparesBranchInstructions;
 use App\Models\DeliveryMethod;
 use App\Support\DeliveryMethodRules;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -9,6 +10,8 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateDeliveryMethodRequest extends FormRequest
 {
+    use PreparesBranchInstructions;
+
     public function authorize(): bool
     {
         return true;
@@ -42,6 +45,9 @@ class UpdateDeliveryMethodRequest extends FormRequest
             'name' => $this->string('name')->trim()->toString(),
             'fee' => ($fee === '' || $fee === null) ? null : $fee,
             'notes' => $notes === '' ? null : $notes,
+            'instructions_for_all_branches' => $this->sharedInstructionFlag(),
+            'branch_instructions' => $this->branchInstructions(),
+            'asks_for_address' => $this->boolean('asks_for_address'),
             'is_active' => $this->boolean('is_active'),
         ]);
     }

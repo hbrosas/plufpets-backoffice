@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\DeliveryStatus;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
 use App\Models\PurchaseOrder;
@@ -35,6 +36,45 @@ class DeliveryOrderControllerTest extends TestCase
             ->where('filters.tab', DeliveryStatus::ForDelivery->value)
             ->where('orders.data.0.number', $order->number)
             ->where('orders.data.0.ordered_quantity', 8));
+    }
+
+    public function test_closed_purchase_orders_do_not_appear_for_delivery(): void
+    {
+        $order = $this->confirmedOrder(quantity: 4);
+        $order->update([
+            'status' => PurchaseOrderStatus::Closed,
+            'closed_reason' => 'No longer needed.',
+            'closed_at' => now(),
+        ]);
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/inventory/delivery-orders')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('orders.data', 0));
+    }
+
+    public function test_closed_purchase_order_cannot_be_received(): void
+    {
+        $order = $this->confirmedOrder(quantity: 4);
+        $item = $order->items()->first();
+        $order->update([
+            'status' => PurchaseOrderStatus::Closed,
+            'closed_reason' => 'Cancelled.',
+            'closed_at' => now(),
+        ]);
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/inventory/delivery-orders/{$order->id}")
+            ->post("/backoffice/inventory/delivery-orders/{$order->id}/receive", [
+                'items' => [[
+                    'id' => $item->id,
+                    'quantity' => 1,
+                ]],
+            ])
+            ->assertRedirect("/backoffice/inventory/delivery-orders/{$order->id}")
+            ->assertSessionHasErrors(['status' => 'This purchase order is closed.']);
+
+        $this->assertSame(0, $item->fresh()->received_quantity);
     }
 
     public function test_draft_purchase_orders_do_not_appear(): void

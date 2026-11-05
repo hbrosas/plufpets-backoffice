@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\ClosePurchaseOrder;
 use App\Actions\ConfirmPurchaseOrder;
 use App\Actions\SaveCatalogItem;
 use App\Actions\SavePurchaseOrder;
 use App\Enums\CatalogItemType;
+use App\Enums\PurchaseOrderStatus;
+use App\Http\Requests\ClosePurchaseOrderRequest;
 use App\Http\Requests\StorePurchaseOrderProductRequest;
 use App\Http\Requests\StorePurchaseOrderRequest;
 use App\Http\Requests\UpdatePurchaseOrderRequest;
@@ -19,6 +22,7 @@ use App\Models\Supplier;
 use App\Support\Peso;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -26,14 +30,33 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class PurchaseOrderController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $tab = $request->string('tab')->toString() ?: PurchaseOrderStatus::Draft->value;
+
+        $request->merge(['tab' => $tab]);
+
+        $filters = $request->validate([
+            'tab' => ['required', Rule::enum(PurchaseOrderStatus::class)],
+        ]);
+
+        $status = PurchaseOrderStatus::from($filters['tab']);
+
         return Inertia::render('Inventory/PurchaseOrders/Index', [
             'purchaseOrders' => PurchaseOrder::query()
                 ->with(['supplier:id,name', 'items'])
+                ->where('status', $status)
                 ->latest('id')
                 ->paginate(15)
+                ->withQueryString()
                 ->through(fn (PurchaseOrder $order): array => $this->summary($order)),
+            'filters' => [
+                'tab' => $status->value,
+            ],
+            'tabs' => collect(PurchaseOrderStatus::cases())->map(fn (PurchaseOrderStatus $tabStatus): array => [
+                'value' => $tabStatus->value,
+                'label' => $tabStatus->label(),
+            ])->all(),
         ]);
     }
 
@@ -118,6 +141,18 @@ class PurchaseOrderController extends Controller
         return redirect()
             ->route('inventory.purchase-orders.show', $purchaseOrder)
             ->with('status', 'Purchase order confirmed.');
+    }
+
+    public function close(
+        ClosePurchaseOrderRequest $request,
+        PurchaseOrder $purchaseOrder,
+        ClosePurchaseOrder $closePurchaseOrder,
+    ): RedirectResponse {
+        $closePurchaseOrder->handle($purchaseOrder, $request->validated('reason'));
+
+        return redirect()
+            ->route('inventory.purchase-orders.show', $purchaseOrder)
+            ->with('status', 'Purchase order closed.');
     }
 
     public function print(Request $request, PurchaseOrder $purchaseOrder): View|SymfonyResponse
@@ -221,7 +256,7 @@ class PurchaseOrderController extends Controller
     }
 
     /**
-     * @return array{branch: ?string, registered_business_name: ?string, address: ?string, phone: ?string, email: ?string, tin: ?string, logo_url: ?string}
+     * @return array{registered_business_name: ?string, address: ?string, phone: ?string, email: ?string, tin: ?string, logo_url: ?string}
      */
     private function businessInformation(?Branch $branch): array
     {
@@ -229,7 +264,6 @@ class PurchaseOrderController extends Controller
 
         if ($profile instanceof Business && filled($profile->name)) {
             return [
-                'branch' => $branch?->name,
                 'registered_business_name' => $profile->name,
                 'address' => $profile->address,
                 'phone' => $profile->phone,
@@ -240,7 +274,6 @@ class PurchaseOrderController extends Controller
         }
 
         return [
-            'branch' => $branch?->name,
             'registered_business_name' => $branch?->registered_business_name,
             'address' => $branch?->address,
             'phone' => null,
@@ -260,7 +293,10 @@ class PurchaseOrderController extends Controller
             'notes' => $order->notes,
             'ordered_at' => $order->ordered_at?->toDayDateTimeString(),
             'confirmed_at' => $order->confirmed_at?->toDayDateTimeString(),
+            'closed_at' => $order->closed_at?->toDayDateTimeString(),
+            'closed_reason' => $order->closed_reason,
             'is_draft' => $order->isDraft(),
+            'can_close' => ! $order->isClosed(),
             'items' => $order->items->map(fn ($item): array => [
                 'id' => $item->id,
                 'product' => $item->variant?->catalogItem?->name,

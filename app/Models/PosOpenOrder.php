@@ -16,6 +16,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'subtotal',
     'saved_by_employee_number',
     'saved_by_name',
+    'phone',
+    'status',
+    'discount',
+    'total',
+    'checkout',
+    'pos_sale_id',
 ])]
 class PosOpenOrder extends Model
 {
@@ -30,6 +36,9 @@ class PosOpenOrder extends Model
         return [
             'items' => 'array',
             'subtotal' => 'decimal:2',
+            'discount' => 'decimal:2',
+            'total' => 'decimal:2',
+            'checkout' => 'array',
         ];
     }
 
@@ -39,5 +48,13 @@ class PosOpenOrder extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * @return BelongsTo<PosSale, $this>
+     */
+    public function sale(): BelongsTo
+    {
+        return $this->belongsTo(PosSale::class, 'pos_sale_id');
     }
 }

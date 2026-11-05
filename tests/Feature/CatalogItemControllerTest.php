@@ -35,14 +35,17 @@ class CatalogItemControllerTest extends TestCase
     {
         $item = CatalogItem::factory()->create(['name' => 'Organic kibble']);
         CatalogItemVariant::factory()->for($item)->create(['sku' => 'KIB-001']);
+        CatalogItem::factory()->service()->create(['name' => 'Full groom']);
 
         $response = $this->actingAsEmployee()->get('/backoffice/shop/catalog');
 
         $response->assertOk();
         $response->assertInertia(fn (Assert $page) => $page
             ->component('Shop/Catalog/Index')
+            ->has('catalogItems.data', 1)
             ->where('catalogItems.data.0.name', 'Organic kibble')
-            ->where('catalogItems.data.0.variant_count', 1));
+            ->where('catalogItems.data.0.variant_count', 1)
+            ->where('filters.type', 'product'));
     }
 
     public function test_catalog_can_be_filtered_by_type_and_search(): void
@@ -267,6 +270,7 @@ class CatalogItemControllerTest extends TestCase
             'name' => 'Premium kibble',
             'category_name' => 'Food',
             'brand_name' => 'Pluf Pets',
+            'badge' => 'New',
             'description' => 'Updated formula',
             'is_active' => false,
             'variants' => [
@@ -285,6 +289,7 @@ class CatalogItemControllerTest extends TestCase
         $this->assertDatabaseHas('catalog_items', [
             'id' => $item->id,
             'name' => 'Premium kibble',
+            'badge' => 'New',
             'is_active' => false,
         ]);
         $this->assertDatabaseHas('catalog_item_variants', [

@@ -66,6 +66,7 @@ const form = useForm({
     name: props.item?.name ?? '',
     category_name: props.item?.category_name ?? '',
     brand_name: props.item?.brand_name ?? '',
+    badge: props.item?.badge ?? '',
     description: props.item?.description ?? '',
     is_active: props.item?.is_active ?? true,
     has_branch_pricing: props.item?.has_branch_pricing ?? false,
@@ -452,6 +453,19 @@ function submitBrand() {
                         </button>
                     </div>
                     <p v-if="form.errors.brand_name" class="text-sm text-danger">{{ form.errors.brand_name }}</p>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <label class="text-sm font-medium" for="badge">Badge</label>
+                    <input
+                        id="badge"
+                        v-model="form.badge"
+                        class="h-12 rounded-xl border border-mist bg-white px-4 text-base outline-none transition focus:border-pine focus:ring-2 focus:ring-sand/70 dark:border-white/10 dark:bg-white/5"
+                        maxlength="40"
+                        type="text"
+                    />
+                    <p class="text-sm text-ink/60 dark:text-foam/60">Shown on the public shop. Leave blank to hide it.</p>
+                    <p v-if="form.errors.badge" class="text-sm text-danger">{{ form.errors.badge }}</p>
                 </div>
             </div>
         </section>

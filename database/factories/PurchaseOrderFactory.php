@@ -25,6 +25,8 @@ class PurchaseOrderFactory extends Factory
             'status' => PurchaseOrderStatus::Draft,
             'ordered_at' => now(),
             'confirmed_at' => null,
+            'closed_at' => null,
+            'closed_reason' => null,
             'notes' => null,
         ];
     }
@@ -34,6 +36,15 @@ class PurchaseOrderFactory extends Factory
         return $this->state(fn (array $attributes): array => [
             'status' => PurchaseOrderStatus::Confirmed,
             'confirmed_at' => now(),
+        ]);
+    }
+
+    public function closed(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => PurchaseOrderStatus::Closed,
+            'closed_at' => now(),
+            'closed_reason' => 'Supplier cancelled.',
         ]);
     }
 }

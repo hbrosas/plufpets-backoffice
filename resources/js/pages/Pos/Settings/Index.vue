@@ -219,13 +219,13 @@ async function testPrinter(printer) {
 </script>
 
 <template>
-    <Head title="POS Settings" />
+    <Head title="POS Devices" />
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <section class="flex flex-col gap-4">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h2 class="text-lg font-medium">Printers</h2>
+                    <h2 class="text-lg font-medium">Devices</h2>
                     <p class="text-sm text-ink/60 dark:text-foam/60">
                         Pair each branch to its own receipt and label printer. Connect on that branch's register so
                         Bluetooth finds the right device.

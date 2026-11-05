@@ -21,8 +21,8 @@ class PwaController extends Controller
             'start_url' => '/backoffice',
             'scope' => '/',
             'display' => 'standalone',
-            'background_color' => '#1f6f68',
-            'theme_color' => '#1f6f68',
+            'background_color' => '#f7f5f0',
+            'theme_color' => '#053b63',
             'prefer_related_applications' => false,
             'icons' => [
                 [

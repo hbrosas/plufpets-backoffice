@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import DeliveryReceiptHistory from '../../../components/DeliveryReceiptHistory.vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
@@ -18,6 +18,10 @@ const props = defineProps({
 const page = usePage();
 const flash = computed(() => page.props.flash ?? {});
 const historyOpen = ref(false);
+const closeOpen = ref(false);
+const closeForm = useForm({
+    reason: '',
+});
 
 function confirmOrder() {
     if (!window.confirm(`Confirm ${props.purchaseOrder.number}? It will move to Delivery Orders.`)) {
@@ -25,6 +29,21 @@ function confirmOrder() {
     }
 
     router.post(`/backoffice/inventory/purchase-orders/${props.purchaseOrder.id}/confirm`);
+}
+
+function openClose() {
+    closeForm.clearErrors();
+    closeOpen.value = true;
+}
+
+function submitClose() {
+    closeForm.post(`/backoffice/inventory/purchase-orders/${props.purchaseOrder.id}/close`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            closeOpen.value = false;
+            closeForm.reset();
+        },
+    });
 }
 
 function deleteOrder() {
@@ -68,6 +87,14 @@ function deleteOrder() {
             Edit
         </Link>
         <button
+            v-if="purchaseOrder.can_close"
+            class="h-10 rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
+            type="button"
+            @click="openClose"
+        >
+            Close
+        </button>
+        <button
             v-if="purchaseOrder.is_draft"
             class="h-10 rounded-xl bg-pine px-4 text-sm font-medium text-foam"
             type="button"
@@ -87,6 +114,7 @@ function deleteOrder() {
                     {{ purchaseOrder.supplier_detail.address }}
                 </p>
                 <p v-if="purchaseOrder.notes" class="mt-3 text-sm">{{ purchaseOrder.notes }}</p>
+                <p v-if="purchaseOrder.closed_reason" class="mt-3 text-sm">Closed: {{ purchaseOrder.closed_reason }}</p>
             </div>
             <div class="rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
                 <p class="text-sm text-ink/60 dark:text-foam/60">Business information</p>
@@ -97,11 +125,8 @@ function deleteOrder() {
                     class="mt-3 h-14 w-auto object-contain"
                 />
                 <h2 class="mt-1 text-lg font-medium">
-                    {{ purchaseOrder.business.registered_business_name || purchaseOrder.business.branch || '—' }}
+                    {{ purchaseOrder.business.registered_business_name || '—' }}
                 </h2>
-                <p v-if="purchaseOrder.business.branch && purchaseOrder.business.registered_business_name" class="text-sm">
-                    {{ purchaseOrder.business.branch }}
-                </p>
                 <p v-if="purchaseOrder.business.address" class="mt-2 text-sm text-ink/70 dark:text-foam/70">
                     {{ purchaseOrder.business.address }}
                 </p>
@@ -163,6 +188,26 @@ function deleteOrder() {
         >
             Delete draft
         </button>
+    </div>
+
+    <div v-if="closeOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
+        <form class="flex w-full max-w-lg flex-col gap-4 rounded-2xl bg-foam p-6 dark:bg-ink" @submit.prevent="submitClose">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-medium">Close {{ purchaseOrder.number }}</h2>
+                    <p class="text-sm text-ink/60 dark:text-foam/60">This purchase order stays on record with the reason you enter.</p>
+                </div>
+                <button class="text-sm font-medium" type="button" @click="closeOpen = false">Cancel</button>
+            </div>
+            <div>
+                <label class="mb-1 block text-sm" for="close-reason">Reason</label>
+                <textarea id="close-reason" v-model="closeForm.reason" class="min-h-24 w-full rounded-xl border border-mist bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-white/5" maxlength="1000" required />
+                <p v-if="closeForm.errors.reason" class="mt-1 text-sm text-danger">{{ closeForm.errors.reason }}</p>
+            </div>
+            <button class="h-11 w-fit rounded-xl bg-pine px-4 text-sm font-medium text-foam disabled:opacity-60" type="submit" :disabled="closeForm.processing">
+                Close purchase order
+            </button>
+        </form>
     </div>
 
     <div v-if="historyOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">

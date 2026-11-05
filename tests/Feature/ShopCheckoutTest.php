@@ -8,14 +8,26 @@ use App\Models\BranchVariantPrice;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
 use App\Models\Category;
+use App\Models\DeliveryMethod;
+use App\Models\PaymentMethod;
 use App\Models\PosOpenOrder;
+use App\Models\Voucher;
+use App\Support\SmsDisclaimer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class ShopCheckoutTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['services.semaphore.key' => null]);
+    }
 
     public function test_home_shows_the_selected_branch_catalog(): void
     {
@@ -71,9 +83,13 @@ class ShopCheckoutTest extends TestCase
                 ->component('Site/Home')
                 ->where('filters.branch', $greenheights->id)
                 ->where('products.0.name', 'Bath')
+                ->where('products.0.item_name', 'Bath')
+                ->where('products.0.variant_name', null)
                 ->where('products.0.price_label', '₱250.00')
                 ->where('products.0.stock_label', 'In Stock')
                 ->where('products.1.name', 'Kibble · Large')
+                ->where('products.1.item_name', 'Kibble')
+                ->where('products.1.variant_name', 'Large')
                 ->where('products.1.price_label', '₱80.00')
                 ->where('products.1.stock_label', 'In Stock 2')
                 ->where('products.2.name', 'Treats')
@@ -88,17 +104,56 @@ class ShopCheckoutTest extends TestCase
                 ->where('products.1.price_label', '₱100.00')
                 ->where('products.1.stock_label', 'In Stock 9'));
 
-        $this->get('/?branch='.$greenheights->id.'&category='.$food->id)
+        $this->get('/?branch='.$greenheights->id.'&category='.$food->id.'&q=Kibble')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->has('products', 2)
-                ->where('products.0.name', 'Kibble · Large'));
+                ->has('products', 3)
+                ->where('products.1.name', 'Kibble · Large')
+                ->where('products.1.category_name', 'Food'));
+    }
 
-        $this->get('/?branch='.$greenheights->id.'&q=Kibble')
+    public function test_checkout_uses_the_instruction_for_the_selected_branch(): void
+    {
+        $greenheights = Branch::factory()->create(['name' => 'Greenheights', 'is_active' => true]);
+        $sanPedro = Branch::factory()->create(['name' => 'San Pedro', 'is_active' => true]);
+        $variant = CatalogItemVariant::factory()->create(['price' => 50]);
+        $delivery = DeliveryMethod::factory()->create([
+            'name' => 'Lalamove',
+            'notes' => 'Same rider for every branch.',
+            'instructions_for_all_branches' => true,
+            'is_active' => true,
+        ]);
+        $payment = PaymentMethod::factory()->create([
+            'name' => 'GCash',
+            'instructions' => 'Shared QR',
+            'instructions_for_all_branches' => false,
+            'is_active' => true,
+        ]);
+        $payment->branchInstructions()->create([
+            'branch_id' => $greenheights->id,
+            'instructions' => 'Scan the Greenheights QR.',
+        ]);
+        $payment->branchInstructions()->create([
+            'branch_id' => $sanPedro->id,
+            'instructions' => 'Scan the San Pedro QR.',
+        ]);
+
+        $this->get('/checkout?branch='.$greenheights->id)
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->has('products', 1)
-                ->where('products.0.name', 'Kibble · Large'));
+                ->where('paymentMethods.0.instructions', 'Scan the Greenheights QR.')
+                ->where('deliveryMethods.0.instructions', 'Same rider for every branch.'));
+
+        $this->postJson('/checkout/quote', [
+            'branch_id' => $sanPedro->id,
+            'delivery_method_id' => $delivery->id,
+            'payment_method_id' => $payment->id,
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ])->assertOk()
+            ->assertJsonPath('payment_instructions', 'Scan the San Pedro QR.')
+            ->assertJsonPath('delivery_instructions', 'Same rider for every branch.');
     }
 
     public function test_hidden_categories_stay_off_the_public_shop(): void
@@ -157,10 +212,10 @@ class ShopCheckoutTest extends TestCase
             'items' => [
                 ['catalog_item_variant_id' => $variant->id, 'quantity' => 2, 'price' => 1],
             ],
-        ]);
+        ] + $this->checkoutFields());
 
-        $response->assertRedirect(route('home', ['branch' => $branch->id]));
-        $response->assertSessionHas('checkout_success.total', '₱160.00');
+        $response->assertRedirect(route('shop.track', ['number' => PosOpenOrder::query()->value('number')]));
+        $response->assertSessionHas('shop_order_id');
 
         $order = PosOpenOrder::query()->first();
         $this->assertNotNull($order);
@@ -198,7 +253,7 @@ class ShopCheckoutTest extends TestCase
             'items' => [
                 ['catalog_item_variant_id' => $variant->id, 'quantity' => 3],
             ],
-        ]);
+        ] + $this->checkoutFields());
 
         $response->assertRedirect('/');
         $response->assertSessionHasErrors([
@@ -209,6 +264,39 @@ class ShopCheckoutTest extends TestCase
             'catalog_item_variant_id' => $variant->id,
             'quantity' => 1,
         ]);
+    }
+
+    public function test_out_of_stock_item_can_be_preordered(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['name' => 'Treats']))
+            ->create(['name' => 'Default', 'price' => 40]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 0,
+        ]);
+
+        $response = $this->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 2],
+            ],
+        ] + $this->checkoutFields());
+
+        $response->assertRedirect(route('shop.track', ['number' => PosOpenOrder::query()->value('number')]));
+        $order = PosOpenOrder::query()->first();
+        $this->assertNotNull($order);
+        $this->assertSame('80.00', $order->subtotal);
+        $this->assertSame('Preorder', $order->items[0]['notes']);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 0,
+        ]);
+        $this->assertDatabaseCount('pos_sales', 0);
     }
 
     public function test_checkout_requires_a_name_and_phone(): void
@@ -228,8 +316,315 @@ class ShopCheckoutTest extends TestCase
         $response->assertRedirect('/');
         $response->assertSessionHasErrors([
             'name' => 'Enter your name.',
-            'phone' => 'Enter your phone number.',
+            'phone' => 'Enter your contact number.',
         ]);
         $this->assertDatabaseCount('pos_open_orders', 0);
+    }
+
+    public function test_contact_number_must_be_a_mobile_number(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItemVariant::factory()->create(['price' => 50]);
+
+        $response = $this->from('/checkout')->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '12345',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ] + $this->checkoutFields());
+
+        $response->assertRedirect('/checkout');
+        $response->assertSessionHasErrors([
+            'phone' => 'Enter a mobile number like 09171234567.',
+        ]);
+        $this->assertDatabaseCount('pos_open_orders', 0);
+    }
+
+    public function test_delivery_address_is_required_when_the_method_asks_for_it(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItemVariant::factory()->create(['price' => 50]);
+        $delivery = DeliveryMethod::factory()->create([
+            'fee' => 20,
+            'asks_for_address' => true,
+            'notes' => 'Leave it with the guard.',
+        ]);
+        $payment = PaymentMethod::factory()->create(['fee' => 0, 'is_cash' => true]);
+
+        $response = $this->from('/checkout')->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '+639171234567',
+            'delivery_method_id' => $delivery->id,
+            'payment_method_id' => $payment->id,
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ]);
+
+        $response->assertRedirect('/checkout');
+        $response->assertSessionHasErrors(['address_line_1', 'city', 'province']);
+        $this->assertDatabaseCount('pos_open_orders', 0);
+    }
+
+    public function test_checkout_adds_fees_and_a_voucher_then_texts_the_customer(): void
+    {
+        Http::preventStrayRequests();
+        config([
+            'services.semaphore.key' => 'test-key',
+            'services.semaphore.sender' => 'PLUFPETS',
+        ]);
+        Http::fake([
+            'https://api.semaphore.co/api/v4/messages' => Http::response([
+                ['message_id' => 1, 'status' => 'Queued'],
+            ]),
+        ]);
+        $branch = Branch::factory()->create(['name' => 'Greenheights', 'is_active' => true]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['name' => 'Kibble']))
+            ->create(['name' => 'Large', 'price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+        $delivery = DeliveryMethod::factory()->create([
+            'name' => 'Lalamove',
+            'fee' => 50,
+            'asks_for_address' => true,
+            'notes' => 'Rider will call.',
+        ]);
+        $payment = PaymentMethod::factory()->create([
+            'name' => 'GCash',
+            'fee' => 10,
+            'instructions' => 'Send to 09170000000.',
+        ]);
+        Voucher::factory()->percent(10)->create(['code' => 'SAVE10']);
+
+        $response = $this->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '0917 123 4567',
+            'delivery_method_id' => $delivery->id,
+            'payment_method_id' => $payment->id,
+            'voucher_code' => 'save10',
+            'address_line_1' => '12 Mabini',
+            'address_line_2' => 'Unit 4',
+            'city' => 'San Pedro',
+            'province' => 'Laguna',
+            'latitude' => '14.358600',
+            'longitude' => '121.056900',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 2],
+            ],
+        ]);
+
+        $response->assertRedirect(route('shop.track', ['number' => PosOpenOrder::query()->value('number')]));
+        $response->assertSessionHas('shop_text_notice', 'We\'ll text 09171234567 when the status changes.');
+
+        $order = PosOpenOrder::query()->first();
+        $this->assertNotNull($order);
+        $this->assertSame('09171234567', $order->phone);
+        $this->assertSame('placed', $order->status);
+        $this->assertSame('200.00', $order->subtotal);
+        $this->assertSame('20.00', $order->discount);
+        $this->assertSame('240.00', $order->total);
+        $this->assertSame('12 Mabini', $order->checkout['address']['line_1']);
+        $this->assertSame('SAVE10', $order->checkout['voucher']['code']);
+        $this->assertDatabaseHas('sms_messages', [
+            'branch_id' => $branch->id,
+            'number' => '09171234567',
+            'body' => SmsDisclaimer::append('Hi Ada Reyes, we received order '.$order->number.' for ₱240.00 at Greenheights.'),
+        ]);
+        $this->assertDatabaseCount('pos_sales', 0);
+
+        $track = $this->get(route('shop.track'));
+
+        $track->assertOk();
+        $track->assertInertia(fn (Assert $page) => $page
+            ->component('Site/Track')
+            ->where('placed', true)
+            ->where('textNotice', 'We\'ll text 09171234567 when the status changes.')
+            ->where('number', $order->number)
+            ->where('order.number', $order->number)
+            ->where('order.status', 'placed')
+            ->where('order.status_label', 'Order Placed')
+            ->where('order.delivery.name', 'Lalamove')
+            ->where('order.delivery.instructions', 'Rider will call.')
+            ->where('order.delivery.fee_label', '₱50.00')
+            ->where('order.payment.name', 'GCash')
+            ->where('order.payment.instructions', 'Send to 09170000000.')
+            ->where('order.address', '12 Mabini, Unit 4, San Pedro, Laguna')
+            ->where('order.voucher', 'SAVE10')
+            ->where('order.total_label', '₱240.00')
+            ->where('order.items.0.name', 'Kibble · Large')
+            ->where('order.items.0.quantity', 2));
+
+        $order->update(['status' => 'out_for_delivery']);
+
+        $this->get(route('shop.track'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('order.status', 'out_for_delivery')
+                ->where('order.status_label', 'Out for Delivery')
+                ->where('placed', false));
+
+        $this->flushSession();
+
+        $this->get(route('shop.track'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Site/Track')
+                ->where('order', null));
+    }
+
+    public function test_each_shop_order_gets_a_short_unique_number(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItemVariant::factory()->create(['price' => 50]);
+        $payload = [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ] + $this->checkoutFields();
+
+        $first = $this->post('/checkout', $payload);
+        $second = $this->post('/checkout', $payload);
+        $numbers = PosOpenOrder::query()->orderBy('id')->pluck('number');
+
+        $this->assertCount(2, $numbers);
+        $this->assertNotSame($numbers[0], $numbers[1]);
+
+        foreach ($numbers as $number) {
+            $this->assertMatchesRegularExpression('/^(?=.*[A-Z])(?=.*\d)[A-HJ-NP-Z2-9]{6}$/', $number);
+        }
+
+        $first->assertRedirect(route('shop.track', ['number' => $numbers[0]]));
+        $second->assertRedirect(route('shop.track', ['number' => $numbers[1]]));
+    }
+
+    public function test_track_finds_an_order_from_the_order_number(): void
+    {
+        PosOpenOrder::factory()->create([
+            'number' => 'K7M2P4',
+            'status' => 'preparing',
+        ]);
+        PosOpenOrder::factory()->create([
+            'number' => 'K7M2P4',
+            'status' => 'placed',
+        ]);
+        PosOpenOrder::factory()->create([
+            'number' => 'PARKED1',
+            'status' => null,
+        ]);
+
+        $this->get(route('shop.track', ['number' => 'k7 m2p4']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Site/Track')
+                ->where('missing', false)
+                ->where('number', 'K7M2P4')
+                ->where('order.number', 'K7M2P4')
+                ->where('order.status', 'placed'));
+
+        $this->get(route('shop.track', ['number' => 'PARKED1']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('missing', true)
+                ->where('order', null));
+
+        $this->get(route('shop.track', ['number' => 'NOPE12']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('missing', true)
+                ->where('order', null));
+    }
+
+    public function test_track_page_is_empty_without_a_current_order(): void
+    {
+        $response = $this->get(route('shop.track'));
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('Site/Track')
+            ->where('order', null)
+            ->where('number', '')
+            ->where('missing', false)
+            ->where('placed', false));
+    }
+
+    public function test_apply_accepts_an_active_voucher(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        Voucher::factory()->create(['code' => 'SAVE10']);
+
+        $response = $this->postJson('/checkout/voucher', [
+            'branch_id' => $branch->id,
+            'voucher_code' => 'save10',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('code', 'SAVE10');
+    }
+
+    public function test_apply_rejects_an_unknown_voucher(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+
+        $response = $this->postJson('/checkout/voucher', [
+            'branch_id' => $branch->id,
+            'voucher_code' => 'NOPE',
+        ]);
+
+        $response->assertUnprocessable();
+        $response->assertJsonValidationErrors([
+            'voucher_code' => 'That voucher is not valid.',
+        ]);
+    }
+
+    public function test_apply_rejects_an_inactive_voucher(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        Voucher::factory()->inactive()->create(['code' => 'OLD10']);
+
+        $response = $this->postJson('/checkout/voucher', [
+            'branch_id' => $branch->id,
+            'voucher_code' => 'OLD10',
+        ]);
+
+        $response->assertUnprocessable();
+        $response->assertJsonValidationErrors([
+            'voucher_code' => 'That voucher is not valid.',
+        ]);
+    }
+
+    public function test_apply_requires_a_voucher_code(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+
+        $response = $this->postJson('/checkout/voucher', [
+            'branch_id' => $branch->id,
+            'voucher_code' => '   ',
+        ]);
+
+        $response->assertUnprocessable();
+        $response->assertJsonValidationErrors([
+            'voucher_code' => 'Enter a voucher code.',
+        ]);
+    }
+
+    /**
+     * @return array{delivery_method_id: int, payment_method_id: int}
+     */
+    private function checkoutFields(): array
+    {
+        $delivery = DeliveryMethod::factory()->create(['fee' => 0, 'asks_for_address' => false]);
+        $payment = PaymentMethod::factory()->create(['fee' => 0, 'is_cash' => true]);
+
+        return [
+            'delivery_method_id' => $delivery->id,
+            'payment_method_id' => $payment->id,
+        ];
     }
 }

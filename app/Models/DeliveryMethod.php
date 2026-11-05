@@ -6,8 +6,9 @@ use Database\Factories\DeliveryMethodFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'fee', 'notes', 'is_active'])]
+#[Fillable(['name', 'fee', 'notes', 'instructions_for_all_branches', 'asks_for_address', 'is_active'])]
 class DeliveryMethod extends Model
 {
     /** @use HasFactory<DeliveryMethodFactory> */
@@ -17,6 +18,8 @@ class DeliveryMethod extends Model
      * @var array<string, mixed>
      */
     protected $attributes = [
+        'instructions_for_all_branches' => true,
+        'asks_for_address' => false,
         'is_active' => true,
     ];
 
@@ -26,8 +29,36 @@ class DeliveryMethod extends Model
     protected function casts(): array
     {
         return [
+            'instructions_for_all_branches' => 'boolean',
             'fee' => 'decimal:2',
+            'asks_for_address' => 'boolean',
             'is_active' => 'boolean',
         ];
+    }
+
+    /**
+     * @return HasMany<DeliveryMethodInstruction, $this>
+     */
+    public function branchInstructions(): HasMany
+    {
+        return $this->hasMany(DeliveryMethodInstruction::class);
+    }
+
+    public function instructionFor(?int $branchId): ?string
+    {
+        if ($this->instructions_for_all_branches || $branchId === null) {
+            return $this->present($this->notes);
+        }
+
+        if (! $this->relationLoaded('branchInstructions')) {
+            $this->load('branchInstructions');
+        }
+
+        return $this->present($this->branchInstructions->firstWhere('branch_id', $branchId)?->instructions);
+    }
+
+    private function present(mixed $instructions): ?string
+    {
+        return is_string($instructions) && $instructions !== '' ? $instructions : null;
     }
 }

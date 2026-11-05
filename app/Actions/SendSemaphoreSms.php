@@ -2,9 +2,11 @@
 
 namespace App\Actions;
 
+use App\Models\SmsCreditBalance;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class SendSemaphoreSms
 {
@@ -41,7 +43,38 @@ class SendSemaphoreSms
             ]);
         }
 
+        $this->refreshCreditBalance($key);
+
         return $this->deliveryStatus($response->json());
+    }
+
+    /**
+     * A failed balance lookup must not undo a text that Semaphore already accepted.
+     */
+    private function refreshCreditBalance(string $key): void
+    {
+        try {
+            $response = Http::acceptJson()
+                ->connectTimeout(3)
+                ->timeout(10)
+                ->get('https://api.semaphore.co/api/v4/account', [
+                    'apikey' => $key,
+                ]);
+        } catch (Throwable) {
+            return;
+        }
+
+        if ($response->failed()) {
+            return;
+        }
+
+        $balance = $response->json('credit_balance');
+
+        if (! is_numeric($balance) || (float) $balance < 0) {
+            return;
+        }
+
+        SmsCreditBalance::record((int) $balance);
     }
 
     /**

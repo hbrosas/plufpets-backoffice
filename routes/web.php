@@ -18,7 +18,10 @@ use App\Http\Controllers\HolidayController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\ModifierController;
+use App\Http\Controllers\MyCommissionController;
+use App\Http\Controllers\MyPayrollController;
 use App\Http\Controllers\PaymentMethodController;
+use App\Http\Controllers\PayrollApprovalController;
 use App\Http\Controllers\PosCashMovementController;
 use App\Http\Controllers\PosCategoryController;
 use App\Http\Controllers\PosController;
@@ -42,12 +45,14 @@ use App\Http\Controllers\SalesItemController;
 use App\Http\Controllers\SalesOverviewController;
 use App\Http\Controllers\SalesReceiptController;
 use App\Http\Controllers\SalesShiftController;
+use App\Http\Controllers\ShopOrderController;
 use App\Http\Controllers\ShopSettingController;
 use App\Http\Controllers\StockAssignmentController;
 use App\Http\Controllers\StockConversionController;
 use App\Http\Controllers\StockTransferController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\TaxFeeController;
+use App\Http\Controllers\VoucherController;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -70,9 +75,19 @@ Route::withoutMiddleware([
 });
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/checkout', [HomeController::class, 'checkout'])->name('shop.checkout.show');
+Route::post('/checkout/quote', [HomeController::class, 'quote'])
+    ->middleware('throttle:30,1')
+    ->name('shop.checkout.quote');
+Route::post('/checkout/voucher', [HomeController::class, 'applyVoucher'])
+    ->middleware('throttle:30,1')
+    ->name('shop.checkout.voucher');
 Route::post('/checkout', [HomeController::class, 'store'])
     ->middleware('throttle:10,1')
     ->name('shop.checkout');
+Route::get('/track', [HomeController::class, 'track'])
+    ->middleware('throttle:30,1')
+    ->name('shop.track');
 
 Route::prefix('backoffice')->group(function () {
     Route::middleware('employee.guest')->group(function () {
@@ -84,6 +99,12 @@ Route::prefix('backoffice')->group(function () {
     });
 
     Route::middleware('employee.auth')->group(function () {
+        Route::get('/me/commissions', [MyCommissionController::class, 'index'])->name('me.commissions');
+        Route::get('/me/payroll', [MyPayrollController::class, 'index'])->name('me.payroll');
+        Route::post('/me/payroll', [MyPayrollController::class, 'store'])->name('me.payroll.store');
+        Route::delete('/me/payroll/{payrollFiling}', [MyPayrollController::class, 'destroy'])->name('me.payroll.destroy');
+        Route::get('/me/payrolls/{employeePayroll}/download', [MyPayrollController::class, 'download'])->name('me.payrolls.download');
+
         Route::get('/dashboard', [DashboardController::class, 'index'])
             ->middleware('employee.permission:dashboard.view')
             ->name('dashboard');
@@ -148,12 +169,16 @@ Route::prefix('backoffice')->group(function () {
         Route::middleware('employee.permission:business.manage')->group(function () {
             Route::get('/business', [BusinessController::class, 'edit'])->name('business.edit');
             Route::post('/business', [BusinessController::class, 'update'])->name('business.update');
+            Route::post('/business/reset', [BusinessController::class, 'reset'])->name('business.reset');
         });
 
         Route::middleware('employee.permission:pos.access')->group(function () {
             Route::get('/pos', [PosLaunchController::class, 'index'])->name('pos.launch');
             Route::get('/pos/drawer', [PosDrawerController::class, 'show'])->name('pos.drawer');
             Route::get('/pos/register/{branch}', [PosController::class, 'index'])->name('pos.index');
+            Route::get('/pos/register/{branch}/shop-orders', [PosController::class, 'shopOrders'])->name('pos.shop-orders');
+            Route::get('/pos/register/{branch}/online-orders', [PosController::class, 'onlineOrders'])->name('pos.online-orders');
+            Route::put('/pos/register/{branch}/online-orders/{pos_open_order}', [PosController::class, 'updateOnlineOrder'])->name('pos.online-orders.update');
             Route::post('/pos/register/{branch}/shifts', [PosShiftController::class, 'store'])->name('pos.shifts.store');
             Route::post('/pos/register/{branch}/shifts/{pos_shift}/close', [PosShiftController::class, 'close'])->name('pos.shifts.close');
             Route::get('/pos/register/{branch}/shifts/{pos_shift}/z-report', [PosZReportController::class, 'show'])->name('pos.shifts.z-report');
@@ -196,6 +221,11 @@ Route::prefix('backoffice')->group(function () {
 
         Route::middleware('employee.permission:pos.settings')->group(function () {
             Route::get('/pos/settings', [PosSettingController::class, 'index'])->name('pos.settings.index');
+            Route::get('/sms/templates', [PosSmsTemplateController::class, 'manage'])->name('sms.templates.index');
+            Route::post('/sms/templates', [PosSmsTemplateController::class, 'store'])->name('sms.templates.store');
+            Route::put('/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'update'])->name('sms.templates.update');
+            Route::delete('/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'destroy'])->name('sms.templates.destroy');
+            Route::put('/pos/order-texts/{sms_template}', [PosSettingController::class, 'updateOrderText'])->name('pos.order-texts.update');
             Route::post('/pos/printers', [PrinterController::class, 'store'])->name('pos.printers.store');
             Route::put('/pos/printers/{printer}', [PrinterController::class, 'update'])->name('pos.printers.update');
             Route::delete('/pos/printers/{printer}', [PrinterController::class, 'destroy'])->name('pos.printers.destroy');
@@ -247,6 +277,13 @@ Route::prefix('backoffice')->group(function () {
                 Route::resource('branches', BranchController::class)->except(['show']);
             });
 
+            Route::middleware('employee.permission:shop.orders')->group(function () {
+                Route::get('orders', [ShopOrderController::class, 'index'])->name('orders.index');
+                Route::get('orders/preorders/export', [ShopOrderController::class, 'exportPreorders'])->name('orders.preorders.export');
+                Route::get('orders/{pos_open_order}', [ShopOrderController::class, 'show'])->name('orders.show');
+                Route::put('orders/{pos_open_order}', [ShopOrderController::class, 'update'])->name('orders.update');
+            });
+
             Route::middleware('employee.permission:shop.settings')->group(function () {
                 Route::get('settings', [ShopSettingController::class, 'index'])->name('settings.index');
                 Route::post('tax-fees', [TaxFeeController::class, 'store'])->name('tax-fees.store');
@@ -258,6 +295,9 @@ Route::prefix('backoffice')->group(function () {
                 Route::post('delivery-methods', [DeliveryMethodController::class, 'store'])->name('delivery-methods.store');
                 Route::put('delivery-methods/{delivery_method}', [DeliveryMethodController::class, 'update'])->name('delivery-methods.update');
                 Route::delete('delivery-methods/{delivery_method}', [DeliveryMethodController::class, 'destroy'])->name('delivery-methods.destroy');
+                Route::post('vouchers', [VoucherController::class, 'store'])->name('vouchers.store');
+                Route::put('vouchers/{voucher}', [VoucherController::class, 'update'])->name('vouchers.update');
+                Route::delete('vouchers/{voucher}', [VoucherController::class, 'destroy'])->name('vouchers.destroy');
             });
         });
 
@@ -282,6 +322,8 @@ Route::prefix('backoffice')->group(function () {
                     ->name('purchase-orders.print');
                 Route::post('purchase-orders/{purchase_order}/confirm', [PurchaseOrderController::class, 'confirm'])
                     ->name('purchase-orders.confirm');
+                Route::post('purchase-orders/{purchase_order}/close', [PurchaseOrderController::class, 'close'])
+                    ->name('purchase-orders.close');
                 Route::resource('purchase-orders', PurchaseOrderController::class);
             });
 
@@ -309,6 +351,8 @@ Route::prefix('backoffice')->group(function () {
         Route::middleware('employee.permission:staff.manage')->group(function () {
             Route::get('/staff', [EmployeeController::class, 'index'])->name('staff.index');
             Route::get('/staff/records', [EmployeeProfileController::class, 'index'])->name('staff.records.index');
+            Route::get('/staff/approvals', [PayrollApprovalController::class, 'index'])->name('staff.approvals.index');
+            Route::put('/staff/approvals/{payrollFiling}', [PayrollApprovalController::class, 'update'])->name('staff.approvals.update');
             Route::get('/staff/holidays', [HolidayController::class, 'index'])->name('staff.holidays.index');
             Route::post('/staff/holidays', [HolidayController::class, 'store'])->name('staff.holidays.store');
             Route::post('/staff/holidays/import', [HolidayController::class, 'import'])->name('staff.holidays.import');

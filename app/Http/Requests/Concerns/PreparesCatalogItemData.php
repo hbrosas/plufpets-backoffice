@@ -72,12 +72,14 @@ trait PreparesCatalogItemData
 
         $category = $this->string('category_name')->trim()->toString();
         $brand = $this->string('brand_name')->trim()->toString();
+        $badge = $this->string('badge')->trim()->toString();
 
         $this->merge([
             'type' => $this->string('type')->trim()->lower()->toString(),
             'name' => $this->string('name')->trim()->toString(),
             'category_name' => $category === '' ? null : $category,
             'brand_name' => $brand === '' ? null : $brand,
+            'badge' => $badge === '' ? null : $badge,
             'description' => $this->filled('description')
                 ? $this->string('description')->trim()->toString()
                 : null,

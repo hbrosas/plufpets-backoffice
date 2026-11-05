@@ -23,6 +23,12 @@ class ReceivePurchaseOrder
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            if ($order->status === PurchaseOrderStatus::Closed) {
+                throw ValidationException::withMessages([
+                    'status' => 'This purchase order is closed.',
+                ]);
+            }
+
             if ($order->status !== PurchaseOrderStatus::Confirmed) {
                 throw ValidationException::withMessages([
                     'status' => 'Confirm this purchase order before recording a delivery.',

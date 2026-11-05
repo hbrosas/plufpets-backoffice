@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'category_id',
     'brand_id',
     'description',
+    'badge',
     'is_active',
     'has_branch_pricing',
 ])]

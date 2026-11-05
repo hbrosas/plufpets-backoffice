@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\ResetAccount;
+use App\Http\Requests\ResetAccountRequest;
 use App\Http\Requests\UpdateBusinessRequest;
 use App\Models\Business;
 use Illuminate\Http\RedirectResponse;
@@ -39,6 +41,18 @@ class BusinessController extends Controller
         $business->save();
 
         return back()->with('status', 'Business information saved.');
+    }
+
+    public function reset(ResetAccountRequest $request, ResetAccount $resetAccount): RedirectResponse
+    {
+        $resetAccount->handle();
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect()
+            ->route('login')
+            ->with('status', 'The account was reset. Sign in with employee number 10001 and PIN 1234.');
     }
 
     private function syncUpload(Business $business, string $column, ?UploadedFile $file, bool $remove): void

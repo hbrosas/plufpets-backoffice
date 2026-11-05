@@ -21,19 +21,23 @@ function logout() {
 <template>
     <Head title="Choose a branch" />
 
-    <main class="mx-auto flex h-dvh w-full max-w-lg flex-col gap-4 overflow-hidden px-5 py-4">
+    <main class="admin-shell mx-auto flex h-dvh w-full max-w-lg flex-col gap-4 overflow-hidden bg-cream px-5 py-4 text-black">
         <div class="flex shrink-0 items-start justify-between gap-4">
             <div class="flex flex-col gap-1">
                 <p class="text-xs font-medium tracking-[0.18em] text-pine uppercase dark:text-sand">POS</p>
                 <h1 class="text-2xl font-medium">Choose a branch</h1>
             </div>
             <button
-                class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium dark:border-white/15 disabled:opacity-70"
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-mist dark:border-white/15 disabled:opacity-70"
                 type="button"
+                :aria-label="logoutForm.processing ? 'Locking' : 'Lock'"
                 :disabled="logoutForm.processing"
                 @click="logout"
             >
-                {{ logoutForm.processing ? 'Locking…' : 'Lock' }}
+                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <rect x="4" y="9" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M7 9V6.5a3 3 0 0 1 6 0V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
             </button>
         </div>
 

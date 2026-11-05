@@ -26,6 +26,7 @@ class SaveCatalogItem
                 'type' => $attributes['type'],
                 'name' => $attributes['name'],
                 'description' => $attributes['description'] ?? null,
+                'badge' => $attributes['badge'] ?? null,
                 'is_active' => $attributes['is_active'],
                 'has_branch_pricing' => $attributes['has_branch_pricing'] ?? false,
                 'category_id' => $this->categoryId($attributes['category_name'] ?? null),

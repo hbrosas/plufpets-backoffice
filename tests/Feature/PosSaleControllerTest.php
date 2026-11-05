@@ -546,6 +546,43 @@ class PosSaleControllerTest extends TestCase
         $this->assertDatabaseMissing('pos_open_orders', ['id' => $order->id]);
     }
 
+    public function test_charging_a_shop_order_keeps_the_order_and_stores_the_sale(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['type' => CatalogItemType::Product]))
+            ->create(['price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+        $order = PosOpenOrder::factory()->create([
+            'branch_id' => $branch->id,
+            'status' => 'placed',
+        ]);
+        $payment = PaymentMethod::factory()->create(['is_cash' => false]);
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '100',
+                    'reference_number' => 'REF-100',
+                ]],
+                'pos_open_order_id' => $order->id,
+            ]);
+
+        $response->assertRedirect(route('pos.index', $branch));
+        $sale = PosSale::query()->first();
+        $this->assertNotNull($sale);
+        $this->assertSame($sale->id, $order->fresh()->pos_sale_id);
+        $this->assertSame('placed', $order->fresh()->status);
+    }
+
     public function test_sale_cannot_clear_an_open_order_from_another_branch(): void
     {
         $branch = Branch::factory()->create();

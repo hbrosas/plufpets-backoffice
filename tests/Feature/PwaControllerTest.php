@@ -78,7 +78,7 @@ class PwaControllerTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('href="/manifest.webmanifest"', false);
-        $response->assertSee('name="theme-color" content="#1f6f68"', false);
+        $response->assertSee('name="theme-color" content="#053b63"', false);
         $response->assertSee('href="/icons/apple-touch-icon.png"', false);
     }
 }

@@ -43,6 +43,11 @@ function applyFilters() {
     });
 }
 
+function selectType(type) {
+    filters.type = type;
+    applyFilters();
+}
+
 function onFileChange(event) {
     importForm.file = event.target.files[0] ?? null;
 }
@@ -101,6 +106,22 @@ function deleteItem(item) {
             </ul>
         </div>
 
+        <div class="flex flex-wrap gap-2" role="tablist" aria-label="Catalog type">
+            <button
+                v-for="type in types"
+                :id="`catalog-tab-${type.value}`"
+                :key="type.value"
+                class="h-10 rounded-xl px-4 text-sm font-medium"
+                :class="filters.type === type.value ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                type="button"
+                role="tab"
+                :aria-selected="filters.type === type.value"
+                @click="selectType(type.value)"
+            >
+                {{ type.value === 'product' ? 'Products' : 'Services' }}
+            </button>
+        </div>
+
         <form class="flex flex-col gap-3 sm:flex-row" @submit.prevent="applyFilters">
             <input
                 v-model="filters.search"
@@ -112,20 +133,11 @@ function deleteItem(item) {
                 placeholder="Search by name, SKU, or barcode"
                 type="text"
             />
-            <select
-                v-model="filters.type"
-                class="h-11 rounded-xl border border-mist bg-white pr-11 pl-4 text-sm outline-none transition focus:border-pine dark:border-white/10 dark:bg-white/5"
-            >
-                <option value="">All types</option>
-                <option v-for="type in types" :key="type.value" :value="type.value">
-                    {{ type.label }}
-                </option>
-            </select>
             <button
                 class="h-11 rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
                 type="submit"
             >
-                Filter
+                Search
             </button>
         </form>
 

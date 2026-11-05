@@ -37,6 +37,7 @@ defineProps({
                 {{ catalogItem.type_label }}
                 <span v-if="catalogItem.category"> · {{ catalogItem.category }}</span>
                 <span v-if="catalogItem.brand"> · {{ catalogItem.brand }}</span>
+                <span v-if="catalogItem.badge"> · {{ catalogItem.badge }}</span>
             </p>
         </div>
 

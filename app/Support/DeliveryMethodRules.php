@@ -21,6 +21,11 @@ class DeliveryMethodRules
             ],
             'fee' => ['nullable', 'numeric', 'min:0', 'decimal:0,2', 'max:999999.99'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'instructions_for_all_branches' => ['required', 'boolean'],
+            'branch_instructions' => ['nullable', 'array'],
+            'branch_instructions.*.branch_id' => ['required', 'integer', 'distinct', 'exists:branches,id'],
+            'branch_instructions.*.instructions' => ['nullable', 'string', 'max:1000'],
+            'asks_for_address' => ['required', 'boolean'],
             'is_active' => ['required', 'boolean'],
         ];
     }

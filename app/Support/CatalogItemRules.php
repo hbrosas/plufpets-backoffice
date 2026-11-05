@@ -31,6 +31,7 @@ class CatalogItemRules
             ],
             'brand_name' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
+            'badge' => ['nullable', 'string', 'max:40'],
             'is_active' => ['required', 'boolean'],
             'has_branch_pricing' => ['required', 'boolean'],
             'variants' => ['required', 'array', 'min:1'],

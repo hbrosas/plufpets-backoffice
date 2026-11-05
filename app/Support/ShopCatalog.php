@@ -41,7 +41,7 @@ class ShopCatalog
             ])->all(),
             'branch' => $branch instanceof Branch ? ['id' => $branch->id, 'name' => $branch->name] : null,
             'categories' => $categories,
-            'products' => $branch instanceof Branch ? $this->products($branch, $search, $category) : [],
+            'products' => $branch instanceof Branch ? $this->products($branch) : [],
             'filters' => [
                 'branch' => $branch instanceof Branch ? $branch->id : null,
                 'q' => $search,
@@ -89,35 +89,24 @@ class ShopCatalog
     /**
      * @return list<array<string, mixed>>
      */
-    private function products(Branch $branch, string $search, string $category): array
+    private function products(Branch $branch): array
     {
         return CatalogItemVariant::query()
             ->where('is_active', true)
-            ->whereHas('catalogItem', function ($query) use ($category): void {
-                $query->where('is_active', true);
-
-                if ($category === 'none') {
-                    $query->whereNull('category_id');
-                } elseif ($category !== '') {
-                    $query->where('category_id', (int) $category)
-                        ->whereHas('category', fn ($categories) => $categories->where('show_on_shop', true));
-                } else {
-                    $query->where(function ($query): void {
+            ->whereHas('catalogItem', function ($query): void {
+                $query->where('is_active', true)
+                    ->where(function ($query): void {
                         $query->whereNull('category_id')
                             ->orWhereHas('category', fn ($categories) => $categories->where('show_on_shop', true));
                     });
-                }
-            })
-            ->when($search !== '', function ($query) use ($search): void {
-                $query->where(function ($query) use ($search): void {
-                    $query->where('name', 'like', '%'.$search.'%')
-                        ->orWhere('sku', 'like', '%'.$search.'%')
-                        ->orWhere('barcode', 'like', '%'.$search.'%')
-                        ->orWhereHas('catalogItem', fn ($items) => $items->where('name', 'like', '%'.$search.'%'));
-                });
             })
             ->with([
-                'catalogItem:id,name,type,category_id,has_branch_pricing,is_active',
+                'catalogItem' => fn ($query) => $query
+                    ->select('id', 'name', 'type', 'category_id', 'brand_id', 'badge', 'has_branch_pricing', 'is_active')
+                    ->with([
+                        'category:id,name',
+                        'brand:id,name,image_path',
+                    ]),
                 'inventories' => fn ($query) => $query->where('branch_id', $branch->id),
                 'branchPrices' => fn ($query) => $query->where('branch_id', $branch->id),
             ])
@@ -148,19 +137,29 @@ class ShopCatalog
 
         $isProduct = $variant->catalogItem?->type === CatalogItemType::Product;
         $stock = $isProduct ? (int) ($variant->inventories->first()?->quantity ?? 0) : null;
-        $name = $variant->catalogItem?->name ?? 'Product';
-        $variantName = trim((string) $variant->name);
-
-        if ($variantName !== '' && strcasecmp($variantName, 'Default') !== 0) {
-            $name .= ' · '.$variantName;
-        }
+        $itemName = $variant->catalogItem?->name ?? 'Product';
+        $rawVariantName = trim((string) $variant->name);
+        $variantName = $rawVariantName !== '' && strcasecmp($rawVariantName, 'Default') !== 0
+            ? $rawVariantName
+            : null;
+        $name = $variantName === null ? $itemName : $itemName.' · '.$variantName;
 
         return [
             'id' => $variant->id,
             'name' => $name,
+            'item_name' => $itemName,
+            'variant_name' => $variantName,
             'price' => number_format($price, 2, '.', ''),
             'price_label' => Peso::format($price),
             'image_url' => $variant->imageUrl(),
+            'sku' => $variant->sku,
+            'barcode' => $variant->barcode,
+            'category_id' => $variant->catalogItem?->category_id === null ? null : (string) $variant->catalogItem->category_id,
+            'category_name' => $variant->catalogItem?->category?->name,
+            'brand_id' => $variant->catalogItem?->brand_id === null ? null : (string) $variant->catalogItem->brand_id,
+            'brand_name' => $variant->catalogItem?->brand?->name,
+            'brand_logo_url' => $variant->catalogItem?->brand?->imageUrl(),
+            'badge' => $variant->catalogItem?->badge,
             'is_product' => $isProduct,
             'stock' => $stock,
             'in_stock' => $stock === null || $stock > 0,

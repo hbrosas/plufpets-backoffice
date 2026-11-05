@@ -37,14 +37,17 @@ class RoleControllerTest extends TestCase
         $response->assertInertia(fn (Assert $page) => $page
             ->component('Staff/Roles/Index')
             ->where('roles.0.name', 'Administrator')
-            ->has('permissionGroups', 6)
+            ->has('permissionGroups', 8)
             ->where('permissionGroups.0.group', 'Dashboard')
             ->where('permissionGroups.0.permissions.0.key', 'dashboard.view')
-            ->where('permissionGroups.4.group', 'POS')
-            ->where('permissionGroups.4.permissions.1.key', 'pos.open-drawer')
-            ->where('permissionGroups.4.permissions.1.name', 'Open the cash drawer')
-            ->where('permissionGroups.4.permissions.4.key', 'pos.sms-history')
-            ->where('permissionGroups.4.permissions.4.name', 'View SMS history'));
+            ->where('permissionGroups.5.group', 'POS')
+            ->where('permissionGroups.5.permissions.1.key', 'pos.open-drawer')
+            ->where('permissionGroups.5.permissions.1.name', 'Open the cash drawer')
+            ->where('permissionGroups.5.permissions.4.key', 'pos.sms-history')
+            ->where('permissionGroups.5.permissions.4.name', 'View SMS history')
+            ->where('permissionGroups.7.group', 'SMS')
+            ->where('permissionGroups.7.permissions.0.key', 'sms.balance')
+            ->where('permissionGroups.7.permissions.0.name', 'View SMS credit balance'));
     }
 
     public function test_empty_role_name_is_rejected(): void

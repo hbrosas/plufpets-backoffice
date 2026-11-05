@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\Business;
 use App\Models\PosCategory;
+use App\Models\SmsCreditBalance;
 use App\Support\EmployeeSession;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -48,6 +49,9 @@ class HandleInertiaRequests extends Middleware
             'appName' => config('app.name'),
             'businessLogoUrl' => Business::current()?->logoUrl(),
             'employee' => EmployeeSession::current(),
+            'smsCreditBalance' => EmployeeSession::allows('sms.balance')
+                ? SmsCreditBalance::shared()
+                : null,
             'posCategories' => EmployeeSession::check() && $onAdminShell
                 ? PosCategory::query()
                     ->where('is_active', true)

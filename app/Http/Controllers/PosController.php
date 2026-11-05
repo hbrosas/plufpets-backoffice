@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\SendShopOrderText;
 use App\Enums\CatalogItemType;
 use App\Enums\PosCashMovementType;
+use App\Enums\ShopOrderStatus;
+use App\Http\Requests\UpdateShopOrderRequest;
 use App\Models\Branch;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemModifierOptionPrice;
@@ -21,9 +24,11 @@ use App\Models\Printer;
 use App\Models\TaxFee;
 use App\Support\CashDenominations;
 use App\Support\Peso;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -78,13 +83,14 @@ class PosController extends Controller
         if ($wants('paymentMethods')) {
             $props['paymentMethods'] = PaymentMethod::query()
                 ->where('is_active', true)
+                ->with('branchInstructions')
                 ->orderBy('name')
                 ->orderBy('id')
                 ->get()
                 ->map(fn (PaymentMethod $method): array => [
                     'id' => $method->id,
                     'name' => $method->name,
-                    'instructions' => $method->instructions ?? '',
+                    'instructions' => $method->instructionFor($branch->id) ?? '',
                     'is_cash' => $method->is_cash,
                 ]);
         }
@@ -145,6 +151,7 @@ class PosController extends Controller
         if ($wants('openOrders')) {
             $props['openOrders'] = PosOpenOrder::query()
                 ->where('branch_id', $branch->id)
+                ->whereNull('pos_sale_id')
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->get()
@@ -187,6 +194,175 @@ class PosController extends Controller
         }
 
         return redirect()->route('pos.index', $branch);
+    }
+
+    public function shopOrders(Request $request, Branch $branch): JsonResponse
+    {
+        abort_unless($branch->is_active, 404);
+
+        $shopOrders = PosOpenOrder::query()
+            ->where('branch_id', $branch->id)
+            ->whereNotNull('status')
+            ->where('status', '!=', '');
+        $latestId = (int) (clone $shopOrders)->max('id');
+        $orders = $request->missing('after')
+            ? collect()
+            : (clone $shopOrders)
+                ->where('id', '>', max(0, $request->integer('after')))
+                ->orderBy('id')
+                ->limit(20)
+                ->get();
+
+        return response()->json([
+            'latest_id' => $orders->isEmpty() ? $latestId : (int) $orders->max('id'),
+            'orders' => $orders->map(fn (PosOpenOrder $order): array => [
+                'id' => $order->id,
+                'number' => $order->number,
+                'customer' => $order->saved_by_name,
+                'total_label' => Peso::format($order->total ?? $order->subtotal),
+                'items_label' => $this->shopOrderItems($order)->implode(', '),
+            ])->values(),
+        ]);
+    }
+
+    public function onlineOrders(Branch $branch): JsonResponse
+    {
+        abort_unless($branch->is_active, 404);
+
+        $orders = PosOpenOrder::query()
+            ->with('sale:id,number')
+            ->where('branch_id', $branch->id)
+            ->whereNotNull('status')
+            ->where('status', '!=', '')
+            ->latest('id')
+            ->limit(100)
+            ->get();
+
+        return response()->json([
+            'orders' => $orders->map(fn (PosOpenOrder $order): array => $this->onlineOrderPayload($order))->values(),
+            'statuses' => ShopOrderStatus::options(),
+        ]);
+    }
+
+    public function updateOnlineOrder(UpdateShopOrderRequest $request, Branch $branch, PosOpenOrder $posOpenOrder, SendShopOrderText $sendShopOrderText): JsonResponse
+    {
+        abort_unless($branch->is_active, 404);
+        abort_unless(
+            $posOpenOrder->branch_id === $branch->id && is_string($posOpenOrder->status) && $posOpenOrder->status !== '',
+            404,
+        );
+
+        $status = $request->string('status')->toString();
+        $message = 'Order status saved.';
+
+        if ($posOpenOrder->status !== $status) {
+            $posOpenOrder->update(['status' => $status]);
+            $smsError = $sendShopOrderText->handle($posOpenOrder->fresh(['branch']) ?? $posOpenOrder);
+
+            if (is_string($smsError)) {
+                $message = 'Order status saved. '.$smsError;
+            }
+        }
+
+        return response()->json([
+            'message' => $message,
+            'order' => $this->onlineOrderPayload($posOpenOrder->fresh(['sale:id,number']) ?? $posOpenOrder),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function onlineOrderPayload(PosOpenOrder $order): array
+    {
+        $checkout = is_array($order->checkout) ? $order->checkout : [];
+        $address = is_array($checkout['address'] ?? null) ? $checkout['address'] : null;
+        $status = ShopOrderStatus::tryFrom((string) $order->status);
+
+        return [
+            'id' => $order->id,
+            'number' => $order->number,
+            'customer' => $order->saved_by_name,
+            'phone' => $order->phone,
+            'status' => $status?->value ?? (string) $order->status,
+            'status_label' => $status?->label() ?? (string) $order->status,
+            'total_label' => Peso::format($order->total ?? $order->subtotal),
+            'delivery' => $checkout['delivery']['name'] ?? null,
+            'payment' => $checkout['payment']['name'] ?? null,
+            'address' => $address === null ? null : collect([
+                $address['line_1'] ?? null,
+                $address['line_2'] ?? null,
+                $address['city'] ?? null,
+                $address['province'] ?? null,
+            ])->filter(fn (mixed $part): bool => is_string($part) && $part !== '')->implode(', '),
+            'items' => $this->shopOrderItems($order)->all(),
+            'lines' => $this->onlineOrderLines($order),
+            'sale_number' => $order->sale?->number,
+            'placed_at' => $order->created_at?->timezone('Asia/Manila')->format('M j, g:i A'),
+        ];
+    }
+
+    /**
+     * @return Collection<int, string>
+     */
+    private function shopOrderItems(PosOpenOrder $order): Collection
+    {
+        return collect($order->items)->map(function (mixed $item): string {
+            if (! is_array($item)) {
+                return '';
+            }
+
+            $name = (string) ($item['product_name'] ?? 'Item');
+            $variant = trim((string) ($item['variant_name'] ?? ''));
+
+            if ($variant !== '' && strcasecmp($variant, 'Default') !== 0) {
+                $name .= ' · '.$variant;
+            }
+
+            $label = $name.' × '.(int) ($item['quantity'] ?? 0);
+
+            if ($this->isPreorderLine($item)) {
+                $label .= ' · Preorder';
+            }
+
+            return $label;
+        })->filter()->values();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function onlineOrderLines(PosOpenOrder $order): array
+    {
+        return collect($order->items)->map(function (mixed $item): ?array {
+            if (! is_array($item)) {
+                return null;
+            }
+
+            $notes = $item['notes'] ?? null;
+
+            return [
+                'catalog_item_variant_id' => (int) ($item['catalog_item_variant_id'] ?? 0),
+                'product_name' => (string) ($item['product_name'] ?? 'Item'),
+                'variant_name' => (string) ($item['variant_name'] ?? ''),
+                'price' => (string) ($item['price'] ?? '0'),
+                'quantity' => (int) ($item['quantity'] ?? 0),
+                'notes' => is_string($notes) ? $notes : null,
+                'is_product' => (bool) ($item['is_product'] ?? true),
+                'modifiers' => is_array($item['modifiers'] ?? null) ? $item['modifiers'] : [],
+                'assigned_employee_ids' => is_array($item['assigned_employee_ids'] ?? null) ? $item['assigned_employee_ids'] : [],
+                'assisted_employee_ids' => is_array($item['assisted_employee_ids'] ?? null) ? $item['assisted_employee_ids'] : [],
+                'preorder' => $this->isPreorderLine($item),
+            ];
+        })->filter()->values()->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function isPreorderLine(array $item): bool
+    {
+        return is_string($item['notes'] ?? null) && strcasecmp($item['notes'], 'Preorder') === 0;
     }
 
     /**

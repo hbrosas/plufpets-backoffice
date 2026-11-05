@@ -20,6 +20,11 @@ class PaymentMethodRules
                 Rule::unique('payment_methods', 'name')->ignore($paymentMethod?->id),
             ],
             'instructions' => ['nullable', 'string', 'max:1000'],
+            'instructions_for_all_branches' => ['required', 'boolean'],
+            'branch_instructions' => ['nullable', 'array'],
+            'branch_instructions.*.branch_id' => ['required', 'integer', 'distinct', 'exists:branches,id'],
+            'branch_instructions.*.instructions' => ['nullable', 'string', 'max:1000'],
+            'fee' => ['nullable', 'numeric', 'min:0', 'decimal:0,2', 'max:999999.99'],
             'is_cash' => ['required', 'boolean'],
             'is_active' => ['required', 'boolean'],
         ];

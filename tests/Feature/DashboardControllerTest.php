@@ -8,6 +8,7 @@ use App\Models\CatalogItemVariant;
 use App\Models\Employee;
 use App\Models\PosSaleItemCommission;
 use App\Models\Role;
+use App\Models\SmsCreditBalance;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -42,7 +43,32 @@ class DashboardControllerTest extends TestCase
             ->where('pulse.metrics.0.label', 'Revenue')
             ->where('pulse.metrics.0.today', '₱0.00')
             ->where('stock.low', [])
-            ->where('activeStaffCount', Employee::query()->where('is_active', true)->count()));
+            ->where('activeStaffCount', Employee::query()->where('is_active', true)->count())
+            ->where('smsCreditBalance', null));
+    }
+
+    public function test_sms_credit_balance_is_shared_for_an_employee_who_can_view_it(): void
+    {
+        SmsCreditBalance::factory()->create(['balance' => 1250]);
+        $viewer = $this->employeeWith(['dashboard.view', 'sms.balance']);
+
+        $this->actingAsEmployee($viewer)
+            ->get('/backoffice/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('smsCreditBalance.balance', 1250)
+                ->where('smsCreditBalance.label', '1,250'));
+    }
+
+    public function test_sms_credit_balance_is_hidden_without_the_permission(): void
+    {
+        SmsCreditBalance::factory()->create(['balance' => 1250]);
+        $viewer = $this->employeeWith(['dashboard.view']);
+
+        $this->actingAsEmployee($viewer)
+            ->get('/backoffice/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('smsCreditBalance', null));
     }
 
     public function test_viewer_without_sales_access_does_not_receive_sales_or_other_commissions(): void

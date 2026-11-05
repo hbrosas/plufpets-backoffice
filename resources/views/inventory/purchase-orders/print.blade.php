@@ -55,13 +55,12 @@
 
         <section class="party">
             <p class="label">Business information</p>
-            @if (filled($business['registered_business_name'] ?? null) || filled($business['branch'] ?? null))
+            @if (filled($business['registered_business_name'] ?? null) || filled($business['address'] ?? null) || filled($business['phone'] ?? null) || filled($business['email'] ?? null) || filled($business['tin'] ?? null) || filled($business['logo_url'] ?? null))
                 @if (! empty($business['logo_url']))
                     <img src="{{ $business['logo_url'] }}" alt="" style="height: 48px; margin-bottom: 8px;">
                 @endif
-                <h2>{{ $business['registered_business_name'] ?: $business['branch'] }}</h2>
-                @if (! empty($business['branch']) && ! empty($business['registered_business_name']))
-                    <p>{{ $business['branch'] }}</p>
+                @if (filled($business['registered_business_name'] ?? null))
+                    <h2>{{ $business['registered_business_name'] }}</h2>
                 @endif
                 @if (! empty($business['address']))
                     <p class="muted">{{ $business['address'] }}</p>
@@ -84,6 +83,10 @@
 
     @if ($purchaseOrder->notes)
         <p class="notes">{{ $purchaseOrder->notes }}</p>
+    @endif
+
+    @if ($purchaseOrder->closed_reason)
+        <p class="notes">Closed: {{ $purchaseOrder->closed_reason }}</p>
     @endif
 
     <table>

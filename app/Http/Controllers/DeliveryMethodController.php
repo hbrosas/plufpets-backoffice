@@ -5,13 +5,22 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreDeliveryMethodRequest;
 use App\Http\Requests\UpdateDeliveryMethodRequest;
 use App\Models\DeliveryMethod;
+use App\Support\BranchInstructions;
 use Illuminate\Http\RedirectResponse;
 
 class DeliveryMethodController extends Controller
 {
     public function store(StoreDeliveryMethodRequest $request): RedirectResponse
     {
-        DeliveryMethod::query()->create($request->safe()->only(['name', 'fee', 'notes', 'is_active']));
+        $deliveryMethod = DeliveryMethod::query()->create($request->safe()->only([
+            'name',
+            'fee',
+            'notes',
+            'instructions_for_all_branches',
+            'asks_for_address',
+            'is_active',
+        ]));
+        BranchInstructions::sync($deliveryMethod, $request->validated('branch_instructions') ?? []);
 
         return redirect()
             ->route('shop.settings.index')
@@ -20,7 +29,15 @@ class DeliveryMethodController extends Controller
 
     public function update(UpdateDeliveryMethodRequest $request, DeliveryMethod $deliveryMethod): RedirectResponse
     {
-        $deliveryMethod->update($request->safe()->only(['name', 'fee', 'notes', 'is_active']));
+        $deliveryMethod->update($request->safe()->only([
+            'name',
+            'fee',
+            'notes',
+            'instructions_for_all_branches',
+            'asks_for_address',
+            'is_active',
+        ]));
+        BranchInstructions::sync($deliveryMethod, $request->validated('branch_instructions') ?? []);
 
         return redirect()
             ->route('shop.settings.index')

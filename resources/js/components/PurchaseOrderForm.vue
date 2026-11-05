@@ -275,7 +275,7 @@ watch(
                     <p v-if="selectedBranch.tin" class="text-ink/70 dark:text-foam/70">TIN {{ selectedBranch.tin }}</p>
                 </div>
                 <p v-if="branches.length === 0" class="text-sm text-ink/60 dark:text-foam/60">
-                    Add a branch first in Shop Management → Branches, including TIN and registered business name.
+                    Add a branch first in My Business → Branches, including TIN and registered business name.
                 </p>
             </div>
         </div>

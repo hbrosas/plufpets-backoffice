@@ -40,14 +40,14 @@ function toggleMenu() {
 </script>
 
 <template>
-    <div class="flex h-dvh flex-col overflow-hidden bg-mist/50 dark:bg-ink">
+    <div class="admin-shell flex h-dvh flex-col overflow-hidden bg-cream text-black">
         <FlashToast />
         <header
             class="z-30 flex shrink-0 flex-wrap items-center gap-2 border-b border-mist bg-foam/90 px-3 py-2 backdrop-blur-md sm:gap-3 sm:px-4 sm:py-3 lg:px-6 dark:border-white/10 dark:bg-ink/90"
         >
             <span
                 v-show="!hidePosChrome"
-                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sand text-sm font-semibold text-pine"
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-ember text-sm font-semibold text-black"
             >PP</span>
 
             <div v-show="!hidePosChrome" id="pos-header-search" class="min-w-[8rem] flex-1 basis-40" />
@@ -64,11 +64,15 @@ function toggleMenu() {
 
                 <form v-show="!hidePosChrome" class="shrink-0" @submit.prevent="logout">
                     <button
-                        class="h-10 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15 disabled:opacity-70"
+                        class="flex h-10 w-10 items-center justify-center rounded-xl border border-mist dark:border-white/15 disabled:opacity-70"
                         type="submit"
+                        :aria-label="form.processing ? 'Locking' : 'Lock'"
                         :disabled="form.processing"
                     >
-                        {{ form.processing ? 'Locking…' : 'Lock' }}
+                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                            <rect x="4" y="9" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+                            <path d="M7 9V6.5a3 3 0 0 1 6 0V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                        </svg>
                     </button>
                 </form>
             </div>
@@ -94,22 +98,30 @@ function toggleMenu() {
         </header>
 
         <Teleport to="body">
+            <div class="admin-shell contents">
             <div v-show="menuOpen" class="fixed inset-0 z-40" @click="closeMenu" />
             <div
                 v-show="menuOpen"
                 id="pos-header-menu"
-                class="fixed z-50 flex w-56 flex-col overflow-hidden rounded-2xl border border-mist bg-foam py-1 shadow-lg dark:border-white/10 dark:bg-ink"
+                class="fixed z-50 flex w-56 flex-col overflow-hidden rounded-2xl border border-mist bg-foam py-1 text-ink shadow-lg dark:border-white/10 dark:bg-ink"
                 :style="menuStyle"
                 @click="closeMenu"
             >
                 <div id="pos-header-menu-items" class="flex flex-col" />
                 <Link
                     v-if="canViewDashboard"
-                    class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
+                    class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
                     href="/backoffice/dashboard"
                 >
+                    <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                        <rect x="3" y="3" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5" />
+                        <rect x="11" y="3" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5" />
+                        <rect x="3" y="11" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5" />
+                        <rect x="11" y="11" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5" />
+                    </svg>
                     Dashboard
                 </Link>
+            </div>
             </div>
         </Teleport>
 

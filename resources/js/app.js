@@ -6,6 +6,14 @@ import PwaInstallPrompt from './components/PwaInstallPrompt.vue';
 import { mountToastHost } from './toast';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Employee Portal';
+const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+
+function syncColorScheme() {
+    document.documentElement.classList.toggle('dark', colorScheme.matches);
+}
+
+syncColorScheme();
+colorScheme.addEventListener('change', syncColorScheme);
 
 createInertiaApp({
     title: (title) => (title ? `${title} · ${appName}` : appName),
@@ -21,7 +29,7 @@ createInertiaApp({
         mountToastHost();
     },
     progress: {
-        color: '#1f6f68',
+        color: '#053b63',
     },
 });
 

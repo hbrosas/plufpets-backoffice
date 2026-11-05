@@ -3,11 +3,13 @@
 namespace App\Support;
 
 use App\Enums\CatalogItemType;
+use App\Enums\CommissionRole;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\PosSale;
 use App\Models\PosSaleItem;
 use App\Models\PosSaleItemCommission;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -185,6 +187,51 @@ class ShopReports
                 'amount' => Peso::format($row->total),
             ])->all(),
         ];
+    }
+
+    /**
+     * @return list<array{sold_at: string, number: string, item: string, role: string, amount: string}>
+     */
+    public function commissionLines(ReportPeriod $period, int $employeeId): array
+    {
+        return PosSaleItemCommission::query()
+            ->join('pos_sale_items', 'pos_sale_items.id', '=', 'pos_sale_item_commissions.pos_sale_item_id')
+            ->join('pos_sales', 'pos_sales.id', '=', 'pos_sale_items.pos_sale_id')
+            ->whereNull('pos_sales.refunded_at')
+            ->whereBetween('pos_sales.sold_at', [$period->from, $period->to])
+            ->where('pos_sale_item_commissions.employee_id', $employeeId)
+            ->orderByDesc('pos_sales.sold_at')
+            ->orderByDesc('pos_sale_item_commissions.id')
+            ->limit(100)
+            ->get([
+                'pos_sales.number as sale_number',
+                'pos_sales.sold_at',
+                'pos_sale_items.product_name',
+                'pos_sale_items.variant_name',
+                'pos_sale_item_commissions.role',
+                'pos_sale_item_commissions.amount',
+            ])
+            ->map(function (object $row): array {
+                $variant = trim((string) $row->variant_name);
+                $item = (string) $row->product_name;
+
+                if ($variant !== '' && strcasecmp($variant, 'Default') !== 0) {
+                    $item .= ' · '.$variant;
+                }
+
+                $role = $row->role instanceof CommissionRole
+                    ? $row->role->value
+                    : (string) $row->role;
+
+                return [
+                    'sold_at' => Carbon::parse($row->sold_at)->timezone('Asia/Manila')->format('M j, g:i A'),
+                    'number' => (string) $row->sale_number,
+                    'item' => $item,
+                    'role' => ucfirst($role),
+                    'amount' => Peso::format($row->amount),
+                ];
+            })
+            ->all();
     }
 
     /**

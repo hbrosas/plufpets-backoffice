@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Branch;
 use App\Models\PaymentMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -98,5 +99,30 @@ class PaymentMethodControllerTest extends TestCase
 
         $response->assertRedirect(route('shop.settings.index'));
         $this->assertDatabaseMissing('payment_methods', ['id' => $paymentMethod->id]);
+    }
+
+    public function test_payment_instructions_can_differ_by_branch(): void
+    {
+        $greenheights = Branch::factory()->create(['name' => 'Greenheights']);
+        $sanPedro = Branch::factory()->create(['name' => 'San Pedro']);
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/settings')->post('/backoffice/shop/payment-methods', [
+            'name' => 'GCash',
+            'instructions' => 'Shared QR',
+            'instructions_for_all_branches' => false,
+            'branch_instructions' => [
+                ['branch_id' => $greenheights->id, 'instructions' => 'Scan the Greenheights QR.'],
+                ['branch_id' => $sanPedro->id, 'instructions' => 'Scan the San Pedro QR.'],
+            ],
+            'is_cash' => false,
+            'is_active' => true,
+        ]);
+
+        $response->assertRedirect(route('shop.settings.index'));
+        $method = PaymentMethod::query()->where('name', 'GCash')->first();
+        $this->assertFalse($method->instructions_for_all_branches);
+        $this->assertSame('Scan the Greenheights QR.', $method->instructionFor($greenheights->id));
+        $this->assertSame('Scan the San Pedro QR.', $method->instructionFor($sanPedro->id));
+        $this->assertSame('Shared QR', $method->instructionFor(null));
     }
 }

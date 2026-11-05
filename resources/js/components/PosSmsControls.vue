@@ -243,11 +243,15 @@ function useTemplate(template) {
 <template>
     <div ref="menuTrigger" class="relative flex shrink-0">
         <button
-            class="h-10 rounded-l-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
+            class="inline-flex h-10 items-center gap-2 rounded-l-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
             type="button"
             :disabled="sending"
             @click="openCompose()"
         >
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M4 6.5h12a1 1 0 0 1 1 1V15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.5" />
+                <path d="M4 7.5 10 12l6-4.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+            </svg>
             {{ sending ? 'Sending…' : 'Send Text' }}
         </button>
         <button
@@ -268,30 +272,39 @@ function useTemplate(template) {
     </div>
 
     <Teleport to="body">
+        <div class="admin-shell contents">
         <div v-show="menuOpen" class="fixed inset-0 z-40" @click="closeMenu" />
         <div
             v-show="menuOpen"
-            class="fixed z-50 flex w-48 flex-col overflow-hidden rounded-2xl border border-mist bg-foam py-1 shadow-lg dark:border-white/10 dark:bg-ink"
+            class="fixed z-50 flex w-48 flex-col overflow-hidden rounded-2xl border border-mist bg-foam py-1 text-ink shadow-lg dark:border-white/10 dark:bg-ink"
             :style="menuStyle"
         >
             <button
-                class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
+                class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
                 type="button"
                 @click="openTemplates"
             >
+                <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M5 4.5h10v11H5v-11Z" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M7.5 8h5M7.5 11h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
                 SMS Templates
             </button>
             <button
-                class="px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
+                class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
                 type="button"
                 @click="openHistory"
             >
+                <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M10 7v3.5l2.2 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
                 SMS History
             </button>
         </div>
 
     <div v-if="panel === 'compose'" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
-        <div class="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 dark:bg-ink">
+        <div class="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 text-ink dark:bg-ink">
             <div class="flex items-start justify-between gap-4">
                 <h2 class="text-lg font-medium">Send Text</h2>
                 <button class="text-sm font-medium" type="button" @click="closePanel">Close</button>
@@ -351,7 +364,7 @@ function useTemplate(template) {
     </div>
 
     <div v-if="panel === 'templates'" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
-        <div class="flex max-h-[80vh] w-full max-w-lg flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 dark:bg-ink">
+        <div class="flex max-h-[80vh] w-full max-w-lg flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 text-ink dark:bg-ink">
             <div class="flex items-start justify-between gap-4">
                 <h2 class="text-lg font-medium">SMS Templates</h2>
                 <button class="text-sm font-medium" type="button" @click="closePanel">Close</button>
@@ -403,7 +416,7 @@ function useTemplate(template) {
                                 Use
                             </button>
                             <button class="text-sm font-medium" type="button" @click="editTemplate(template)">Edit</button>
-                            <button class="text-sm font-medium text-danger" type="button" @click="deleteTemplate(template)">
+                            <button v-if="!template.key" class="text-sm font-medium text-danger" type="button" @click="deleteTemplate(template)">
                                 Delete
                             </button>
                         </div>
@@ -414,7 +427,7 @@ function useTemplate(template) {
     </div>
 
     <div v-if="panel === 'history'" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
-        <div class="flex h-[80vh] w-full max-w-lg flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 dark:bg-ink">
+        <div class="flex h-[80vh] w-full max-w-lg flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 text-ink dark:bg-ink">
             <div class="flex shrink-0 items-start justify-between gap-4">
                 <div class="flex flex-col gap-1">
                     <h2 class="text-lg font-medium">SMS History</h2>
@@ -459,5 +472,6 @@ function useTemplate(template) {
             </div>
         </div>
     </div>
+        </div>
     </Teleport>
 </template>

@@ -2,12 +2,15 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\PreparesBranchInstructions;
 use App\Support\PaymentMethodRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StorePaymentMethodRequest extends FormRequest
 {
+    use PreparesBranchInstructions;
+
     public function authorize(): bool
     {
         return true;
@@ -32,10 +35,14 @@ class StorePaymentMethodRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $instructions = $this->string('instructions')->trim()->toString();
+        $fee = $this->input('fee');
 
         $this->merge([
             'name' => $this->string('name')->trim()->toString(),
             'instructions' => $instructions === '' ? null : $instructions,
+            'instructions_for_all_branches' => $this->sharedInstructionFlag(),
+            'branch_instructions' => $this->branchInstructions(),
+            'fee' => ($fee === '' || $fee === null) ? null : $fee,
             'is_cash' => $this->boolean('is_cash'),
             'is_active' => $this->boolean('is_active'),
         ]);

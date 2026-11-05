@@ -4,8 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Enums\PrinterConnection;
 use App\Enums\PrinterRole;
+use App\Http\Requests\UpdateShopOrderTextRequest;
 use App\Models\Branch;
 use App\Models\Printer;
+use App\Models\SmsTemplate;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -43,5 +46,16 @@ class PosSettingController extends Controller
                 PrinterConnection::cases(),
             ),
         ]);
+    }
+
+    public function updateOrderText(UpdateShopOrderTextRequest $request, SmsTemplate $smsTemplate): RedirectResponse
+    {
+        abort_unless(is_string($smsTemplate->key) && str_starts_with($smsTemplate->key, 'shop.'), 404);
+
+        $smsTemplate->update($request->safe()->only(['body']));
+
+        return redirect()
+            ->route('sms.templates.index')
+            ->with('status', 'Text message saved.');
     }
 }

@@ -3,21 +3,14 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="theme-color" content="#1f6f68">
+        <meta name="theme-color" content="#053b63">
         <title>Offline · {{ $appName }}</title>
         <style>
             :root {
-                color-scheme: light dark;
-                --ink: #243330;
-                --foam: #f7f8f6;
-                --pine: #1f6f68;
-            }
-
-            @media (prefers-color-scheme: dark) {
-                :root {
-                    --ink: #f7f8f6;
-                    --foam: #243330;
-                }
+                color-scheme: light;
+                --ink: #141414;
+                --foam: #f7f5f0;
+                --pine: #053b63;
             }
 
             * {
@@ -51,8 +44,8 @@
                 align-items: center;
                 justify-content: center;
                 border-radius: 0.75rem;
-                background: var(--pine);
-                color: #f4f7f4;
+                background: #ff8a1b;
+                color: #141414;
                 font-weight: 600;
             }
 
@@ -74,7 +67,7 @@
                 border: 0;
                 border-radius: 0.75rem;
                 background: var(--pine);
-                color: #f4f7f4;
+                color: #ffffff;
                 padding: 0 1rem;
                 font: inherit;
                 font-size: 0.95rem;

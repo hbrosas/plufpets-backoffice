@@ -305,7 +305,7 @@ export async function ensurePrinterConnection(printer) {
 
 export function beginAssignedPrint(printer) {
     if (!printer) {
-        return Promise.reject(new Error('Assign a receipt printer for this branch in POS Settings.'));
+        return Promise.reject(new Error('Assign a receipt printer for this branch in POS Devices.'));
     }
 
     if (printer.connection === 'bluetooth') {
@@ -317,7 +317,7 @@ export function beginAssignedPrint(printer) {
 
 export async function finishAssignedPrint(printer, text, session) {
     if (!printer) {
-        throw new Error('Assign a receipt printer for this branch in POS Settings.');
+        throw new Error('Assign a receipt printer for this branch in POS Devices.');
     }
 
     if (printer.connection === 'browser') {
@@ -380,7 +380,7 @@ export async function printReceipt(printer, text, { openDrawer = false, allowPro
 
 export async function openAssignedDrawer(printer, allowPrompt = true) {
     if (!printer) {
-        throw new Error('Assign a receipt printer for this branch in POS Settings.');
+        throw new Error('Assign a receipt printer for this branch in POS Devices.');
     }
 
     if (printer.connection === 'browser') {
@@ -393,7 +393,7 @@ export async function openAssignedDrawer(printer, allowPrompt = true) {
 
 export async function printToAssignedPrinter(printer, text, allowPrompt = true) {
     if (!printer) {
-        throw new Error('Assign a receipt printer for this branch in POS Settings.');
+        throw new Error('Assign a receipt printer for this branch in POS Devices.');
     }
 
     await printEscPos(printer, text, allowPrompt);

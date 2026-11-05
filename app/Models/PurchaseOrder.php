@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['number', 'supplier_id', 'branch_id', 'status', 'ordered_at', 'confirmed_at', 'notes'])]
+#[Fillable(['number', 'supplier_id', 'branch_id', 'status', 'ordered_at', 'confirmed_at', 'closed_at', 'closed_reason', 'notes'])]
 class PurchaseOrder extends Model
 {
     /** @use HasFactory<PurchaseOrderFactory> */
@@ -35,6 +35,7 @@ class PurchaseOrder extends Model
             'status' => PurchaseOrderStatus::class,
             'ordered_at' => 'datetime',
             'confirmed_at' => 'datetime',
+            'closed_at' => 'datetime',
         ];
     }
 
@@ -92,6 +93,11 @@ class PurchaseOrder extends Model
     public function isDraft(): bool
     {
         return $this->status === PurchaseOrderStatus::Draft;
+    }
+
+    public function isClosed(): bool
+    {
+        return $this->status === PurchaseOrderStatus::Closed;
     }
 
     /**

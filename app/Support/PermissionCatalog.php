@@ -21,6 +21,7 @@ class PermissionCatalog
             ['key' => 'shop.modifiers', 'name' => 'Manage modifiers', 'group' => 'Shop'],
             ['key' => 'shop.branches', 'name' => 'Manage branches', 'group' => 'Shop'],
             ['key' => 'shop.settings', 'name' => 'Manage shop settings', 'group' => 'Shop'],
+            ['key' => 'shop.orders', 'name' => 'Manage shop orders', 'group' => 'Shop'],
             ['key' => 'inventory.view', 'name' => 'View inventory', 'group' => 'Inventory'],
             ['key' => 'inventory.adjust', 'name' => 'Transfer and convert stock', 'group' => 'Inventory'],
             ['key' => 'inventory.purchase-orders', 'name' => 'Manage purchase orders', 'group' => 'Inventory'],
@@ -34,6 +35,7 @@ class PermissionCatalog
             ['key' => 'pos.sms-history', 'name' => 'View SMS history', 'group' => 'POS'],
             ['key' => 'staff.manage', 'name' => 'Manage staff', 'group' => 'Staff'],
             ['key' => 'roles.manage', 'name' => 'Manage roles', 'group' => 'Staff'],
+            ['key' => 'sms.balance', 'name' => 'View SMS credit balance', 'group' => 'SMS'],
         ];
     }
 

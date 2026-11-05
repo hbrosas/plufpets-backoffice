@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Branch;
 use App\Models\DeliveryMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -126,5 +127,29 @@ class DeliveryMethodControllerTest extends TestCase
 
         $response->assertRedirect(route('shop.settings.index'));
         $this->assertDatabaseMissing('delivery_methods', ['id' => $deliveryMethod->id]);
+    }
+
+    public function test_delivery_instructions_can_differ_by_branch(): void
+    {
+        $greenheights = Branch::factory()->create(['name' => 'Greenheights']);
+        $sanPedro = Branch::factory()->create(['name' => 'San Pedro']);
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/settings')->post('/backoffice/shop/delivery-methods', [
+            'name' => 'Lalamove',
+            'fee' => '150',
+            'notes' => 'One instruction for every branch.',
+            'instructions_for_all_branches' => false,
+            'branch_instructions' => [
+                ['branch_id' => $greenheights->id, 'instructions' => 'Rider will call the Greenheights line.'],
+                ['branch_id' => $sanPedro->id, 'instructions' => 'Meet the rider at San Pedro.'],
+            ],
+            'is_active' => true,
+        ]);
+
+        $response->assertRedirect(route('shop.settings.index'));
+        $method = DeliveryMethod::query()->where('name', 'Lalamove')->first();
+        $this->assertFalse($method->instructions_for_all_branches);
+        $this->assertSame('Rider will call the Greenheights line.', $method->instructionFor($greenheights->id));
+        $this->assertSame('Meet the rider at San Pedro.', $method->instructionFor($sanPedro->id));
     }
 }

@@ -34,7 +34,7 @@ watch(tabs, (items) => {
 </script>
 
 <template>
-    <Head title="Overview" />
+    <Head title="Dashboard" />
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <p
@@ -44,7 +44,7 @@ watch(tabs, (items) => {
             No reports are available for your role.
         </p>
 
-        <div v-if="tabs.length > 0" class="flex flex-wrap gap-2" role="tablist" aria-label="Overview">
+        <div v-if="tabs.length > 0" class="flex flex-wrap gap-2" role="tablist" aria-label="Dashboard">
             <button
                 v-for="item in tabs"
                 :id="`overview-tab-${item.id}`"
