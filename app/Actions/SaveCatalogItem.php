@@ -29,6 +29,7 @@ class SaveCatalogItem
                 'badge' => $attributes['badge'] ?? null,
                 'is_active' => $attributes['is_active'],
                 'has_branch_pricing' => $attributes['has_branch_pricing'] ?? false,
+                'allows_preorder' => (bool) ($attributes['allows_preorder'] ?? true),
                 'category_id' => $this->categoryId($attributes['category_name'] ?? null),
                 'brand_id' => $this->brandId($attributes['brand_name'] ?? null),
             ]);

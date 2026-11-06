@@ -1,6 +1,6 @@
 <script setup>
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import BarcodeInput from '../../components/BarcodeInput.vue';
 import { formatPeso } from '../../formatPeso';
 import { jsonRequest } from '../../http';
@@ -42,6 +42,7 @@ const page = usePage();
 const flash = computed(() => page.props.flash ?? {});
 const employee = computed(() => page.props.employee);
 const canOpenDrawer = computed(() => (employee.value?.permissions ?? []).includes('pos.open-drawer'));
+const canViewSales = computed(() => (employee.value?.permissions ?? []).includes('sales.view'));
 const branchPrinters = computed(() =>
     props.printers.filter((printer) => String(printer.branch_id) === String(props.branch.id)),
 );
@@ -85,6 +86,7 @@ const onlineOrdersNotice = ref('');
 const partialDelivery = ref('');
 const viewedOnlineOrderId = ref(null);
 const updatingOrderId = ref(null);
+const creatingSaleId = ref(null);
 let shopOrderTimer = null;
 let shopOrderPollInFlight = false;
 
@@ -179,17 +181,17 @@ const filteredVariants = computed(() => {
     const query = search.value.trim().toLowerCase();
 
     return props.variants.filter((variant) => {
+        if (query) {
+            return [variant.product_name, variant.variant_name, variant.sku, variant.barcode]
+                .filter(Boolean)
+                .some((value) => String(value).toLowerCase().includes(query));
+        }
+
         if (selectedProductCategory.value && (variant.shop_category_name || 'Uncategorized') !== selectedProductCategory.value) {
             return false;
         }
 
-        if (!query) {
-            return matchesPosCategory(variant);
-        }
-
-        return [variant.product_name, variant.variant_name, variant.sku, variant.barcode]
-            .filter(Boolean)
-            .some((value) => String(value).toLowerCase().includes(query));
+        return matchesPosCategory(variant);
     });
 });
 
@@ -694,13 +696,80 @@ function pushCartLine(variant, quantity, notes, modifiers, assigned = [], assist
     });
 }
 
-function onBarcode(value) {
-    const match = props.variants.find((variant) => variant.barcode && variant.barcode === value);
+function variantIsAvailable(variant) {
+    return !(variant.is_product && liveQuantity(variant) !== null && liveQuantity(variant) < 1);
+}
 
-    if (match) {
-        addVariant(match);
-        search.value = '';
+function onBarcode(value) {
+    const code = value.trim();
+
+    if (code === '') {
+        return;
     }
+
+    search.value = code;
+
+    const match = props.variants.find((variant) => variant.barcode && variant.barcode === code);
+
+    if (match && variantIsAvailable(match)) {
+        pushCartLine(match, 1, '', []);
+    }
+
+    requestAnimationFrame(() => {
+        const input = document.getElementById('pos-search');
+
+        if (input instanceof HTMLInputElement && document.activeElement === input) {
+            input.select();
+        }
+    });
+}
+
+let scanBuffer = '';
+let lastScanKeyAt = 0;
+
+function resetScanBuffer() {
+    scanBuffer = '';
+    lastScanKeyAt = 0;
+}
+
+function onBackgroundScan(event) {
+    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+    }
+
+    const target = event.target;
+
+    if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]')) {
+        return;
+    }
+
+    if (event.key === 'Enter') {
+        const code = scanBuffer.trim();
+        const recent = lastScanKeyAt > 0 && Date.now() - lastScanKeyAt <= 100;
+        const known = props.variants.some((variant) => variant.barcode && variant.barcode === code);
+
+        resetScanBuffer();
+
+        if (code !== '' && recent && (known || code.length >= 4)) {
+            event.preventDefault();
+            onBarcode(code);
+        }
+
+        return;
+    }
+
+    if (event.key.length !== 1) {
+        return;
+    }
+
+    const now = Date.now();
+
+    if (scanBuffer !== '' && now - lastScanKeyAt > 100) {
+        scanBuffer = '';
+    }
+
+    lastScanKeyAt = now;
+    scanBuffer += event.key;
 }
 
 function changeQty(line, delta) {
@@ -1402,8 +1471,12 @@ async function updateOnlineOrder(order, status) {
         }
 
         onlineOrdersNotice.value = payload.message || 'Order status saved.';
+
+        return true;
     } catch (error) {
         onlineOrdersNotice.value = error instanceof Error ? error.message : 'Could not save the order status.';
+
+        return false;
     } finally {
         updatingOrderId.value = null;
     }
@@ -1422,7 +1495,7 @@ function orderHasStock(order) {
     return (order.lines ?? []).some((line) => !line.preorder);
 }
 
-function createSaleFromOnlineOrder(order) {
+async function createSaleFromOnlineOrder(order) {
     const stocked = (order.lines ?? []).filter((line) => !line.preorder);
     const held = (order.lines ?? []).filter((line) => line.preorder);
 
@@ -1442,6 +1515,20 @@ function createSaleFromOnlineOrder(order) {
         onlineOrdersNotice.value = 'Clear the cart before creating this sale.';
 
         return;
+    }
+
+    if (order.status !== 'preparing') {
+        creatingSaleId.value = order.id;
+        const saved = await updateOnlineOrder(order, 'preparing');
+        creatingSaleId.value = null;
+
+        if (!saved) {
+            return;
+        }
+
+        if (onlineOrdersNotice.value) {
+            showToast(onlineOrdersNotice.value);
+        }
     }
 
     cart.value = stocked.map((item) => {
@@ -1469,9 +1556,15 @@ function createSaleFromOnlineOrder(order) {
         ? `Partial delivery. Pre-order items stay on ${order.number}: ${held.map(lineLabel).join(', ')}.`
         : '';
     onlineOrdersOpen.value = false;
+    viewedOnlineOrderId.value = null;
 }
 
+onMounted(() => {
+    window.addEventListener('keydown', onBackgroundScan);
+});
+
 onUnmounted(() => {
+    window.removeEventListener('keydown', onBackgroundScan);
     window.clearInterval(shopOrderTimer);
     hidePosChrome.value = false;
     hideSendText.value = false;
@@ -2360,6 +2453,7 @@ onUnmounted(() => {
                         <div class="min-w-0">
                             <p class="font-medium">{{ order.number }}</p>
                             <p class="text-xs text-ink/50 dark:text-foam/50">{{ order.placed_at }} · {{ order.total_label }}</p>
+                            <p v-if="order.sale_number" class="text-xs font-medium">{{ order.status_label }} · Sale {{ order.sale_number }}</p>
                         </div>
                         <div class="flex w-40 shrink-0 flex-col gap-2">
                             <label class="sr-only" :for="`pos-order-status-${order.id}`">Status for {{ order.number }}</label>
@@ -2375,10 +2469,10 @@ onUnmounted(() => {
                             <button
                                 class="h-10 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-50"
                                 type="button"
-                                :disabled="Boolean(order.sale_number) || !orderHasStock(order)"
+                                :disabled="Boolean(order.sale_number) || !orderHasStock(order) || creatingSaleId === order.id"
                                 @click="createSaleFromOnlineOrder(order)"
                             >
-                                Create Sale
+                                {{ creatingSaleId === order.id ? 'Preparing…' : 'Create Sale' }}
                             </button>
                             <button
                                 class="h-10 rounded-xl border border-mist text-sm font-medium dark:border-white/15"
@@ -2400,6 +2494,20 @@ onUnmounted(() => {
                 <div>
                     <h2 class="text-lg font-medium">{{ viewedOnlineOrder.number }}</h2>
                     <p class="text-sm text-ink/60 dark:text-foam/60">{{ viewedOnlineOrder.placed_at }} · {{ viewedOnlineOrder.total_label }}</p>
+                    <p class="text-sm font-medium">
+                        {{ viewedOnlineOrder.status_label }}
+                        <template v-if="viewedOnlineOrder.sale_number">
+                            ·
+                            <Link
+                                v-if="canViewSales && viewedOnlineOrder.sale_id"
+                                class="text-pine dark:text-sand"
+                                :href="`/backoffice/sales/receipts/${viewedOnlineOrder.sale_id}`"
+                            >
+                                Sale {{ viewedOnlineOrder.sale_number }}
+                            </Link>
+                            <span v-else>Sale {{ viewedOnlineOrder.sale_number }}</span>
+                        </template>
+                    </p>
                 </div>
                 <button class="text-sm font-medium" type="button" @click="viewedOnlineOrderId = null">Close</button>
             </div>
@@ -2416,8 +2524,7 @@ onUnmounted(() => {
                 <p v-if="viewedOnlineOrder.address" class="text-ink/70 dark:text-foam/70">{{ viewedOnlineOrder.address }}</p>
                 <p v-if="viewedOnlineOrder.payment">{{ viewedOnlineOrder.payment }}</p>
             </div>
-            <p v-if="viewedOnlineOrder.sale_number" class="text-sm">Sale {{ viewedOnlineOrder.sale_number }}</p>
-            <p v-else-if="(viewedOnlineOrder.lines ?? []).some((line) => line.preorder)" class="text-sm text-ink/70 dark:text-foam/70">
+            <p v-if="!viewedOnlineOrder.sale_number && (viewedOnlineOrder.lines ?? []).some((line) => line.preorder)" class="text-sm text-ink/70 dark:text-foam/70">
                 Partial delivery. Pre-order items stay on the order.
             </p>
         </div>

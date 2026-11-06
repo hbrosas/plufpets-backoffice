@@ -122,7 +122,7 @@ class PlaceShopOrder
         foreach ($items as $item) {
             $query = CatalogItemVariant::query()
                 ->with([
-                    'catalogItem:id,name,type,has_branch_pricing,is_active',
+                    'catalogItem:id,name,type,has_branch_pricing,allows_preorder,is_active',
                     'branchPrices' => fn ($prices) => $prices->where('branch_id', $branch->id),
                 ])
                 ->whereKey($item['catalog_item_variant_id']);
@@ -153,7 +153,13 @@ class PlaceShopOrder
                 }
 
                 $onHand = (int) ($inventoryQuery->first()?->quantity ?? 0);
-                $preorder = $onHand < 1;
+                $preorder = $onHand < 1 && $variant->catalogItem->allows_preorder;
+
+                if ($onHand < 1 && ! $variant->catalogItem->allows_preorder) {
+                    throw ValidationException::withMessages([
+                        'items' => $this->productName($variant).' is out of stock.',
+                    ]);
+                }
 
                 if (! $preorder && $quantity > $onHand) {
                     throw ValidationException::withMessages([

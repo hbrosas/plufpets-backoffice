@@ -34,6 +34,7 @@ class CatalogItemRules
             'badge' => ['nullable', 'string', 'max:40'],
             'is_active' => ['required', 'boolean'],
             'has_branch_pricing' => ['required', 'boolean'],
+            'allows_preorder' => ['required', 'boolean'],
             'variants' => ['required', 'array', 'min:1'],
             'variants.*.id' => $catalogItem === null
                 ? ['prohibited']

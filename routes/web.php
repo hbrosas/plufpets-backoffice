@@ -45,7 +45,9 @@ use App\Http\Controllers\SalesItemController;
 use App\Http\Controllers\SalesOverviewController;
 use App\Http\Controllers\SalesReceiptController;
 use App\Http\Controllers\SalesShiftController;
+use App\Http\Controllers\ShopBannerController;
 use App\Http\Controllers\ShopOrderController;
+use App\Http\Controllers\ShopPromotionController;
 use App\Http\Controllers\ShopSettingController;
 use App\Http\Controllers\StockAssignmentController;
 use App\Http\Controllers\StockConversionController;
@@ -286,6 +288,10 @@ Route::prefix('backoffice')->group(function () {
 
             Route::middleware('employee.permission:shop.settings')->group(function () {
                 Route::get('settings', [ShopSettingController::class, 'index'])->name('settings.index');
+                Route::get('banner', [ShopBannerController::class, 'index'])->name('banner.index');
+                Route::post('banner', [ShopBannerController::class, 'update'])->name('banner.update');
+                Route::get('promotion', [ShopPromotionController::class, 'index'])->name('promotion.index');
+                Route::post('promotion', [ShopPromotionController::class, 'update'])->name('promotion.update');
                 Route::post('tax-fees', [TaxFeeController::class, 'store'])->name('tax-fees.store');
                 Route::put('tax-fees/{tax_fee}', [TaxFeeController::class, 'update'])->name('tax-fees.update');
                 Route::delete('tax-fees/{tax_fee}', [TaxFeeController::class, 'destroy'])->name('tax-fees.destroy');

@@ -330,6 +330,27 @@ class PosControllerTest extends TestCase
         $response->assertJsonPath('orders.0.lines.1.quantity', 3);
         $response->assertJsonPath('orders.0.items.1', 'Aozi Dog · Beef × 3 · Preorder');
         $response->assertJsonPath('orders.0.sale_number', null);
+        $response->assertJsonPath('orders.0.sale_id', null);
+    }
+
+    public function test_online_order_includes_the_linked_sale_and_status(): void
+    {
+        $branch = Branch::factory()->create();
+        $sale = PosSale::factory()->create([
+            'number' => 'POS-PREP1',
+        ]);
+        PosOpenOrder::factory()->for($branch)->create([
+            'status' => 'preparing',
+            'pos_sale_id' => $sale->id,
+        ]);
+
+        $response = $this->actingAsEmployee()->getJson("/backoffice/pos/register/{$branch->id}/online-orders");
+
+        $response->assertOk();
+        $response->assertJsonPath('orders.0.status', 'preparing');
+        $response->assertJsonPath('orders.0.status_label', 'Preparing Order');
+        $response->assertJsonPath('orders.0.sale_id', $sale->id);
+        $response->assertJsonPath('orders.0.sale_number', 'POS-PREP1');
     }
 
     public function test_register_status_change_texts_the_customer(): void

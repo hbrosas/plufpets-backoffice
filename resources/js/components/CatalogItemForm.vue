@@ -1,6 +1,6 @@
 <script setup>
 import { Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import BarcodeInput from './BarcodeInput.vue';
 import FilePicker from './FilePicker.vue';
 
@@ -70,6 +70,7 @@ const form = useForm({
     description: props.item?.description ?? '',
     is_active: props.item?.is_active ?? true,
     has_branch_pricing: props.item?.has_branch_pricing ?? false,
+    allows_preorder: props.item?.allows_preorder ?? true,
     modifier_ids: (props.item?.modifier_ids ?? []).map(Number),
     modifier_prices: [],
     variants: props.item?.variants?.length
@@ -100,7 +101,57 @@ form.transform((data) => {
 });
 
 const page = usePage();
+const formElement = ref(null);
 const isProduct = computed(() => form.type === 'product');
+const tabs = [
+    { id: 'details', label: 'Details' },
+    { id: 'category', label: 'Category' },
+    { id: 'variants', label: 'Variants' },
+    { id: 'modifiers', label: 'Modifiers' },
+];
+const tab = ref('details');
+
+function tabHasError(id) {
+    const keys = Object.keys(form.errors);
+
+    if (id === 'details') {
+        return keys.some((key) => ['type', 'name', 'description', 'is_active', 'allows_preorder'].includes(key));
+    }
+
+    if (id === 'category') {
+        return keys.some((key) => ['category_name', 'brand_name', 'badge'].includes(key));
+    }
+
+    if (id === 'variants') {
+        return keys.some((key) => key === 'variants' || key.startsWith('variants.') || key === 'has_branch_pricing');
+    }
+
+    return keys.some((key) => key.startsWith('modifier_'));
+}
+
+function firstIncompleteTab() {
+    if (!String(form.name).trim()) {
+        return 'details';
+    }
+
+    if (isProduct.value && !form.category_name) {
+        return 'category';
+    }
+
+    const variantIncomplete = form.variants.some((variant) => {
+        return !String(variant.name).trim() || variant.price === '' || variant.price === null;
+    });
+    if (variantIncomplete) {
+        return 'variants';
+    }
+
+    const modifierIncomplete = form.modifier_prices.some((price) => price.price === '' || price.price === null);
+    if (modifierIncomplete) {
+        return 'modifiers';
+    }
+
+    return null;
+}
 const categoryModalOpen = ref(false);
 const brandModalOpen = ref(false);
 const brandPreview = ref(null);
@@ -116,6 +167,21 @@ const brandForm = useForm({
     image: null,
 });
 const brandFileName = computed(() => brandForm.image?.name ?? '');
+
+watch(
+    () => Object.keys(form.errors).sort().join('|'),
+    (signature) => {
+        if (signature === '') {
+            return;
+        }
+
+        const first = tabs.find((item) => tabHasError(item.id));
+
+        if (first) {
+            tab.value = first.id;
+        }
+    },
+);
 
 watch(
     () => page.props.flash?.created_category,
@@ -180,6 +246,14 @@ function addVariant() {
         price: '',
         is_active: true,
         branch_prices: emptyBranchPrices(),
+    });
+
+    const index = form.variants.length - 1;
+
+    nextTick(() => {
+        const field = document.getElementById(`variant-name-${index}`);
+        field?.scrollIntoView({ block: 'center' });
+        field?.focus();
     });
 }
 
@@ -287,6 +361,15 @@ function variantError(index, field) {
 }
 
 function submit() {
+    const incomplete = firstIncompleteTab();
+
+    if (incomplete && (incomplete !== tab.value || !formElement.value?.checkValidity())) {
+        tab.value = incomplete;
+        nextTick(() => formElement.value?.reportValidity());
+
+        return;
+    }
+
     const hasFiles = form.variants.some((variant) => variant.image instanceof File);
     const options = {
         preserveScroll: true,
@@ -342,10 +425,38 @@ function submitBrand() {
 </script>
 
 <template>
-    <form class="flex max-w-4xl flex-col gap-6" @submit.prevent="submit">
-        <section class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
+    <form ref="formElement" class="flex max-w-4xl flex-col gap-6" @submit.prevent="submit">
+        <div class="flex flex-wrap gap-2" role="tablist" aria-label="Catalog item">
+            <button
+                v-for="item in tabs"
+                :id="`catalog-item-tab-${item.id}`"
+                :key="item.id"
+                class="inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-medium"
+                :class="tab === item.id ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                type="button"
+                role="tab"
+                :aria-selected="tab === item.id"
+                :aria-controls="`catalog-item-panel-${item.id}`"
+                @click="tab = item.id"
+            >
+                {{ item.label }}
+                <span
+                    v-if="tabHasError(item.id)"
+                    class="h-2 w-2 rounded-full"
+                    :class="tab === item.id ? 'bg-foam' : 'bg-danger'"
+                />
+            </button>
+        </div>
+
+        <section
+            v-show="tab === 'details'"
+            id="catalog-item-panel-details"
+            class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5"
+            role="tabpanel"
+            aria-labelledby="catalog-item-tab-details"
+            data-catalog-tab="details"
+        >
             <div class="flex flex-col gap-1">
-                <p class="text-xs font-medium tracking-[0.18em] text-pine uppercase dark:text-sand">Step 1</p>
                 <h2 class="text-lg font-medium">Item details</h2>
                 <p class="text-sm text-ink/70 dark:text-foam/70">Start with the type, name, and a short description.</p>
             </div>
@@ -394,11 +505,28 @@ function submitBrand() {
                 Active in the shop
             </label>
             <p v-if="form.errors.is_active" class="text-sm text-danger">{{ form.errors.is_active }}</p>
+
+            <div v-if="isProduct" class="flex flex-col gap-1">
+                <label class="flex items-center gap-3 text-sm font-medium" for="allows-preorder">
+                    <input id="allows-preorder" v-model="form.allows_preorder" class="h-4 w-4 accent-pine" type="checkbox" />
+                    Available for pre-order when out of stock
+                </label>
+                <p class="text-sm text-ink/70 dark:text-foam/70">
+                    When this is off, customers cannot order this product once a branch is out of stock.
+                </p>
+                <p v-if="form.errors.allows_preorder" class="text-sm text-danger">{{ form.errors.allows_preorder }}</p>
+            </div>
         </section>
 
-        <section class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
+        <section
+            v-show="tab === 'category'"
+            id="catalog-item-panel-category"
+            class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5"
+            role="tabpanel"
+            aria-labelledby="catalog-item-tab-category"
+            data-catalog-tab="category"
+        >
             <div class="flex flex-col gap-1">
-                <p class="text-xs font-medium tracking-[0.18em] text-pine uppercase dark:text-sand">Step 2</p>
                 <h2 class="text-lg font-medium">Category and brand</h2>
                 <p class="text-sm text-ink/70 dark:text-foam/70">
                     {{ isProduct ? 'Products need a category. Brand is optional.' : 'Optional for services. Use New if the option is not in the list.' }}
@@ -470,29 +598,26 @@ function submitBrand() {
             </div>
         </section>
 
-        <section class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
-            <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                <div class="flex flex-col gap-1">
-                    <p class="text-xs font-medium tracking-[0.18em] text-pine uppercase dark:text-sand">Step 3</p>
-                    <h2 class="text-lg font-medium">Pricing and variants</h2>
-                    <p class="text-sm text-ink/70 dark:text-foam/70">
-                        Use one variant for a single price, or add more for sizes, packs, or service options. Click a barcode field, then scan. Enter from the scanner will not save the form.
-                    </p>
-                    <label class="mt-2 flex items-center gap-3 text-sm font-medium">
-                        <input v-model="form.has_branch_pricing" class="h-4 w-4 accent-pine" type="checkbox" />
-                        Prices can differ by branch
-                    </label>
-                    <p class="text-sm text-ink/70 dark:text-foam/70">
-                        When this is on, each branch can use the default price or its own price.
-                    </p>
-                </div>
-                <button
-                    class="h-11 shrink-0 rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
-                    type="button"
-                    @click="addVariant"
-                >
-                    Add variant
-                </button>
+        <section
+            v-show="tab === 'variants'"
+            id="catalog-item-panel-variants"
+            class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5"
+            role="tabpanel"
+            aria-labelledby="catalog-item-tab-variants"
+            data-catalog-tab="variants"
+        >
+            <div class="flex flex-col gap-1">
+                <h2 class="text-lg font-medium">Pricing and variants</h2>
+                <p class="text-sm text-ink/70 dark:text-foam/70">
+                    Use one variant for a single price, or add more for sizes, packs, or service options. Click a barcode field, then scan. Enter from the scanner will not save the form.
+                </p>
+                <label class="mt-2 flex items-center gap-3 text-sm font-medium">
+                    <input v-model="form.has_branch_pricing" class="h-4 w-4 accent-pine" type="checkbox" />
+                    Prices can differ by branch
+                </label>
+                <p class="text-sm text-ink/70 dark:text-foam/70">
+                    When this is on, each branch can use the default price or its own price.
+                </p>
             </div>
             <p v-if="form.errors.variants" class="text-sm text-danger">{{ form.errors.variants }}</p>
 
@@ -615,12 +740,26 @@ function submitBrand() {
                     Add a branch first to set a different price there.
                 </p>
             </div>
+
+            <button
+                class="h-11 w-full rounded-xl border border-dashed border-pine text-sm font-medium text-pine sm:w-fit sm:px-4 dark:border-sand dark:text-sand"
+                type="button"
+                @click="addVariant"
+            >
+                Add variant
+            </button>
         </section>
 
-        <section class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
+        <section
+            v-show="tab === 'modifiers'"
+            id="catalog-item-panel-modifiers"
+            class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5"
+            role="tabpanel"
+            aria-labelledby="catalog-item-tab-modifiers"
+            data-catalog-tab="modifiers"
+        >
             <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                 <div class="flex flex-col gap-1">
-                    <p class="text-xs font-medium tracking-[0.18em] text-pine uppercase dark:text-sand">Step 4</p>
                     <h2 class="text-lg font-medium">Modifiers</h2>
                     <p class="text-sm text-ink/70 dark:text-foam/70">
                         Enable a modifier, then set a price for each option. If branch pricing is on, each option can also have a different extra price per branch.

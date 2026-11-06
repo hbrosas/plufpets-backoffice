@@ -7,6 +7,7 @@ import { hidePosChrome, hideSendText } from '../posChrome';
 
 const page = usePage();
 const form = useForm({});
+const logoMissing = ref(false);
 const menuOpen = ref(false);
 const menuTrigger = ref(null);
 const menuStyle = ref({});
@@ -45,7 +46,16 @@ function toggleMenu() {
         <header
             class="z-30 flex shrink-0 flex-wrap items-center gap-2 border-b border-mist bg-foam/90 px-3 py-2 backdrop-blur-md sm:gap-3 sm:px-4 sm:py-3 lg:px-6 dark:border-white/10 dark:bg-ink/90"
         >
+            <img
+                v-if="page.props.businessLogoUrl && !logoMissing"
+                v-show="!hidePosChrome"
+                :src="page.props.businessLogoUrl"
+                alt=""
+                class="h-10 w-10 shrink-0 rounded-xl bg-white object-contain"
+                @error="logoMissing = true"
+            />
             <span
+                v-else
                 v-show="!hidePosChrome"
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-ember text-sm font-semibold text-black"
             >PP</span>

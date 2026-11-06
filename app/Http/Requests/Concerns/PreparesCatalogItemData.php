@@ -85,6 +85,9 @@ trait PreparesCatalogItemData
                 : null,
             'is_active' => $this->boolean('is_active'),
             'has_branch_pricing' => $this->boolean('has_branch_pricing'),
+            'allows_preorder' => $this->exists('allows_preorder')
+                ? $this->boolean('allows_preorder')
+                : true,
             'variants' => $variants,
             'modifier_ids' => $modifierIds,
             'modifier_prices' => $modifierPrices,

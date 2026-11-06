@@ -189,6 +189,33 @@ class CatalogItemControllerTest extends TestCase
         );
     }
 
+    public function test_product_can_be_closed_to_preorders_when_it_is_out_of_stock(): void
+    {
+        $response = $this->actingAsEmployee()->post('/backoffice/shop/catalog', [
+            'type' => CatalogItemType::Product->value,
+            'name' => 'Organic kibble',
+            'category_name' => 'Food',
+            'is_active' => true,
+            'allows_preorder' => false,
+            'variants' => [
+                ['name' => '1kg', 'price' => '29.90', 'is_active' => true],
+            ],
+        ]);
+
+        $item = CatalogItem::query()->where('name', 'Organic kibble')->first();
+
+        $response->assertRedirect(route('shop.catalog.index'));
+        $this->assertNotNull($item);
+        $this->assertFalse($item->allows_preorder);
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/shop/catalog/{$item->id}/edit")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Shop/Catalog/Edit')
+                ->where('catalogItem.allows_preorder', false));
+    }
+
     public function test_valid_service_is_created_without_category(): void
     {
         $response = $this->actingAsEmployee()->post('/backoffice/shop/catalog', [

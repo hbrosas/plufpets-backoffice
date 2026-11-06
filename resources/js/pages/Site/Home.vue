@@ -29,10 +29,17 @@ const props = defineProps({
         type: Object,
         required: true,
     },
+    banner: {
+        type: Object,
+        default: null,
+    },
+    promotion: {
+        type: Object,
+        default: null,
+    },
 });
 
 const query = ref('');
-const searchOpen = ref(false);
 const filtersOpen = ref(false);
 const sortOpen = ref(false);
 const sort = ref('name-asc');
@@ -46,6 +53,7 @@ const stockOptions = [
     { id: 'in', name: 'In Stock' },
     { id: 'out', name: 'Out of Stock' },
 ];
+const promotionClosed = ref(readPromotionClosed());
 const cartOpen = ref(false);
 const cart = ref([]);
 const addedNotice = ref('');
@@ -131,6 +139,19 @@ watch(
     { deep: true },
 );
 
+function readPromotionClosed() {
+    try {
+        return sessionStorage.getItem('shop-promotion-closed') === '1';
+    } catch {
+        return false;
+    }
+}
+
+function closePromotion() {
+    promotionClosed.value = true;
+    sessionStorage.setItem('shop-promotion-closed', '1');
+}
+
 function storageKey() {
     return `shop-cart-${props.filters.branch ?? 'none'}`;
 }
@@ -175,11 +196,6 @@ function changeBranch(branchId) {
         preserveScroll: true,
         replace: true,
     });
-}
-
-function closeSearch() {
-    searchOpen.value = false;
-    query.value = '';
 }
 
 function toggleDraft(kind, id) {
@@ -233,9 +249,17 @@ function cartQuantity(productId) {
     return cart.value.find((line) => line.id === productId)?.quantity ?? 0;
 }
 
+function canPreorder(product) {
+    return product.is_product && !product.in_stock && product.allows_preorder;
+}
+
 function quantityLimit(product) {
-    if (!product.is_product || product.stock === null || product.stock < 1) {
+    if (!product.is_product || product.stock === null || canPreorder(product)) {
         return 99;
+    }
+
+    if (product.stock < 1) {
+        return 0;
     }
 
     return product.stock;
@@ -250,7 +274,7 @@ function showAddedNotice(name) {
 }
 
 function addProduct(product) {
-    if (cartQuantity(product.id) > 0) {
+    if (cartQuantity(product.id) > 0 || (product.is_product && !product.in_stock && !product.allows_preorder)) {
         return;
     }
 
@@ -263,7 +287,7 @@ function addProduct(product) {
         quantity: 1,
         stock: product.stock,
         is_product: product.is_product,
-        preorder: product.is_product && !product.in_stock,
+        preorder: canPreorder(product),
     });
     showAddedNotice(product.name);
 }
@@ -271,6 +295,14 @@ function addProduct(product) {
 onUnmounted(() => {
     clearTimeout(addedNoticeTimer);
 });
+
+function lineQuantityLimit(line) {
+    if (line.preorder || !line.is_product || line.stock === null) {
+        return 99;
+    }
+
+    return line.stock;
+}
 
 function changeQuantity(line, next) {
     const quantity = Number(next);
@@ -281,11 +313,7 @@ function changeQuantity(line, next) {
         return;
     }
 
-    const limit = line.preorder || !line.is_product || line.stock === null || line.stock < 1
-        ? 99
-        : line.stock;
-
-    line.quantity = Math.min(quantity, limit);
+    line.quantity = Math.min(quantity, lineQuantityLimit(line));
 }
 
 function changeProductQuantity(product, next) {
@@ -306,30 +334,45 @@ function removeLine(productId) {
 
 <template>
     <div>
-        <p
-            v-if="addedNotice"
-            class="fixed bottom-4 left-1/2 z-50 w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl bg-navy px-4 py-3 text-center text-sm text-white shadow-lg"
-            role="status"
+        <div
+            v-if="promotion && !promotionClosed"
+            class="relative"
+            :style="{ backgroundColor: promotion.background_color, color: promotion.text_color }"
         >
-            {{ addedNotice }}
-        </p>
+            <p class="mx-auto max-w-6xl px-12 py-3 text-center text-sm leading-5 break-words sm:text-base">
+                {{ promotion.text }}
+            </p>
+            <button
+                type="button"
+                class="absolute top-1/2 right-3 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full"
+                aria-label="Close"
+                @click="closePromotion"
+            >
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
+            </button>
+        </div>
         <header class="sticky top-0 z-30 border-b border-black/10 bg-white">
-            <div class="mx-auto flex max-w-6xl items-center gap-2 py-3 pr-40 pl-4">
-                <div class="flex shrink-0 items-center gap-2" :class="searchOpen ? 'hidden sm:flex' : 'flex'">
+            <div class="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 py-3">
+                <div class="order-1 shrink-0 sm:order-none">
                     <img
                         v-if="$page.props.businessLogoUrl && !logoMissing"
                         :src="$page.props.businessLogoUrl"
                         alt=""
-                        class="h-9 w-9 rounded-lg bg-white object-contain"
+                        class="h-9 w-9 shrink-0 rounded-lg bg-white object-contain"
                         @error="logoMissing = true"
                     />
-                    <span v-else class="flex h-9 w-9 items-center justify-center rounded-lg bg-ember text-sm font-semibold text-black">
+                    <span v-else class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ember text-sm font-semibold text-black">
                         PP
                     </span>
-                    <label class="sr-only" for="shop-branch">Branch</label>
+                </div>
+
+                <div class="order-3 flex w-full min-w-0 items-center gap-2 sm:order-none sm:w-auto">
+                    <label class="shrink-0 text-sm whitespace-nowrap text-black/70" for="shop-branch">You're ordering from</label>
                     <select
                         id="shop-branch"
-                        class="h-10 w-28 rounded-xl border border-black/15 bg-white px-3 text-sm text-black sm:w-40"
+                        class="h-10 min-w-0 flex-1 rounded-xl border border-black/15 bg-white px-3 text-sm text-black sm:w-40 sm:flex-none"
                         :value="filters.branch ?? ''"
                         :disabled="branches.length === 0"
                         @change="changeBranch(Number($event.target.value) || null)"
@@ -341,20 +384,7 @@ function removeLine(productId) {
                     </select>
                 </div>
 
-                <button
-                    type="button"
-                    class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-black/15 bg-white sm:hidden"
-                    :class="searchOpen ? 'hidden' : ''"
-                    aria-label="Search"
-                    @click="searchOpen = true"
-                >
-                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                        <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5" />
-                        <path d="M12.5 12.5 17 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-                    </svg>
-                </button>
-
-                <form class="relative min-w-0 flex-1" :class="searchOpen ? 'flex' : 'hidden sm:block'" @submit.prevent>
+                <form class="relative order-4 w-full min-w-0 sm:order-none sm:w-auto sm:flex-1" @submit.prevent>
                     <label class="sr-only" for="shop-search">Search</label>
                     <svg class="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-black/50" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                         <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5" />
@@ -369,46 +399,60 @@ function removeLine(productId) {
                     />
                 </form>
 
-                <button
-                    v-if="searchOpen"
-                    type="button"
-                    class="h-10 shrink-0 rounded-xl px-2 text-sm sm:hidden"
-                    @click="closeSearch"
-                >
-                    Close
-                </button>
+                <div class="order-2 ml-auto flex shrink-0 items-center gap-2 sm:order-none sm:ml-0">
+                    <Link
+                        href="/track"
+                        class="inline-flex h-10 items-center gap-1.5 rounded-xl border border-navy/20 bg-white px-2.5 text-sm font-medium whitespace-nowrap text-navy shadow-sm sm:px-3"
+                    >
+                        <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                            <path d="M3.5 6.5 10 3.5l6.5 3v7L10 16.5l-6.5-3v-7Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                            <path d="M3.5 6.5 10 9.5l6.5-3M10 9.5v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        Track Order
+                    </Link>
+                    <button
+                        type="button"
+                        class="relative inline-flex h-10 w-10 items-center justify-center rounded-xl bg-navy text-white shadow-sm"
+                        :aria-label="`Cart, ${cartCount}`"
+                        @click="cartOpen = true"
+                    >
+                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                            <path d="M3.5 5h13l-1.2 8.5a1 1 0 0 1-1 .8H6.2a1 1 0 0 1-1-.8L3.5 5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                            <path d="M3.5 5 2.5 2.5H1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                            <circle cx="8" cy="16.5" r="1" fill="currentColor" />
+                            <circle cx="13.5" cy="16.5" r="1" fill="currentColor" />
+                        </svg>
+                        <span class="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-xs font-medium text-navy">{{ cartCount }}</span>
+                    </button>
+                </div>
+            </div>
 
-                <div class="pointer-events-none fixed inset-x-0 top-0 z-40">
-                    <div class="mx-auto flex max-w-6xl items-center justify-end gap-2 px-4 py-3">
-                        <Link
-                            href="/track"
-                            class="pointer-events-auto inline-flex h-10 items-center rounded-xl border border-navy/20 bg-white px-3 text-sm font-medium whitespace-nowrap text-navy shadow-sm"
-                        >
-                            Track
-                        </Link>
-                        <button
-                            type="button"
-                            class="pointer-events-auto relative inline-flex h-10 w-10 items-center justify-center rounded-xl bg-navy text-white shadow-sm"
-                            :aria-label="`Cart, ${cartCount}`"
-                            @click="cartOpen = true"
-                        >
-                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                                <path d="M3.5 5h13l-1.2 8.5a1 1 0 0 1-1 .8H6.2a1 1 0 0 1-1-.8L3.5 5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-                                <path d="M3.5 5 2.5 2.5H1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-                                <circle cx="8" cy="16.5" r="1" fill="currentColor" />
-                                <circle cx="13.5" cy="16.5" r="1" fill="currentColor" />
-                            </svg>
-                            <span class="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-xs font-medium text-navy">{{ cartCount }}</span>
-                        </button>
-                    </div>
+            <div v-if="addedNotice" class="pointer-events-none absolute inset-x-0 top-full z-50">
+                <div class="mx-auto flex max-w-6xl justify-end px-4">
+                    <p
+                        class="pointer-events-auto mt-2 w-fit max-w-[min(22rem,calc(100vw-2rem))] rounded-xl bg-navy px-4 py-3 text-sm text-white shadow-lg"
+                        role="status"
+                    >
+                        {{ addedNotice }}
+                    </p>
                 </div>
             </div>
         </header>
 
+        <section v-if="banner?.image_url" class="border-b border-black/10 bg-white">
+            <div class="mx-auto max-w-6xl px-4 py-3 sm:py-4">
+                <img
+                    :src="banner.image_url"
+                    alt=""
+                    class="block aspect-[1600/500] w-full rounded-2xl object-cover"
+                />
+            </div>
+        </section>
+
         <main class="mx-auto max-w-6xl px-4 py-6">
             <button v-if="filtersOpen || sortOpen" type="button" class="fixed inset-0 z-10" aria-label="Close menu" @click="filtersOpen = false; sortOpen = false" />
 
-            <div class="relative z-20 mb-5 flex flex-wrap items-center gap-2">
+            <div class="relative z-20 mb-5 flex items-center gap-2">
                 <div class="relative">
                     <button
                         type="button"
@@ -470,7 +514,7 @@ function removeLine(productId) {
                     </div>
                 </div>
 
-                <div class="relative">
+                <div class="relative ml-auto sm:ml-0">
                     <button
                         type="button"
                         class="inline-flex h-10 items-center gap-2 rounded-xl border border-black/15 bg-white px-3 text-sm font-medium text-black"
@@ -481,7 +525,7 @@ function removeLine(productId) {
                         </svg>
                         {{ sortLabel }}
                     </button>
-                    <div v-if="sortOpen" class="absolute left-0 z-20 mt-2 w-52 rounded-2xl border border-black/10 bg-white p-2 shadow-lg">
+                    <div v-if="sortOpen" class="absolute right-0 z-20 mt-2 w-52 rounded-2xl border border-black/10 bg-white p-2 shadow-lg sm:left-0 sm:right-auto">
                         <button
                             v-for="option in [
                                 { value: 'name-asc', label: 'Name: A to Z' },
@@ -531,12 +575,6 @@ function removeLine(productId) {
                         >
                             {{ product.badge }}
                         </span>
-                        <span
-                            class="absolute top-2 right-2 rounded-full px-2 py-1 text-xs font-medium"
-                            :class="product.in_stock ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'"
-                        >
-                            {{ product.in_stock ? product.stock_label : 'Out of Stock' }}
-                        </span>
                     </div>
                     <div class="flex flex-1 flex-col gap-1 p-4">
                         <div v-if="product.brand_name" class="flex items-center gap-2">
@@ -570,11 +608,12 @@ function removeLine(productId) {
                         <button
                             v-else
                             type="button"
-                            class="mt-auto h-10 rounded-xl text-sm font-medium"
-                            :class="product.in_stock ? 'bg-green-600 text-white' : 'bg-yellow-400 text-black'"
+                            class="mt-auto h-10 rounded-xl text-sm font-medium disabled:cursor-not-allowed"
+                            :class="product.in_stock ? 'bg-green-600 text-white' : (canPreorder(product) ? 'bg-yellow-400 text-black' : 'bg-black/10 text-black/50')"
+                            :disabled="product.is_product && !product.in_stock && !product.allows_preorder"
                             @click="addProduct(product)"
                         >
-                            {{ product.in_stock ? 'Add' : 'Preorder' }}
+                            {{ product.in_stock ? 'Add' : (canPreorder(product) ? 'Preorder' : 'Out of stock') }}
                         </button>
                     </div>
                 </article>
@@ -616,7 +655,7 @@ function removeLine(productId) {
                                     <button
                                         type="button"
                                         class="h-8 w-8 rounded-lg border border-navy/20 bg-white text-black"
-                                        :disabled="line.quantity >= (line.preorder || !line.is_product || line.stock === null || line.stock < 1 ? 99 : line.stock)"
+                                        :disabled="line.quantity >= lineQuantityLimit(line)"
                                         @click="changeQuantity(line, line.quantity + 1)"
                                     >
                                         +

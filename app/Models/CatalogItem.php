@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'badge',
     'is_active',
     'has_branch_pricing',
+    'allows_preorder',
 ])]
 class CatalogItem extends Model
 {
@@ -32,6 +33,7 @@ class CatalogItem extends Model
     protected $attributes = [
         'is_active' => true,
         'has_branch_pricing' => false,
+        'allows_preorder' => true,
     ];
 
     /**
@@ -43,6 +45,7 @@ class CatalogItem extends Model
             'type' => CatalogItemType::class,
             'is_active' => 'boolean',
             'has_branch_pricing' => 'boolean',
+            'allows_preorder' => 'boolean',
         ];
     }
 

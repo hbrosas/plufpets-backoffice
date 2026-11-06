@@ -297,6 +297,7 @@ class PosController extends Controller
             ])->filter(fn (mixed $part): bool => is_string($part) && $part !== '')->implode(', '),
             'items' => $this->shopOrderItems($order)->all(),
             'lines' => $this->onlineOrderLines($order),
+            'sale_id' => $order->sale?->id,
             'sale_number' => $order->sale?->number,
             'placed_at' => $order->created_at?->timezone('Asia/Manila')->format('M j, g:i A'),
         ];

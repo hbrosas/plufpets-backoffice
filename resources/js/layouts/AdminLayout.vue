@@ -59,13 +59,24 @@ const menu = [
         key: 'shop',
         type: 'group',
         id: 'shop',
-        name: 'Shop Management',
+        name: 'Product Management',
         prefix: '/backoffice/shop',
         items: [
             { name: 'Catalog', href: '/backoffice/shop/catalog', match: '/backoffice/shop/catalog', permission: 'shop.catalog' },
             { name: 'Categories & Brands', href: '/backoffice/shop/catalog-meta', match: '/backoffice/shop/catalog-meta', permission: 'shop.catalog-meta' },
             { name: 'Modifiers', href: '/backoffice/shop/modifiers', match: '/backoffice/shop/modifiers', permission: 'shop.modifiers' },
             { name: 'Settings', href: '/backoffice/shop/settings', match: '/backoffice/shop/settings', permission: 'shop.settings' },
+        ],
+    },
+    {
+        key: 'storefront',
+        type: 'group',
+        id: 'storefront',
+        name: 'Shop Management',
+        prefix: '/backoffice/shop/banner',
+        items: [
+            { name: 'Banner', href: '/backoffice/shop/banner', match: '/backoffice/shop/banner', permission: 'shop.settings' },
+            { name: 'Promotional Text', href: '/backoffice/shop/promotion', match: '/backoffice/shop/promotion', permission: 'shop.settings' },
         ],
     },
     {
@@ -235,6 +246,8 @@ const pageTitle = computed(() => {
         ['/backoffice/inventory/suppliers', 'Suppliers'],
         ['/backoffice/inventory', 'Inventory'],
         ['/backoffice/shop/orders', 'Orders'],
+        ['/backoffice/shop/promotion', 'Promotional Text'],
+        ['/backoffice/shop/banner', 'Banner'],
         ['/backoffice/shop/settings', 'Settings'],
         ['/backoffice/shop/branches', 'Branches'],
         ['/backoffice/shop/catalog-meta', 'Categories & Brands'],
@@ -299,7 +312,13 @@ watch(
                 return;
             }
 
-            if (entry.id === 'shop' && (path.startsWith('/backoffice/shop/orders') || path.startsWith('/backoffice/shop/branches'))) {
+            if (entry.id === 'shop' && (path.startsWith('/backoffice/shop/orders') || path.startsWith('/backoffice/shop/branches') || path.startsWith('/backoffice/shop/banner') || path.startsWith('/backoffice/shop/promotion'))) {
+                return;
+            }
+
+            if (entry.id === 'storefront' && (path.startsWith('/backoffice/shop/banner') || path.startsWith('/backoffice/shop/promotion'))) {
+                openGroups.value.storefront = true;
+
                 return;
             }
 

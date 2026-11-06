@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Enums\CatalogItemType;
 use App\Models\Branch;
+use App\Models\Business;
 use App\Models\CatalogItemVariant;
 use App\Models\Category;
 use Illuminate\Http\Request;
@@ -16,7 +17,9 @@ class ShopCatalog
      *     branch: array{id: int, name: string}|null,
      *     categories: list<array{id: string, name: string}>,
      *     products: list<array<string, mixed>>,
-     *     filters: array{branch: int|null, q: string, category: string}
+     *     filters: array{branch: int|null, q: string, category: string},
+     *     banner: array{image_url: string}|null,
+     *     promotion: array{text: string, background_color: string, text_color: string}|null
      * }
      */
     public function page(Request $request): array
@@ -47,7 +50,51 @@ class ShopCatalog
                 'q' => $search,
                 'category' => $category,
             ],
+            'banner' => $this->banner(),
+            'promotion' => $this->promotion(),
         ];
+    }
+
+    /**
+     * @return array{image_url: string}|null
+     */
+    private function banner(): ?array
+    {
+        $imageUrl = Business::current()?->shopBannerUrl();
+
+        if ($imageUrl === null) {
+            return null;
+        }
+
+        return [
+            'image_url' => $imageUrl,
+        ];
+    }
+
+    /**
+     * @return array{text: string, background_color: string, text_color: string}|null
+     */
+    private function promotion(): ?array
+    {
+        $business = Business::current();
+        $text = trim((string) $business?->shop_promo_text);
+
+        if (! $business instanceof Business || ! $business->shop_promo_visible || $text === '') {
+            return null;
+        }
+
+        return [
+            'text' => $text,
+            'background_color' => $this->hexColor($business->shop_promo_background, '#053b63'),
+            'text_color' => $this->hexColor($business->shop_promo_color, '#ffffff'),
+        ];
+    }
+
+    private function hexColor(?string $value, string $fallback): string
+    {
+        return is_string($value) && preg_match('/^#[0-9A-Fa-f]{6}$/', $value) === 1
+            ? strtolower($value)
+            : $fallback;
     }
 
     private function search(string $value): string
@@ -102,7 +149,7 @@ class ShopCatalog
             })
             ->with([
                 'catalogItem' => fn ($query) => $query
-                    ->select('id', 'name', 'type', 'category_id', 'brand_id', 'badge', 'has_branch_pricing', 'is_active')
+                    ->select('id', 'name', 'type', 'category_id', 'brand_id', 'badge', 'has_branch_pricing', 'allows_preorder', 'is_active')
                     ->with([
                         'category:id,name',
                         'brand:id,name,image_path',
@@ -163,6 +210,7 @@ class ShopCatalog
             'is_product' => $isProduct,
             'stock' => $stock,
             'in_stock' => $stock === null || $stock > 0,
+            'allows_preorder' => $isProduct && (bool) $variant->catalogItem?->allows_preorder,
             'stock_label' => match (true) {
                 $stock === null => 'In Stock',
                 $stock < 1 => 'Out of Stock',

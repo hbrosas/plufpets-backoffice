@@ -95,6 +95,7 @@ class ShopCheckoutTest extends TestCase
                 ->where('products.2.name', 'Treats')
                 ->where('products.2.stock_label', 'Out of Stock')
                 ->where('products.2.in_stock', false)
+                ->where('products.2.allows_preorder', true)
                 ->has('products', 3)
                 ->has('categories', 2));
 
@@ -297,6 +298,60 @@ class ShopCheckoutTest extends TestCase
             'quantity' => 0,
         ]);
         $this->assertDatabaseCount('pos_sales', 0);
+    }
+
+    public function test_shop_hides_preorder_when_an_out_of_stock_product_does_not_allow_it(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create([
+                'name' => 'Treats',
+                'allows_preorder' => false,
+            ]))
+            ->create(['name' => 'Default', 'price' => 40]);
+
+        $this->get('/?branch='.$branch->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Site/Home')
+                ->where('products.0.name', 'Treats')
+                ->where('products.0.in_stock', false)
+                ->where('products.0.allows_preorder', false));
+    }
+
+    public function test_out_of_stock_item_cannot_be_preordered_when_preorder_is_closed(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create([
+                'name' => 'Treats',
+                'allows_preorder' => false,
+            ]))
+            ->create(['name' => 'Default', 'price' => 40]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 0,
+        ]);
+
+        $response = $this->from('/')->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ] + $this->checkoutFields());
+
+        $response->assertRedirect('/');
+        $response->assertSessionHasErrors([
+            'items' => 'Treats is out of stock.',
+        ]);
+        $this->assertDatabaseCount('pos_open_orders', 0);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 0,
+        ]);
     }
 
     public function test_checkout_requires_a_name_and_phone(): void

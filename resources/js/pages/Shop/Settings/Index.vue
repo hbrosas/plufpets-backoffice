@@ -1,6 +1,6 @@
 <script setup>
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
 defineOptions({
@@ -37,9 +37,6 @@ const props = defineProps({
         required: true,
     },
 });
-
-const page = usePage();
-const flash = computed(() => page.props.flash ?? {});
 
 const taxModalOpen = ref(false);
 const editingTaxFee = ref(null);

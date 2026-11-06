@@ -185,6 +185,7 @@ class CatalogItemController extends Controller
                 'badge' => $catalogItem->badge ?? '',
                 'is_active' => $catalogItem->is_active,
                 'has_branch_pricing' => $catalogItem->has_branch_pricing,
+                'allows_preorder' => $catalogItem->allows_preorder,
                 'modifier_ids' => $catalogItem->modifiers->pluck('id')->all(),
                 'modifier_prices' => $catalogItem->modifierOptionPrices->map(fn ($price): array => [
                     'modifier_id' => $price->modifier_id,

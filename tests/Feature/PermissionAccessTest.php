@@ -113,6 +113,8 @@ class PermissionAccessTest extends TestCase
             'modifiers' => ['/backoffice/shop/modifiers', 'shop.modifiers'],
             'branches' => ['/backoffice/shop/branches', 'shop.branches'],
             'shop settings' => ['/backoffice/shop/settings', 'shop.settings'],
+            'shop banner' => ['/backoffice/shop/banner', 'shop.settings'],
+            'promotional text' => ['/backoffice/shop/promotion', 'shop.settings'],
             'shop orders' => ['/backoffice/shop/orders', 'shop.orders'],
             'preorder export' => ['/backoffice/shop/orders/preorders/export', 'shop.orders'],
             'inventory' => ['/backoffice/inventory', 'inventory.view'],
