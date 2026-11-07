@@ -109,6 +109,7 @@ class PurchaseOrder extends Model
             'id' => $receipt->id,
             'delivery_receipt_number' => $receipt->delivery_receipt_number,
             'sales_invoice_number' => $receipt->sales_invoice_number,
+            'notes' => $receipt->notes,
             'received_by' => $receipt->received_by_name,
             'received_by_employee_number' => $receipt->received_by_employee_number,
             'received_at' => $receipt->received_at?->toDayDateTimeString(),

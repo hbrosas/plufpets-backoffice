@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\InventoryHold;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchVariantPrice;
@@ -14,7 +15,9 @@ use App\Models\PosOpenOrder;
 use App\Models\Voucher;
 use App\Support\SmsDisclaimer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -232,7 +235,9 @@ class ShopCheckoutTest extends TestCase
             'branch_id' => $branch->id,
             'catalog_item_variant_id' => $variant->id,
             'quantity' => 5,
+            'reserved' => 2,
         ]);
+        $this->assertSame(InventoryHold::Held, $order->inventory_hold);
     }
 
     public function test_checkout_rejects_more_than_the_branch_has_in_stock(): void
@@ -296,7 +301,9 @@ class ShopCheckoutTest extends TestCase
         $this->assertDatabaseHas('branch_inventories', [
             'catalog_item_variant_id' => $variant->id,
             'quantity' => 0,
+            'reserved' => 0,
         ]);
+        $this->assertNull($order->inventory_hold);
         $this->assertDatabaseCount('pos_sales', 0);
     }
 
@@ -352,6 +359,108 @@ class ShopCheckoutTest extends TestCase
             'catalog_item_variant_id' => $variant->id,
             'quantity' => 0,
         ]);
+    }
+
+    public function test_a_placed_order_holds_stock_until_the_order_is_cancelled(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create([
+                'name' => 'Treats',
+                'allows_preorder' => false,
+            ]))
+            ->create(['name' => 'Default', 'price' => 40]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+        ]);
+
+        $this->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 2],
+            ],
+        ] + $this->checkoutFields())->assertRedirect();
+
+        $order = PosOpenOrder::query()->first();
+        $this->assertNotNull($order);
+        $this->assertSame(InventoryHold::Held, $order->inventory_hold);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+            'reserved' => 2,
+        ]);
+
+        $this->get('/?branch='.$branch->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('products.0.stock', 0)
+                ->where('products.0.in_stock', false));
+
+        $this->from('/')->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Bea Santos',
+            'phone' => '09181234567',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ] + $this->checkoutFields())
+            ->assertRedirect('/')
+            ->assertSessionHasErrors(['items' => 'Treats is out of stock.']);
+
+        $this->assertDatabaseCount('pos_open_orders', 1);
+
+        $this->actingAsEmployee()->putJson("/backoffice/pos/register/{$branch->id}/online-orders/{$order->id}", [
+            'status' => 'cancelled',
+        ])->assertOk();
+
+        $this->assertSame(InventoryHold::Released, $order->fresh()->inventory_hold);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+            'reserved' => 0,
+        ]);
+
+        $this->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Bea Santos',
+            'phone' => '09181234567',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 2],
+            ],
+        ] + $this->checkoutFields())->assertRedirect();
+
+        $this->assertDatabaseCount('pos_open_orders', 2);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+            'reserved' => 2,
+        ]);
+    }
+
+    public function test_a_service_order_does_not_hold_stock(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->service()->create(['name' => 'Bath']))
+            ->create(['name' => 'Default', 'price' => 250]);
+
+        $this->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ] + $this->checkoutFields())->assertRedirect();
+
+        $order = PosOpenOrder::query()->first();
+        $this->assertNotNull($order);
+        $this->assertNull($order->inventory_hold);
+        $this->assertDatabaseCount('branch_inventories', 0);
     }
 
     public function test_checkout_requires_a_name_and_phone(): void
@@ -667,6 +776,39 @@ class ShopCheckoutTest extends TestCase
         $response->assertJsonValidationErrors([
             'voucher_code' => 'Enter a voucher code.',
         ]);
+    }
+
+    public function test_instruction_photos_show_on_checkout(): void
+    {
+        Storage::fake('public');
+        $branch = Branch::factory()->create(['name' => 'Greenheights', 'is_active' => true]);
+
+        $this->actingAsEmployee()->post('/backoffice/shop/payment-methods', [
+            'name' => 'GCash',
+            'instructions' => 'Scan this QR.',
+            'is_cash' => false,
+            'is_active' => true,
+            'images' => [UploadedFile::fake()->image('qr.jpg')],
+        ])->assertRedirect();
+
+        $this->actingAsEmployee()->post('/backoffice/shop/delivery-methods', [
+            'name' => 'Lalamove',
+            'fee' => '50',
+            'notes' => 'Show this to the rider.',
+            'is_active' => true,
+            'images' => [UploadedFile::fake()->image('map.jpg')],
+        ])->assertRedirect();
+
+        $payment = PaymentMethod::query()->where('name', 'GCash')->first();
+        $delivery = DeliveryMethod::query()->where('name', 'Lalamove')->first();
+
+        $this->get('/checkout?branch='.$branch->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('paymentMethods.0.instructions', 'Scan this QR.')
+                ->where('paymentMethods.0.instruction_images.0', $payment->instructionImageUrls($branch->id)[0])
+                ->where('deliveryMethods.0.instructions', 'Show this to the rider.')
+                ->where('deliveryMethods.0.instruction_images.0', $delivery->instructionImageUrls($branch->id)[0]));
     }
 
     /**

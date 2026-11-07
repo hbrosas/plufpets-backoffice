@@ -54,13 +54,6 @@ function submit() {
     <Head title="Banner" />
 
     <form class="mx-auto flex w-full max-w-3xl flex-col gap-6" @submit.prevent="submit">
-        <div class="flex flex-col gap-1">
-            <h1 class="text-2xl font-medium">Banner</h1>
-            <p class="text-sm text-ink/70 dark:text-foam/70">
-                Shown on the public shop. Use a 1600 × 500 pixel image. The banner stays hidden until a photo is uploaded.
-            </p>
-        </div>
-
         <div class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-4 sm:p-6 dark:border-white/10 dark:bg-white/5">
             <FilePicker
                 id="shop-banner-image"

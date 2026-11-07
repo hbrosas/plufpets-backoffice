@@ -2,6 +2,7 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import BarcodeInput from '../../components/BarcodeInput.vue';
+import CountBadge from '../../components/CountBadge.vue';
 import { formatPeso } from '../../formatPeso';
 import { jsonRequest } from '../../http';
 import PosLayout from '../../layouts/PosLayout.vue';
@@ -74,19 +75,21 @@ const connectingPrinterId = ref(null);
 const openOrdersOpen = ref(false);
 const saveOpen = ref(false);
 const activeOpenOrderId = ref(null);
+const orderStockCredit = ref({});
 const activeOpenOrderName = ref('');
 let cartLineSeq = 0;
 const shopOrderAlerts = ref([]);
+const unseenOnlineOrders = ref(0);
 let seenShopOrderId = null;
 const onlineOrdersOpen = ref(false);
 const onlineOrders = ref([]);
 const onlineOrderStatuses = ref([]);
+const onlineOrderTab = ref('placed');
 const onlineOrdersLoading = ref(false);
 const onlineOrdersNotice = ref('');
 const partialDelivery = ref('');
 const viewedOnlineOrderId = ref(null);
 const updatingOrderId = ref(null);
-const creatingSaleId = ref(null);
 let shopOrderTimer = null;
 let shopOrderPollInFlight = false;
 
@@ -213,8 +216,26 @@ watch(productCategories, (categories) => {
     }
 });
 
+function signedLineTotal(line) {
+    const amount = Number(line.price) * Number(line.quantity || 0);
+
+    return line.is_free ? -amount : amount;
+}
+
+function linePriceLabel(line) {
+    const label = formatPeso(line.price);
+
+    return line.is_free ? `-${label}` : label;
+}
+
+function lineAmountLabel(line) {
+    const label = formatPeso(Number(line.price) * Number(line.quantity || 0));
+
+    return line.is_free ? `-${label}` : label;
+}
+
 const cartSubtotal = computed(() =>
-    cart.value.reduce((sum, line) => sum + Number(line.price) * line.quantity, 0),
+    cart.value.reduce((sum, line) => sum + signedLineTotal(line), 0),
 );
 
 const deliveryFee = computed(() => {
@@ -331,7 +352,9 @@ function liveQuantity(variant) {
         return variant.quantity;
     }
 
-    return Math.max(0, Number(variant.quantity) - Number(soldQuantities.value[variant.id] ?? 0));
+    const credit = Number(orderStockCredit.value[variant.id] ?? 0);
+
+    return Math.max(0, Number(variant.quantity) + credit - Number(soldQuantities.value[variant.id] ?? 0));
 }
 
 function isInStock(variant) {
@@ -660,6 +683,7 @@ function pushCartLine(variant, quantity, notes, modifiers, assigned = [], assist
     const people = staffSignature(assigned, assisted);
     const existing = cart.value.find(
         (line) =>
+            !line.is_free &&
             line.id === variant.id &&
             line.notes === notes &&
             JSON.stringify(line.modifiers) === signature &&
@@ -796,6 +820,29 @@ function removeLine(line) {
     cart.value = cart.value.filter((item) => item.key !== line.key);
 }
 
+function makeFree(line) {
+    if (line.is_free) {
+        return;
+    }
+
+    cartLineSeq += 1;
+    cart.value.push({
+        key: cartLineSeq,
+        id: line.id,
+        product_name: line.product_name,
+        variant_name: line.variant_name,
+        price: Number(line.price),
+        quantity: line.quantity,
+        notes: line.notes ?? '',
+        modifiers: (line.modifiers ?? []).map((row) => ({ ...row })),
+        assigned_employee_ids: [],
+        assisted_employee_ids: [],
+        is_product: false,
+        available: null,
+        is_free: true,
+    });
+}
+
 function variantForLine(line) {
     const live = props.variants.find((variant) => variant.id === line.id);
 
@@ -825,6 +872,10 @@ function variantForLine(line) {
 }
 
 function openEditLine(line) {
+    if (line.is_free) {
+        return;
+    }
+
     const variant = variantForLine(line);
 
     editingLineKey.value = line.key;
@@ -852,8 +903,9 @@ function saleItems() {
             modifier_id: row.modifier_id,
             option: row.option,
         })),
-        assigned_employee_ids: line.assigned_employee_ids ?? [],
-        assisted_employee_ids: line.assisted_employee_ids ?? [],
+        assigned_employee_ids: line.is_free ? [] : (line.assigned_employee_ids ?? []),
+        assisted_employee_ids: line.is_free ? [] : (line.assisted_employee_ids ?? []),
+        is_free: Boolean(line.is_free),
     }));
 }
 
@@ -872,8 +924,9 @@ function openOrderItems() {
             option: row.option,
             price: Number(row.price).toFixed(2),
         })),
-        assigned_employee_ids: line.assigned_employee_ids ?? [],
-        assisted_employee_ids: line.assisted_employee_ids ?? [],
+        assigned_employee_ids: line.is_free ? [] : (line.assigned_employee_ids ?? []),
+        assisted_employee_ids: line.is_free ? [] : (line.assisted_employee_ids ?? []),
+        is_free: Boolean(line.is_free),
     }));
 }
 
@@ -1099,6 +1152,7 @@ async function charge() {
         splitCheckout.value = false;
         activeOpenOrderId.value = null;
         activeOpenOrderName.value = '';
+        orderStockCredit.value = {};
         saleForm.reset();
 
         router.reload({
@@ -1192,6 +1246,7 @@ function saveOpenOrder() {
             cart.value = [];
             activeOpenOrderId.value = null;
             activeOpenOrderName.value = '';
+            orderStockCredit.value = {};
             saveOpen.value = false;
             openOrderForm.reset();
         },
@@ -1225,10 +1280,11 @@ function resumeOpenOrder(order) {
             quantity: item.quantity,
             notes: item.notes ?? '',
             modifiers: item.modifiers ?? [],
-            assigned_employee_ids: item.assigned_employee_ids ?? [],
-            assisted_employee_ids: item.assisted_employee_ids ?? [],
-            is_product: item.is_product,
-            available: variant?.quantity ?? null,
+            assigned_employee_ids: item.is_free ? [] : (item.assigned_employee_ids ?? []),
+            assisted_employee_ids: item.is_free ? [] : (item.assisted_employee_ids ?? []),
+            is_product: item.is_free ? false : item.is_product,
+            is_free: Boolean(item.is_free),
+            available: item.is_free ? null : (variant?.quantity ?? null),
         };
     });
     activeOpenOrderId.value = order.id;
@@ -1243,6 +1299,7 @@ function removeOpenOrder(order) {
             if (activeOpenOrderId.value === order.id) {
                 activeOpenOrderId.value = null;
                 activeOpenOrderName.value = '';
+                orderStockCredit.value = {};
             }
         },
     });
@@ -1400,8 +1457,18 @@ async function pollShopOrders() {
             return;
         }
 
-        for (const order of payload.orders ?? []) {
+        const arrived = payload.orders ?? [];
+
+        for (const order of arrived) {
             shopOrderAlerts.value.push(order);
+        }
+
+        if (arrived.length > 0 && !onlineOrdersOpen.value) {
+            unseenOnlineOrders.value += arrived.length;
+        }
+
+        if (arrived.length > 0 && onlineOrdersOpen.value) {
+            loadOnlineOrders();
         }
 
         seenShopOrderId = latestId;
@@ -1439,6 +1506,10 @@ async function loadOnlineOrders() {
         const payload = await response.json();
         onlineOrders.value = payload.orders ?? [];
         onlineOrderStatuses.value = payload.statuses ?? [];
+
+        if (!onlineOrderStatuses.value.some((status) => status.value === onlineOrderTab.value)) {
+            onlineOrderTab.value = onlineOrderStatuses.value[0]?.value ?? 'placed';
+        }
     } catch {
         onlineOrdersNotice.value = 'Could not load online orders.';
     } finally {
@@ -1448,7 +1519,14 @@ async function loadOnlineOrders() {
 
 const viewedOnlineOrder = computed(() => onlineOrders.value.find((order) => order.id === viewedOnlineOrderId.value) ?? null);
 
+const visibleOnlineOrders = computed(() => onlineOrders.value.filter((order) => order.status === onlineOrderTab.value));
+
+function ordersInStatus(status) {
+    return onlineOrders.value.filter((order) => order.status === status).length;
+}
+
 function openOnlineOrders() {
+    unseenOnlineOrders.value = 0;
     onlineOrdersNotice.value = '';
     viewedOnlineOrderId.value = null;
     onlineOrdersOpen.value = true;
@@ -1482,22 +1560,42 @@ async function updateOnlineOrder(order, status) {
     }
 }
 
-function lineLabel(line) {
-    const variant = String(line.variant_name ?? '').trim();
-    const name = variant && variant.toLowerCase() !== 'default'
-        ? `${line.product_name} · ${variant}`
-        : line.product_name;
-
-    return `${name} × ${line.quantity}`;
+function orderHasPreorder(order) {
+    return (order.lines ?? []).some((line) => line.preorder);
 }
 
-function orderHasStock(order) {
-    return (order.lines ?? []).some((line) => !line.preorder);
+function nextOrderAction(order) {
+    if (order.status === 'placed' && !orderHasPreorder(order) && !order.sale_number) {
+        return { type: 'sale', label: 'Create Sale' };
+    }
+
+    if (order.status === 'preparing') {
+        return { type: 'status', status: 'out_for_delivery', label: 'Out for Delivery' };
+    }
+
+    if (order.status === 'out_for_delivery') {
+        return { type: 'status', status: 'completed', label: 'Completed' };
+    }
+
+    return null;
+}
+
+function canCancelOrder(order) {
+    return order.status !== 'completed' && order.status !== 'cancelled';
+}
+
+async function runOrderAction(order, action) {
+    if (action.type === 'sale') {
+        createSaleFromOnlineOrder(order);
+
+        return;
+    }
+
+    await updateOnlineOrder(order, action.status);
 }
 
 async function createSaleFromOnlineOrder(order) {
-    const stocked = (order.lines ?? []).filter((line) => !line.preorder);
-    const held = (order.lines ?? []).filter((line) => line.preorder);
+    const stocked = order.lines ?? [];
 
     if (order.sale_number) {
         onlineOrdersNotice.value = `Sale ${order.sale_number} is already recorded for this order.`;
@@ -1505,8 +1603,14 @@ async function createSaleFromOnlineOrder(order) {
         return;
     }
 
+    if (orderHasPreorder(order)) {
+        onlineOrdersNotice.value = 'A pre-order cannot be turned into a sale.';
+
+        return;
+    }
+
     if (stocked.length === 0) {
-        onlineOrdersNotice.value = 'Every item on this order is a pre-order, so there is nothing to sell yet.';
+        onlineOrdersNotice.value = 'This order has no items to sell.';
 
         return;
     }
@@ -1517,19 +1621,41 @@ async function createSaleFromOnlineOrder(order) {
         return;
     }
 
-    if (order.status !== 'preparing') {
-        creatingSaleId.value = order.id;
-        const saved = await updateOnlineOrder(order, 'preparing');
-        creatingSaleId.value = null;
+    let saved;
 
-        if (!saved) {
-            return;
-        }
+    try {
+        const payload = await jsonRequest(`${registerPath.value}/online-orders/${order.id}/sale`, {
+            method: 'POST',
+        });
+        saved = payload.open_order;
+        const index = onlineOrders.value.findIndex((item) => item.id === order.id);
 
-        if (onlineOrdersNotice.value) {
-            showToast(onlineOrdersNotice.value);
+        if (index >= 0 && payload.order) {
+            onlineOrders.value.splice(index, 1, payload.order);
         }
+    } catch (error) {
+        onlineOrdersNotice.value = error instanceof Error ? error.message : 'Could not create the sale.';
+
+        return;
     }
+
+    if (!saved?.id) {
+        onlineOrdersNotice.value = 'Could not save the open order.';
+
+        return;
+    }
+
+    const credit = {};
+
+    for (const item of stocked) {
+        if (!item.is_product || item.preorder) {
+            continue;
+        }
+
+        credit[item.catalog_item_variant_id] = Number(credit[item.catalog_item_variant_id] ?? 0) + Number(item.quantity);
+    }
+
+    orderStockCredit.value = credit;
 
     cart.value = stocked.map((item) => {
         cartLineSeq += 1;
@@ -1547,16 +1673,15 @@ async function createSaleFromOnlineOrder(order) {
             assigned_employee_ids: item.assigned_employee_ids ?? [],
             assisted_employee_ids: item.assisted_employee_ids ?? [],
             is_product: item.is_product,
-            available: variant?.quantity ?? null,
+            available: variant ? liveQuantity(variant) : null,
         };
     });
-    activeOpenOrderId.value = order.id;
-    activeOpenOrderName.value = order.number;
-    partialDelivery.value = held.length > 0
-        ? `Partial delivery. Pre-order items stay on ${order.number}: ${held.map(lineLabel).join(', ')}.`
-        : '';
+    activeOpenOrderId.value = saved.id;
+    activeOpenOrderName.value = saved.name ?? order.number;
+    partialDelivery.value = '';
     onlineOrdersOpen.value = false;
     viewedOnlineOrderId.value = null;
+    router.reload({ ...registerPartial });
 }
 
 onMounted(() => {
@@ -1588,6 +1713,7 @@ onUnmounted(() => {
         <button
             class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
             type="button"
+            :aria-label="unseenOnlineOrders > 0 ? `Online Orders, ${unseenOnlineOrders} new` : 'Online Orders'"
             @click="openOnlineOrders"
         >
             <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -1595,6 +1721,7 @@ onUnmounted(() => {
                 <path d="M7 5 8 2.5h4L13 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
             Online Orders
+            <CountBadge v-if="unseenOnlineOrders > 0" :count="unseenOnlineOrders" />
         </button>
         <button
             class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
@@ -1865,7 +1992,8 @@ onUnmounted(() => {
                     </div>
                     <ul v-else class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3 sm:px-5">
                         <li v-for="line in cart" :key="line.key" class="flex items-start justify-between gap-2">
-                            <button class="min-w-0 flex-1 text-left" type="button" @click="openEditLine(line)">
+                            <div class="min-w-0 flex-1">
+                            <button class="w-full text-left" type="button" @click="openEditLine(line)">
                                 <p class="truncate text-sm font-medium">{{ line.product_name }}</p>
                                 <p class="truncate text-xs text-ink/50">{{ line.variant_name }}</p>
                                 <p
@@ -1877,26 +2005,38 @@ onUnmounted(() => {
                                 </p>
                                 <p v-if="line.notes" class="truncate text-xs text-ink/50">{{ line.notes }}</p>
                                 <p v-if="lineStaffLabel(line)" class="truncate text-xs text-ink/50">{{ lineStaffLabel(line) }}</p>
-                                <p class="text-xs">{{ formatPeso(line.price) }}</p>
+                                <p v-if="line.is_free" class="text-xs font-medium">Free</p>
+                                <p class="text-xs">{{ linePriceLabel(line) }}</p>
                             </button>
-                            <div class="flex shrink-0 items-center gap-1.5" @click.stop>
-                                <button class="h-8 w-8 rounded-lg border border-mist" type="button" @click="changeQty(line, -1)">-</button>
-                                <input
-                                    :value="line.quantity"
-                                    class="h-8 w-12 rounded-lg border border-mist bg-white text-center text-sm dark:border-white/10 dark:bg-white/5"
-                                    min="1"
-                                    :max="line.is_product && line.available !== null ? line.available : undefined"
-                                    type="number"
-                                    @change="setQty(line, $event.target.value)"
-                                />
-                                <button class="h-8 w-8 rounded-lg border border-mist" type="button" @click="changeQty(line, 1)">+</button>
+                            </div>
+                            <div class="flex shrink-0 flex-col items-end gap-1" @click.stop>
+                                <div class="flex items-center gap-1.5">
+                                    <button class="h-8 w-8 rounded-lg border border-mist" type="button" @click="changeQty(line, -1)">-</button>
+                                    <input
+                                        :value="line.quantity"
+                                        class="h-8 w-12 rounded-lg border border-mist bg-white text-center text-sm dark:border-white/10 dark:bg-white/5"
+                                        min="1"
+                                        :max="line.is_product && line.available !== null ? line.available : undefined"
+                                        type="number"
+                                        @change="setQty(line, $event.target.value)"
+                                    />
+                                    <button class="h-8 w-8 rounded-lg border border-mist" type="button" @click="changeQty(line, 1)">+</button>
+                                    <button
+                                        class="h-8 w-8 rounded-lg border border-mist text-sm font-medium"
+                                        type="button"
+                                        aria-label="Remove item"
+                                        @click="removeLine(line)"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
                                 <button
-                                    class="h-8 w-8 rounded-lg border border-mist text-sm font-medium"
+                                    v-if="!line.is_free"
+                                    class="text-xs font-medium text-pine dark:text-sand"
                                     type="button"
-                                    aria-label="Remove item"
-                                    @click="removeLine(line)"
+                                    @click="makeFree(line)"
                                 >
-                                    ×
+                                    Free
                                 </button>
                             </div>
                         </li>
@@ -2199,9 +2339,9 @@ onUnmounted(() => {
                     <li v-for="line in cart" :key="line.key" class="flex items-start justify-between gap-3 text-sm">
                         <div class="min-w-0">
                             <p class="truncate font-medium">{{ line.product_name }}</p>
-                            <p class="truncate text-xs text-ink/50">{{ line.quantity }} × {{ line.variant_name }}</p>
+                            <p class="truncate text-xs text-ink/50">{{ line.quantity }} × {{ line.variant_name }}<span v-if="line.is_free"> · Free</span></p>
                         </div>
-                        <p class="shrink-0">{{ formatPeso(Number(line.price) * line.quantity) }}</p>
+                        <p class="shrink-0">{{ lineAmountLabel(line) }}</p>
                     </li>
                 </ul>
                     <div class="mt-6 flex flex-col gap-2">
@@ -2230,6 +2370,14 @@ onUnmounted(() => {
                                 {{ method.name }}
                             </button>
                         </div>
+                        <p v-if="selectedDelivery?.instructions" class="text-sm text-ink/60">{{ selectedDelivery.instructions }}</p>
+                        <img
+                            v-for="(image, index) in selectedDelivery?.instruction_images ?? []"
+                            :key="image"
+                            :src="image"
+                            :alt="`Delivery instruction photo ${index + 1}`"
+                            class="max-h-48 w-full rounded-xl object-contain"
+                        />
                         <input
                             v-if="saleForm.delivery_method_id"
                             v-model="saleForm.delivery_fee"
@@ -2320,6 +2468,13 @@ onUnmounted(() => {
                             </div>
                         </div>
                         <p v-if="draftPaymentMethod?.instructions" class="text-sm text-ink/60">{{ draftPaymentMethod.instructions }}</p>
+                        <img
+                            v-for="(image, index) in draftPaymentMethod?.instruction_images ?? []"
+                            :key="image"
+                            :src="image"
+                            :alt="`Payment instruction photo ${index + 1}`"
+                            class="max-h-48 w-full rounded-xl object-contain"
+                        />
                         <div v-if="splitCheckout" class="flex flex-col gap-2">
                             <label class="text-sm font-medium" for="pos-pay-amount">This payment</label>
                             <input
@@ -2388,6 +2543,7 @@ onUnmounted(() => {
                         </div>
                     </div>
                     <p v-if="checkoutError" class="text-sm text-danger">{{ checkoutError }}</p>
+                    <p v-if="saleForm.errors.pos_open_order_id" class="text-sm text-danger">{{ saleForm.errors.pos_open_order_id }}</p>
                     <p v-if="saleForm.errors.items" class="text-sm text-danger">{{ saleForm.errors.items }}</p>
                     <p v-if="saleForm.errors.status" class="text-sm text-danger">{{ saleForm.errors.status }}</p>
                     <p v-if="saleForm.errors.payments" class="text-sm text-danger">{{ saleForm.errors.payments }}</p>
@@ -2398,7 +2554,7 @@ onUnmounted(() => {
                         {{ saleForm.errors['payments.0.amount_tendered'] }}
                     </p>
                     <button
-                        v-if="splitCheckout && remainingTotal <= 0.005 && checkoutPayments.length > 0"
+                        v-if="remainingTotal <= 0.005"
                         class="mt-auto h-11 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-70"
                         type="button"
                         :disabled="charging"
@@ -2418,11 +2574,37 @@ onUnmounted(() => {
         aria-modal="true"
         aria-labelledby="shop-order-alert-title"
     >
-        <div class="flex w-full max-w-xl flex-col items-center gap-5 text-center">
+        <div class="flex max-h-[90dvh] w-full max-w-3xl flex-col items-center gap-5 overflow-y-auto text-center">
             <p class="text-sm font-semibold tracking-[0.2em] text-ember uppercase">New online order</p>
             <h2 id="shop-order-alert-title" class="text-5xl font-semibold tracking-tight sm:text-6xl">{{ shopOrderAlerts[0].number }}</h2>
             <p class="text-2xl">{{ shopOrderAlerts[0].customer }}</p>
-            <p v-if="shopOrderAlerts[0].items_label" class="max-w-md text-base text-white/80">{{ shopOrderAlerts[0].items_label }}</p>
+            <div v-if="shopOrderAlerts[0].items?.length" class="w-full overflow-hidden rounded-2xl border border-white/15 text-left">
+                <table class="w-full text-sm">
+                    <thead class="text-white/60">
+                        <tr class="border-b border-white/15">
+                            <th class="px-3 py-2 font-medium">Item</th>
+                            <th class="px-3 py-2 font-medium">Variant</th>
+                            <th class="px-3 py-2 text-right font-medium">Qty</th>
+                            <th class="px-3 py-2 text-right font-medium">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            v-for="(item, index) in shopOrderAlerts[0].items"
+                            :key="`${item.product}-${index}`"
+                            class="border-b border-white/10 last:border-b-0"
+                        >
+                            <td class="px-3 py-2">
+                                {{ item.product }}
+                                <span v-if="item.preorder" class="text-ember"> · Preorder</span>
+                            </td>
+                            <td class="px-3 py-2">{{ item.variant || '—' }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums">{{ item.quantity }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums">{{ item.line_total }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
             <p class="text-4xl font-semibold text-ember">{{ shopOrderAlerts[0].total_label }}</p>
             <p v-if="shopOrderAlerts.length > 1" class="text-sm text-white/70">{{ shopOrderAlerts.length }} new orders</p>
             <button class="h-14 min-w-40 rounded-2xl bg-ember px-8 text-lg font-semibold text-black" type="button" @click="dismissShopOrderAlert">
@@ -2432,7 +2614,7 @@ onUnmounted(() => {
     </div>
 
     <div v-if="onlineOrdersOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
-        <div class="flex max-h-[90dvh] w-full max-w-2xl flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 dark:bg-ink">
+        <div class="flex max-h-[90dvh] w-full max-w-3xl flex-col gap-4 overflow-hidden rounded-2xl bg-foam p-6 dark:bg-ink">
             <div class="flex items-start justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-medium">Online Orders</h2>
@@ -2440,12 +2622,28 @@ onUnmounted(() => {
                 </div>
                 <button class="text-sm font-medium" type="button" @click="onlineOrdersOpen = false; viewedOnlineOrderId = null">Close</button>
             </div>
+            <div class="flex gap-2 overflow-x-auto" role="tablist" aria-label="Order status">
+                <button
+                    v-for="status in onlineOrderStatuses"
+                    :id="`pos-orders-tab-${status.value}`"
+                    :key="status.value"
+                    class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-medium whitespace-nowrap"
+                    :class="onlineOrderTab === status.value ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                    type="button"
+                    role="tab"
+                    :aria-selected="onlineOrderTab === status.value"
+                    @click="onlineOrderTab = status.value"
+                >
+                    {{ status.label }}
+                    <CountBadge :count="ordersInStatus(status.value)" />
+                </button>
+            </div>
             <p v-if="onlineOrdersNotice" class="rounded-xl border border-pine/20 bg-white px-4 py-3 text-sm dark:border-white/10 dark:bg-white/5">{{ onlineOrdersNotice }}</p>
             <p v-if="onlineOrdersLoading" class="text-sm text-ink/60 dark:text-foam/60">Loading orders…</p>
-            <p v-else-if="onlineOrders.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No online orders yet.</p>
-            <ul v-else class="flex min-h-0 flex-col gap-3 overflow-y-auto">
+            <p v-else-if="visibleOnlineOrders.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No orders with this status.</p>
+            <ul v-else class="flex min-h-0 flex-col gap-3 overflow-y-auto" role="tabpanel" :aria-labelledby="`pos-orders-tab-${onlineOrderTab}`">
                 <li
-                    v-for="order in onlineOrders"
+                    v-for="order in visibleOnlineOrders"
                     :key="order.id"
                     class="flex flex-col gap-2 rounded-xl border border-mist p-3 dark:border-white/10"
                 >
@@ -2453,29 +2651,30 @@ onUnmounted(() => {
                         <div class="min-w-0">
                             <p class="font-medium">{{ order.number }}</p>
                             <p class="text-xs text-ink/50 dark:text-foam/50">{{ order.placed_at }} · {{ order.total_label }}</p>
-                            <p v-if="order.sale_number" class="text-xs font-medium">{{ order.status_label }} · Sale {{ order.sale_number }}</p>
+                            <p v-if="order.sale_number" class="text-xs font-medium">Sale {{ order.sale_number }}</p>
+                            <p v-if="orderHasPreorder(order)" class="text-xs text-ink/60 dark:text-foam/60">Includes a pre-order</p>
                         </div>
-                        <div class="flex w-40 shrink-0 flex-col gap-2">
-                            <label class="sr-only" :for="`pos-order-status-${order.id}`">Status for {{ order.number }}</label>
-                            <select
-                                :id="`pos-order-status-${order.id}`"
-                                class="h-10 rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5"
-                                :disabled="updatingOrderId === order.id"
-                                :value="order.status"
-                                @change="updateOnlineOrder(order, $event.target.value)"
-                            >
-                                <option v-for="status in onlineOrderStatuses" :key="status.value" :value="status.value">{{ status.label }}</option>
-                            </select>
+                        <div class="flex shrink-0 flex-wrap justify-end gap-2">
                             <button
-                                class="h-10 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-50"
+                                v-if="nextOrderAction(order)"
+                                class="h-10 rounded-xl bg-pine px-3 text-sm font-medium text-foam disabled:opacity-50"
                                 type="button"
-                                :disabled="Boolean(order.sale_number) || !orderHasStock(order) || creatingSaleId === order.id"
-                                @click="createSaleFromOnlineOrder(order)"
+                                :disabled="updatingOrderId === order.id"
+                                @click="runOrderAction(order, nextOrderAction(order))"
                             >
-                                {{ creatingSaleId === order.id ? 'Preparing…' : 'Create Sale' }}
+                                {{ nextOrderAction(order).label }}
                             </button>
                             <button
-                                class="h-10 rounded-xl border border-mist text-sm font-medium dark:border-white/15"
+                                v-if="canCancelOrder(order)"
+                                class="h-10 rounded-xl border border-danger px-3 text-sm font-medium text-danger disabled:opacity-50"
+                                type="button"
+                                :disabled="updatingOrderId === order.id"
+                                @click="updateOnlineOrder(order, 'cancelled')"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                class="h-10 rounded-xl border border-mist px-3 text-sm font-medium dark:border-white/15"
                                 type="button"
                                 @click="viewedOnlineOrderId = order.id"
                             >

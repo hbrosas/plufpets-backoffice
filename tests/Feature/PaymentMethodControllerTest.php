@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Branch;
 use App\Models\PaymentMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class PaymentMethodControllerTest extends TestCase
@@ -124,5 +126,84 @@ class PaymentMethodControllerTest extends TestCase
         $this->assertSame('Scan the Greenheights QR.', $method->instructionFor($greenheights->id));
         $this->assertSame('Scan the San Pedro QR.', $method->instructionFor($sanPedro->id));
         $this->assertSame('Shared QR', $method->instructionFor(null));
+    }
+
+    public function test_payment_instruction_photos_can_differ_by_branch(): void
+    {
+        Storage::fake('public');
+        $branch = Branch::factory()->create(['name' => 'Greenheights']);
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/settings')->post('/backoffice/shop/payment-methods', [
+            'name' => 'GCash',
+            'instructions_for_all_branches' => false,
+            'branch_instructions' => [
+                [
+                    'branch_id' => $branch->id,
+                    'instructions' => 'Scan the branch QR.',
+                    'images' => [UploadedFile::fake()->image('branch.jpg')],
+                ],
+            ],
+            'is_cash' => false,
+            'is_active' => true,
+        ]);
+
+        $response->assertRedirect(route('shop.settings.index'));
+        $method = PaymentMethod::query()->where('name', 'GCash')->first();
+        $this->assertCount(1, $method->instructionImageUrls($branch->id));
+        Storage::disk('public')->assertExists($method->branchInstructions->first()->images[0]);
+    }
+
+    public function test_payment_instruction_photo_can_be_removed(): void
+    {
+        Storage::fake('public');
+        $paymentMethod = PaymentMethod::factory()->create([
+            'name' => 'GCash',
+            'is_cash' => false,
+            'is_active' => true,
+        ]);
+
+        $this->actingAsEmployee()->put("/backoffice/shop/payment-methods/{$paymentMethod->id}", [
+            'name' => 'GCash',
+            'is_cash' => false,
+            'is_active' => true,
+            'images' => [UploadedFile::fake()->image('qr.jpg')],
+        ])->assertRedirect();
+
+        $path = $paymentMethod->fresh()->instruction_images[0];
+        Storage::disk('public')->assertExists($path);
+
+        $this->actingAsEmployee()->from('/backoffice/shop/settings')->put("/backoffice/shop/payment-methods/{$paymentMethod->id}", [
+            'name' => 'GCash',
+            'is_cash' => false,
+            'is_active' => true,
+            'remove_images' => [$path],
+        ])->assertRedirect();
+
+        $this->assertSame([], $paymentMethod->fresh()->instruction_images ?? []);
+        Storage::disk('public')->assertMissing($path);
+    }
+
+    public function test_more_than_four_payment_photos_are_rejected(): void
+    {
+        Storage::fake('public');
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/settings')->post('/backoffice/shop/payment-methods', [
+            'name' => 'GCash',
+            'is_cash' => false,
+            'is_active' => true,
+            'images' => [
+                UploadedFile::fake()->image('1.jpg'),
+                UploadedFile::fake()->image('2.jpg'),
+                UploadedFile::fake()->image('3.jpg'),
+                UploadedFile::fake()->image('4.jpg'),
+                UploadedFile::fake()->image('5.jpg'),
+            ],
+        ]);
+
+        $response->assertRedirect('/backoffice/shop/settings');
+        $response->assertSessionHasErrors([
+            'images' => 'You can add up to 4 photos.',
+        ]);
+        $this->assertDatabaseCount('payment_methods', 0);
     }
 }

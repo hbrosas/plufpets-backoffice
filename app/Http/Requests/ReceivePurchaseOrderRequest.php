@@ -44,6 +44,9 @@ class ReceivePurchaseOrderRequest extends FormRequest
             'sales_invoice_number' => $this->filled('sales_invoice_number')
                 ? $this->string('sales_invoice_number')->trim()->toString()
                 : null,
+            'notes' => $this->filled('notes')
+                ? $this->string('notes')->trim()->toString()
+                : null,
         ]);
     }
 

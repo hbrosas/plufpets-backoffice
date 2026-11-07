@@ -20,7 +20,6 @@ defineProps({
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <p class="text-sm text-ink/55 dark:text-foam/50">{{ filters.label }}. Class A items make up the first 80% of revenue, then B, then C.</p>
         <ReportTable title="Best sellers" :columns="[{ key: 'name', label: 'Product' }, { key: 'quantity', label: 'Qty' }, { key: 'total', label: 'Sales' }]" :rows="products.best" />
         <ReportTable title="Slow movers" :columns="[{ key: 'name', label: 'Product' }, { key: 'quantity', label: 'Qty sold' }, { key: 'total', label: 'Sales' }]" :rows="products.slow" empty="Every stocked product sold in this period." />
         <ReportTable title="ABC analysis" :columns="[{ key: 'name', label: 'Product' }, { key: 'total', label: 'Sales' }, { key: 'share', label: 'Share' }, { key: 'class', label: 'Class' }]" :rows="products.abc" />

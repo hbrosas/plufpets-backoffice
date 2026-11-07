@@ -73,6 +73,11 @@ defineProps({
                     </tbody>
                 </table>
             </div>
+
+            <div v-if="receipt.notes" class="mt-4 flex flex-col gap-1">
+                <p class="text-xs font-medium tracking-wide text-ink/50 uppercase dark:text-foam/50">Notes</p>
+                <p class="text-sm">{{ receipt.notes }}</p>
+            </div>
         </article>
     </div>
 </template>

@@ -98,7 +98,7 @@ function formatDate(value) {
 </script>
 
 <template>
-    <Head title="Staff" />
+    <Head title="Users" />
 
     <Teleport defer to="#admin-header-actions">
         <button class="h-10 rounded-xl bg-pine px-4 text-sm font-medium text-foam" type="button" @click="openCreate">

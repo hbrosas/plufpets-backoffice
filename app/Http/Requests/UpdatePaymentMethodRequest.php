@@ -7,6 +7,7 @@ use App\Models\PaymentMethod;
 use App\Support\PaymentMethodRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class UpdatePaymentMethodRequest extends FormRequest
 {
@@ -35,6 +36,18 @@ class UpdatePaymentMethodRequest extends FormRequest
         return PaymentMethodRules::messages();
     }
 
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $paymentMethod = $this->route('payment_method');
+
+            $this->guardInstructionImageLimit(
+                $validator,
+                $paymentMethod instanceof PaymentMethod ? $paymentMethod : null,
+            );
+        });
+    }
+
     protected function prepareForValidation(): void
     {
         $instructions = $this->string('instructions')->trim()->toString();
@@ -49,5 +62,6 @@ class UpdatePaymentMethodRequest extends FormRequest
             'is_cash' => $this->boolean('is_cash'),
             'is_active' => $this->boolean('is_active'),
         ]);
+        $this->prepareInstructionImages();
     }
 }

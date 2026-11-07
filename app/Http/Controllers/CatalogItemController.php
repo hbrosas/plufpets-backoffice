@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\BulkUpdateCatalogItems;
 use App\Actions\SaveCatalogItem;
 use App\Enums\CatalogItemType;
+use App\Http\Requests\BulkUpdateCatalogItemsRequest;
 use App\Http\Requests\StoreCatalogItemRequest;
 use App\Http\Requests\UpdateCatalogItemRequest;
 use App\Models\Branch;
@@ -75,7 +77,33 @@ class CatalogItemController extends Controller
                 'type' => $filters['type'] ?? '',
             ],
             'types' => $this->typeOptions(),
+            'categories' => Category::query()->orderBy('name')->pluck('name')->all(),
+            'brands' => Brand::query()->orderBy('name')->pluck('name')->all(),
         ]);
+    }
+
+    public function bulk(BulkUpdateCatalogItemsRequest $request, BulkUpdateCatalogItems $update): RedirectResponse
+    {
+        $action = $request->validated('action');
+
+        $update->handle($request->validated('ids'), $action, $request->safe()->only([
+            'category_name',
+            'brand_name',
+            'is_active',
+            'allows_preorder',
+        ]));
+
+        $message = match ($action) {
+            'category' => 'Category updated.',
+            'brand' => 'Brand updated.',
+            'status' => 'Status updated.',
+            'preorder' => 'Preorder updated.',
+            default => 'Selected products deleted.',
+        };
+
+        return redirect()
+            ->back()
+            ->with('status', $message);
     }
 
     public function create(): Response

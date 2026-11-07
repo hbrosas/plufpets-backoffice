@@ -7,7 +7,7 @@ defineOptions({
     layout: AdminLayout,
 });
 
-const props = defineProps({
+defineProps({
     account: {
         type: Boolean,
         required: true,
@@ -28,29 +28,56 @@ const props = defineProps({
 
 const page = usePage();
 const flash = computed(() => page.props.flash ?? {});
-const type = ref(props.types[0]?.value ?? 'leave');
+const tab = ref('payslips');
+const filingType = ref(null);
 const form = useForm({
-    type: props.types[0]?.value ?? 'leave',
+    type: 'leave',
     starts_on: '',
     ends_on: '',
     hours: '',
     nights: '1',
+    amount: '',
     reason: '',
 });
 
-function selectType(value) {
-    type.value = value;
+const tabs = [
+    { id: 'payslips', label: 'Pay slips' },
+    { id: 'filings', label: 'Filings' },
+];
+
+const fileActions = [
+    { value: 'leave', label: 'File Leave' },
+    { value: 'overnight', label: 'File Overnight' },
+    { value: 'cash_advance', label: 'Request Cash Advance' },
+];
+
+const filingTitle = computed(() => fileActions.find((action) => action.value === filingType.value)?.label ?? 'File');
+
+function openFiling(value) {
+    filingType.value = value;
     form.type = value;
+    form.reset('starts_on', 'ends_on', 'hours', 'amount', 'reason');
+    form.nights = '1';
     form.clearErrors();
 }
 
+function closeFiling() {
+    if (form.processing) {
+        return;
+    }
+
+    filingType.value = null;
+}
+
 function submit() {
-    form.type = type.value;
+    form.type = filingType.value;
     form.post('/backoffice/me/payroll', {
         preserveScroll: true,
         onSuccess: () => {
-            form.reset('starts_on', 'ends_on', 'hours', 'reason');
+            form.reset('starts_on', 'ends_on', 'hours', 'amount', 'reason');
             form.nights = '1';
+            filingType.value = null;
+            tab.value = 'filings';
         },
     });
 }
@@ -63,12 +90,38 @@ function withdraw(filing) {
 <template>
     <Head title="My Payroll" />
 
-    <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div>
-            <h2 class="text-lg font-medium">My Payroll</h2>
-            <p class="text-sm text-ink/60 dark:text-foam/60">File leave, overtime, and overnight. A manager approves it before payroll.</p>
+    <Teleport defer to="#admin-header-tabs">
+        <div class="flex w-max gap-2" role="tablist" aria-label="My Payroll">
+            <button
+                v-for="item in tabs"
+                :id="`payroll-tab-${item.id}`"
+                :key="item.id"
+                class="h-10 shrink-0 rounded-xl px-4 text-sm font-medium whitespace-nowrap"
+                :class="tab === item.id ? 'bg-pine text-foam' : 'border border-mist bg-white'"
+                type="button"
+                role="tab"
+                :aria-selected="tab === item.id"
+                :aria-controls="`payroll-panel-${item.id}`"
+                @click="tab = item.id"
+            >
+                {{ item.label }}
+            </button>
         </div>
+    </Teleport>
 
+    <Teleport v-if="account" defer to="#admin-header-actions">
+        <button
+            v-for="action in fileActions"
+            :key="action.value"
+            class="inline-flex h-10 shrink-0 items-center rounded-xl bg-pine px-4 text-sm font-medium whitespace-nowrap text-foam"
+            type="button"
+            @click="openFiling(action.value)"
+        >
+            {{ action.label }}
+        </button>
+    </Teleport>
+
+    <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <p v-if="flash.status" class="rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
             {{ flash.status }}
         </p>
@@ -76,59 +129,7 @@ function withdraw(filing) {
             Sign in with your employee account to file payroll.
         </p>
 
-        <form v-else class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5" @submit.prevent="submit">
-            <div class="flex flex-wrap gap-2" role="tablist" aria-label="Filing type">
-                <button
-                    v-for="item in types"
-                    :id="`filing-tab-${item.value}`"
-                    :key="item.value"
-                    class="h-10 rounded-xl px-4 text-sm font-medium"
-                    :class="type === item.value ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
-                    type="button"
-                    role="tab"
-                    :aria-selected="type === item.value"
-                    @click="selectType(item.value)"
-                >
-                    {{ item.label }}
-                </button>
-            </div>
-
-            <div class="grid gap-4 sm:grid-cols-2">
-                <div>
-                    <label class="mb-1 block text-sm" for="filing-start">{{ type === 'leave' ? 'From' : 'Date' }}</label>
-                    <input id="filing-start" v-model="form.starts_on" class="h-11 w-full rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5" required type="date" />
-                    <p v-if="form.errors.starts_on" class="mt-1 text-sm text-danger">{{ form.errors.starts_on }}</p>
-                </div>
-                <div v-if="type === 'leave'">
-                    <label class="mb-1 block text-sm" for="filing-end">To</label>
-                    <input id="filing-end" v-model="form.ends_on" class="h-11 w-full rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5" required type="date" />
-                    <p v-if="form.errors.ends_on" class="mt-1 text-sm text-danger">{{ form.errors.ends_on }}</p>
-                </div>
-                <div v-else-if="type === 'overtime'">
-                    <label class="mb-1 block text-sm" for="filing-hours">Hours</label>
-                    <input id="filing-hours" v-model="form.hours" class="h-11 w-full rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5" min="0.01" max="24" required step="0.01" type="number" />
-                    <p v-if="form.errors.hours" class="mt-1 text-sm text-danger">{{ form.errors.hours }}</p>
-                </div>
-                <div v-else>
-                    <label class="mb-1 block text-sm" for="filing-nights">Nights</label>
-                    <input id="filing-nights" v-model="form.nights" class="h-11 w-full rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5" max="31" min="1" required step="1" type="number" />
-                    <p v-if="form.errors.nights" class="mt-1 text-sm text-danger">{{ form.errors.nights }}</p>
-                </div>
-            </div>
-
-            <div>
-                <label class="mb-1 block text-sm" for="filing-reason">Reason</label>
-                <textarea id="filing-reason" v-model="form.reason" class="min-h-24 w-full rounded-xl border border-mist bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-white/5" maxlength="1000" />
-                <p v-if="form.errors.reason" class="mt-1 text-sm text-danger">{{ form.errors.reason }}</p>
-            </div>
-
-            <button class="h-11 w-fit rounded-xl bg-pine px-4 text-sm font-medium text-foam disabled:opacity-60" type="submit" :disabled="form.processing">
-                File {{ types.find((item) => item.value === type)?.label }}
-            </button>
-        </form>
-
-        <section class="flex flex-col gap-3">
-            <h3 class="text-base font-medium">Pay slips</h3>
+        <section v-show="tab === 'payslips'" id="payroll-panel-payslips" role="tabpanel" aria-labelledby="payroll-tab-payslips">
             <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
                 <table class="w-full text-left text-sm">
                     <thead class="text-ink/50 dark:text-foam/50">
@@ -154,8 +155,7 @@ function withdraw(filing) {
             </div>
         </section>
 
-        <section class="flex flex-col gap-3">
-            <h3 class="text-base font-medium">Filings</h3>
+        <section v-show="tab === 'filings'" id="payroll-panel-filings" role="tabpanel" aria-labelledby="payroll-tab-filings">
             <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
                 <table class="w-full min-w-[40rem] text-left text-sm">
                     <thead class="text-ink/50 dark:text-foam/50">
@@ -194,5 +194,48 @@ function withdraw(filing) {
                 </table>
             </div>
         </section>
+    </div>
+
+    <div v-if="filingType" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4" @click.self="closeFiling">
+        <div class="flex max-h-[90vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-foam p-6 dark:bg-ink" role="dialog" aria-modal="true" aria-labelledby="payroll-filing-title">
+            <div class="flex items-start justify-between gap-4">
+                <h2 id="payroll-filing-title" class="text-lg font-medium">{{ filingTitle }}</h2>
+                <button class="text-sm font-medium" type="button" @click="closeFiling">Close</button>
+            </div>
+            <form class="flex flex-col gap-4" @submit.prevent="submit">
+                <template v-if="filingType === 'cash_advance'">
+                    <div>
+                        <label class="mb-1 block text-sm" for="filing-amount">Amount</label>
+                        <input id="filing-amount" v-model="form.amount" class="h-11 w-full rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5" min="0.01" required step="0.01" type="number" />
+                        <p v-if="form.errors.amount" class="mt-1 text-sm text-danger">{{ form.errors.amount }}</p>
+                    </div>
+                </template>
+                <div v-else class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <label class="mb-1 block text-sm" for="filing-start">{{ filingType === 'leave' ? 'From' : 'Date' }}</label>
+                        <input id="filing-start" v-model="form.starts_on" class="h-11 w-full rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5" required type="date" />
+                        <p v-if="form.errors.starts_on" class="mt-1 text-sm text-danger">{{ form.errors.starts_on }}</p>
+                    </div>
+                    <div v-if="filingType === 'leave'">
+                        <label class="mb-1 block text-sm" for="filing-end">To</label>
+                        <input id="filing-end" v-model="form.ends_on" class="h-11 w-full rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5" required type="date" />
+                        <p v-if="form.errors.ends_on" class="mt-1 text-sm text-danger">{{ form.errors.ends_on }}</p>
+                    </div>
+                    <div v-else>
+                        <label class="mb-1 block text-sm" for="filing-nights">Nights</label>
+                        <input id="filing-nights" v-model="form.nights" class="h-11 w-full rounded-xl border border-mist bg-white px-3 text-sm dark:border-white/10 dark:bg-white/5" max="31" min="1" required step="1" type="number" />
+                        <p v-if="form.errors.nights" class="mt-1 text-sm text-danger">{{ form.errors.nights }}</p>
+                    </div>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm" for="filing-reason">Reason</label>
+                    <textarea id="filing-reason" v-model="form.reason" class="min-h-24 w-full rounded-xl border border-mist bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-white/5" maxlength="1000" :required="filingType === 'cash_advance'" />
+                    <p v-if="form.errors.reason" class="mt-1 text-sm text-danger">{{ form.errors.reason }}</p>
+                </div>
+                <button class="h-11 w-fit rounded-xl bg-pine px-4 text-sm font-medium text-foam disabled:opacity-60" type="submit" :disabled="form.processing">
+                    {{ filingTitle }}
+                </button>
+            </form>
+        </div>
     </div>
 </template>

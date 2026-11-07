@@ -14,6 +14,7 @@ class SupplierRules
     {
         return [
             'name' => ['required', 'string', 'max:255'],
+            'tin' => ['nullable', 'string', 'max:32'],
             'code' => ['nullable', 'string', 'max:32', Rule::unique('suppliers', 'code')->ignore($supplier?->id)],
             'contact_name' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],

@@ -183,7 +183,7 @@ class ShopCatalog
         }
 
         $isProduct = $variant->catalogItem?->type === CatalogItemType::Product;
-        $stock = $isProduct ? (int) ($variant->inventories->first()?->quantity ?? 0) : null;
+        $stock = $isProduct ? ($variant->inventories->first()?->available() ?? 0) : null;
         $itemName = $variant->catalogItem?->name ?? 'Product';
         $rawVariantName = trim((string) $variant->name);
         $variantName = $rawVariantName !== '' && strcasecmp($rawVariantName, 'Default') !== 0

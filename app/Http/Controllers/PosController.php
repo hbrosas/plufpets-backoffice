@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\SavePosOpenOrder;
 use App\Actions\SendShopOrderText;
+use App\Actions\ShopOrderStock;
 use App\Enums\CatalogItemType;
 use App\Enums\PosCashMovementType;
 use App\Enums\ShopOrderStatus;
@@ -23,12 +25,15 @@ use App\Models\PosShift;
 use App\Models\Printer;
 use App\Models\TaxFee;
 use App\Support\CashDenominations;
+use App\Support\EmployeeSession;
 use App\Support\Peso;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -91,6 +96,7 @@ class PosController extends Controller
                     'id' => $method->id,
                     'name' => $method->name,
                     'instructions' => $method->instructionFor($branch->id) ?? '',
+                    'instruction_images' => $method->instructionImageUrls($branch->id),
                     'is_cash' => $method->is_cash,
                 ]);
         }
@@ -98,6 +104,7 @@ class PosController extends Controller
         if ($wants('deliveryMethods')) {
             $props['deliveryMethods'] = DeliveryMethod::query()
                 ->where('is_active', true)
+                ->with('branchInstructions')
                 ->orderBy('name')
                 ->orderBy('id')
                 ->get()
@@ -106,6 +113,8 @@ class PosController extends Controller
                     'name' => $method->name,
                     'fee' => $method->fee,
                     'fee_label' => $method->fee === null ? 'Set in cart' : Peso::format($method->fee),
+                    'instructions' => $method->instructionFor($branch->id) ?? '',
+                    'instruction_images' => $method->instructionImageUrls($branch->id),
                 ]);
         }
 
@@ -152,6 +161,7 @@ class PosController extends Controller
             $props['openOrders'] = PosOpenOrder::query()
                 ->where('branch_id', $branch->id)
                 ->whereNull('pos_sale_id')
+                ->where(fn ($query) => $query->whereNull('status')->orWhere('status', ''))
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->get()
@@ -220,7 +230,7 @@ class PosController extends Controller
                 'number' => $order->number,
                 'customer' => $order->saved_by_name,
                 'total_label' => Peso::format($order->total ?? $order->subtotal),
-                'items_label' => $this->shopOrderItems($order)->implode(', '),
+                'items' => $this->shopOrderAlertItems($order),
             ])->values(),
         ]);
     }
@@ -244,7 +254,7 @@ class PosController extends Controller
         ]);
     }
 
-    public function updateOnlineOrder(UpdateShopOrderRequest $request, Branch $branch, PosOpenOrder $posOpenOrder, SendShopOrderText $sendShopOrderText): JsonResponse
+    public function updateOnlineOrder(UpdateShopOrderRequest $request, Branch $branch, PosOpenOrder $posOpenOrder, SendShopOrderText $sendShopOrderText, ShopOrderStock $shopOrderStock): JsonResponse
     {
         abort_unless($branch->is_active, 404);
         abort_unless(
@@ -253,10 +263,25 @@ class PosController extends Controller
         );
 
         $status = $request->string('status')->toString();
+        $current = ShopOrderStatus::tryFrom((string) $posOpenOrder->status);
+        $next = ShopOrderStatus::from($status);
+
+        if (! $current instanceof ShopOrderStatus || ! $current->canManuallyBecome($next)) {
+            throw ValidationException::withMessages([
+                'status' => 'That status is not available for this order.',
+            ]);
+        }
+
         $message = 'Order status saved.';
 
         if ($posOpenOrder->status !== $status) {
-            $posOpenOrder->update(['status' => $status]);
+            DB::transaction(function () use ($posOpenOrder, $status, $shopOrderStock): void {
+                if ($status === ShopOrderStatus::Cancelled->value) {
+                    $shopOrderStock->release($posOpenOrder);
+                }
+
+                $posOpenOrder->update(['status' => $status]);
+            });
             $smsError = $sendShopOrderText->handle($posOpenOrder->fresh(['branch']) ?? $posOpenOrder);
 
             if (is_string($smsError)) {
@@ -267,6 +292,77 @@ class PosController extends Controller
         return response()->json([
             'message' => $message,
             'order' => $this->onlineOrderPayload($posOpenOrder->fresh(['sale:id,number']) ?? $posOpenOrder),
+        ]);
+    }
+
+    public function createOnlineOrderSale(Branch $branch, PosOpenOrder $posOpenOrder, SavePosOpenOrder $savePosOpenOrder, SendShopOrderText $sendShopOrderText): JsonResponse
+    {
+        abort_unless($branch->is_active, 404);
+        abort_unless(
+            $posOpenOrder->branch_id === $branch->id && is_string($posOpenOrder->status) && $posOpenOrder->status !== '',
+            404,
+        );
+
+        if ($posOpenOrder->hasPreorder()) {
+            throw ValidationException::withMessages([
+                'status' => 'A pre-order cannot be turned into a sale.',
+            ]);
+        }
+
+        if ($posOpenOrder->pos_sale_id !== null || $posOpenOrder->status !== ShopOrderStatus::Placed->value) {
+            throw ValidationException::withMessages([
+                'status' => 'Create a sale from an order that is still placed.',
+            ]);
+        }
+
+        $items = $this->openOrderItemsFrom($posOpenOrder);
+
+        if ($items === []) {
+            throw ValidationException::withMessages([
+                'status' => 'This order has no items to sell.',
+            ]);
+        }
+
+        $ticket = DB::transaction(function () use ($branch, $posOpenOrder, $savePosOpenOrder, $items): PosOpenOrder {
+            $locked = PosOpenOrder::query()->whereKey($posOpenOrder->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->pos_sale_id !== null || $locked->status !== ShopOrderStatus::Placed->value) {
+                throw ValidationException::withMessages([
+                    'status' => 'Create a sale from an order that is still placed.',
+                ]);
+            }
+
+            $locked->update(['status' => ShopOrderStatus::Preparing->value]);
+            $ticket = $savePosOpenOrder->handle(
+                $branch,
+                [
+                    'name' => $locked->number,
+                    'items' => $items,
+                ],
+                EmployeeSession::current() ?? ['employee_number' => '', 'name' => ''],
+            );
+            $checkout = is_array($ticket->checkout) ? $ticket->checkout : [];
+            $ticket->update([
+                'checkout' => [
+                    ...$checkout,
+                    'online_order_id' => $locked->id,
+                ],
+            ]);
+
+            return $ticket->refresh();
+        });
+
+        $message = 'Order moved to Preparing Order.';
+        $smsError = $sendShopOrderText->handle($posOpenOrder->fresh(['branch']) ?? $posOpenOrder);
+
+        if (is_string($smsError)) {
+            $message .= ' '.$smsError;
+        }
+
+        return response()->json([
+            'message' => $message,
+            'order' => $this->onlineOrderPayload($posOpenOrder->fresh(['sale:id,number']) ?? $posOpenOrder),
+            'open_order' => $this->openOrderPayload($ticket),
         ]);
     }
 
@@ -301,6 +397,30 @@ class PosController extends Controller
             'sale_number' => $order->sale?->number,
             'placed_at' => $order->created_at?->timezone('Asia/Manila')->format('M j, g:i A'),
         ];
+    }
+
+    /**
+     * @return list<array{product: string, variant: string|null, quantity: int, line_total: string, preorder: bool}>
+     */
+    private function shopOrderAlertItems(PosOpenOrder $order): array
+    {
+        return collect($order->items)->map(function (mixed $item): ?array {
+            if (! is_array($item)) {
+                return null;
+            }
+
+            $variant = trim((string) ($item['variant_name'] ?? ''));
+            $quantity = (int) ($item['quantity'] ?? 0);
+            $price = (float) ($item['price'] ?? 0);
+
+            return [
+                'product' => (string) ($item['product_name'] ?? 'Item'),
+                'variant' => $variant !== '' && strcasecmp($variant, 'Default') !== 0 ? $variant : null,
+                'quantity' => $quantity,
+                'line_total' => Peso::format($price * $quantity),
+                'preorder' => $this->isPreorderLine($item),
+            ];
+        })->filter()->values()->all();
     }
 
     /**
@@ -428,7 +548,7 @@ class PosController extends Controller
                 }
 
                 $isProduct = $variant->catalogItem?->type === CatalogItemType::Product;
-                $quantity = $isProduct ? (int) ($variant->inventories->first()?->quantity ?? 0) : null;
+                $quantity = $isProduct ? ($variant->inventories->first()?->available() ?? 0) : null;
                 $shopCategory = $variant->catalogItem?->category;
 
                 return [
@@ -525,6 +645,39 @@ class PosController extends Controller
             'sales_count' => $shift->sales()->count(),
             'sales_total_label' => Peso::format($shift->sales()->sum('total')),
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function openOrderItemsFrom(PosOpenOrder $order): array
+    {
+        return collect($order->items)->map(function (mixed $item): ?array {
+            if (! is_array($item)) {
+                return null;
+            }
+
+            $variantId = (int) ($item['catalog_item_variant_id'] ?? 0);
+            $quantity = (int) ($item['quantity'] ?? 0);
+
+            if ($variantId < 1 || $quantity < 1) {
+                return null;
+            }
+
+            return [
+                'catalog_item_variant_id' => $variantId,
+                'product_name' => (string) ($item['product_name'] ?? 'Item'),
+                'variant_name' => (string) ($item['variant_name'] ?? ''),
+                'price' => number_format((float) ($item['price'] ?? 0), 2, '.', ''),
+                'quantity' => $quantity,
+                'notes' => is_string($item['notes'] ?? null) ? $item['notes'] : null,
+                'is_product' => (bool) ($item['is_product'] ?? true),
+                'modifiers' => is_array($item['modifiers'] ?? null) ? $item['modifiers'] : [],
+                'assigned_employee_ids' => is_array($item['assigned_employee_ids'] ?? null) ? $item['assigned_employee_ids'] : [],
+                'assisted_employee_ids' => is_array($item['assisted_employee_ids'] ?? null) ? $item['assisted_employee_ids'] : [],
+                'is_free' => (bool) ($item['is_free'] ?? false),
+            ];
+        })->filter()->values()->all();
     }
 
     /**
@@ -659,9 +812,9 @@ class PosController extends Controller
             'total_label' => Peso::format($sale->total),
             'items' => $sale->items->map(fn ($item): array => [
                 'id' => $item->id,
-                'label' => $item->variant_name === 'Default'
+                'label' => trim(($item->variant_name === 'Default'
                     ? $item->product_name
-                    : $item->product_name.' · '.$item->variant_name,
+                    : $item->product_name.' · '.$item->variant_name).($item->is_free ? ' · Free' : '')),
                 'quantity' => $item->quantity,
                 'notes' => $item->notes,
                 'modifiers' => $item->modifiers ?? [],

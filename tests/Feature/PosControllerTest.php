@@ -238,6 +238,13 @@ class PosControllerTest extends TestCase
             'status' => 'placed',
             'saved_by_name' => 'Ada Reyes',
             'total' => 240,
+            'items' => [[
+                'product_name' => 'Aozi Dog',
+                'variant_name' => 'Beef',
+                'price' => '80.00',
+                'quantity' => 3,
+                'notes' => 'Preorder',
+            ]],
         ]);
         PosOpenOrder::factory()->for($otherBranch)->create([
             'number' => 'OPEN-OTHER',
@@ -259,6 +266,11 @@ class PosControllerTest extends TestCase
         $response->assertJsonPath('orders.0.number', 'OPEN-NEW');
         $response->assertJsonPath('orders.0.customer', 'Ada Reyes');
         $response->assertJsonPath('orders.0.total_label', '₱240.00');
+        $response->assertJsonPath('orders.0.items.0.product', 'Aozi Dog');
+        $response->assertJsonPath('orders.0.items.0.variant', 'Beef');
+        $response->assertJsonPath('orders.0.items.0.quantity', 3);
+        $response->assertJsonPath('orders.0.items.0.line_total', '₱240.00');
+        $response->assertJsonPath('orders.0.items.0.preorder', true);
     }
 
     public function test_register_lists_online_orders_for_its_branch(): void
@@ -290,6 +302,7 @@ class PosControllerTest extends TestCase
         $response->assertJsonPath('orders.0.customer', 'Ada Reyes');
         $response->assertJsonPath('orders.0.status', 'placed');
         $response->assertJsonPath('statuses.0.value', 'placed');
+        $response->assertJsonPath('statuses.4.value', 'cancelled');
     }
 
     public function test_online_orders_separate_preorder_lines_from_items_ready_to_sell(): void
@@ -375,16 +388,178 @@ class PosControllerTest extends TestCase
         ]);
 
         $response = $this->actingAsEmployee()->putJson("/backoffice/pos/register/{$branch->id}/online-orders/{$order->id}", [
-            'status' => 'preparing',
+            'status' => 'cancelled',
         ]);
 
         $response->assertOk();
-        $response->assertJsonPath('order.status', 'preparing');
-        $this->assertSame('preparing', $order->fresh()->status);
+        $response->assertJsonPath('order.status', 'cancelled');
+        $this->assertSame('cancelled', $order->fresh()->status);
         $this->assertDatabaseHas('sms_messages', [
             'number' => '09171234567',
-            'body' => SmsDisclaimer::append('Hi Ada Reyes, we are preparing order '.$order->number.'.'),
+            'body' => SmsDisclaimer::append('Hi Ada Reyes, order '.$order->number.' has been cancelled.'),
         ]);
+    }
+
+    public function test_creating_a_sale_prepares_the_order_and_saves_an_open_order(): void
+    {
+        Http::preventStrayRequests();
+        config([
+            'services.semaphore.key' => 'test-key',
+            'services.semaphore.sender' => 'PLUFPETS',
+        ]);
+        Http::fake([
+            'https://api.semaphore.co/api/v4/messages' => Http::response([
+                ['message_id' => 1, 'status' => 'Queued'],
+            ]),
+        ]);
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['name' => 'Treats']))
+            ->create(['name' => 'Default', 'price' => 40]);
+        $order = PosOpenOrder::factory()->for($branch)->create([
+            'number' => 'OPEN-SHOP-1',
+            'phone' => '09171234567',
+            'status' => 'placed',
+            'saved_by_name' => 'Ada Reyes',
+            'total' => 80,
+            'items' => [[
+                'catalog_item_variant_id' => $variant->id,
+                'product_name' => 'Treats',
+                'variant_name' => 'Default',
+                'price' => '40.00',
+                'quantity' => 2,
+                'notes' => null,
+                'is_product' => true,
+                'modifiers' => [],
+            ]],
+        ]);
+
+        $response = $this->actingAsEmployee()->postJson("/backoffice/pos/register/{$branch->id}/online-orders/{$order->id}/sale");
+
+        $response->assertOk();
+        $response->assertJsonPath('order.status', 'preparing');
+        $response->assertJsonPath('open_order.name', 'OPEN-SHOP-1');
+        $this->assertSame('preparing', $order->fresh()->status);
+        $this->assertNull($order->fresh()->pos_sale_id);
+        $ticket = PosOpenOrder::query()->whereNull('status')->first();
+        $this->assertNotNull($ticket);
+        $this->assertSame($order->id, $ticket->checkout['online_order_id']);
+        $this->assertSame(2, $ticket->items[0]['quantity']);
+        $this->assertSame('Treats', $ticket->items[0]['product_name']);
+        $this->assertDatabaseCount('pos_sales', 0);
+        $this->assertDatabaseHas('sms_messages', [
+            'number' => '09171234567',
+            'body' => SmsDisclaimer::append('Hi Ada Reyes, we are preparing order OPEN-SHOP-1.'),
+        ]);
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/pos/register/{$branch->id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('openOrders', 1)
+                ->where('openOrders.0.name', 'OPEN-SHOP-1'));
+    }
+
+    public function test_creating_a_sale_rejects_a_preorder_and_a_closed_shift(): void
+    {
+        $branch = Branch::factory()->create();
+        $variant = CatalogItemVariant::factory()->create();
+        $preorder = PosOpenOrder::factory()->for($branch)->create([
+            'status' => 'placed',
+            'items' => [[
+                'catalog_item_variant_id' => $variant->id,
+                'product_name' => 'Treats',
+                'variant_name' => 'Default',
+                'price' => '40.00',
+                'quantity' => 1,
+                'notes' => 'Preorder',
+                'is_product' => true,
+                'modifiers' => [],
+            ]],
+        ]);
+
+        $this->actingAsEmployee()
+            ->postJson("/backoffice/pos/register/{$branch->id}/online-orders/{$preorder->id}/sale")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['status' => 'A pre-order cannot be turned into a sale.']);
+
+        $this->assertSame('placed', $preorder->fresh()->status);
+        $this->assertDatabaseCount('pos_open_orders', 1);
+
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $closed = Branch::factory()->create();
+        $order = PosOpenOrder::factory()->for($closed)->create([
+            'status' => 'placed',
+            'items' => [[
+                'catalog_item_variant_id' => $variant->id,
+                'product_name' => 'Treats',
+                'variant_name' => 'Default',
+                'price' => '40.00',
+                'quantity' => 1,
+                'notes' => null,
+                'is_product' => true,
+                'modifiers' => [],
+            ]],
+        ]);
+
+        $this->actingAsEmployee()
+            ->postJson("/backoffice/pos/register/{$closed->id}/online-orders/{$order->id}/sale")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['status' => 'Open a shift before parking an order.']);
+
+        $this->assertSame('placed', $order->fresh()->status);
+    }
+
+    public function test_register_rejects_a_status_that_skips_the_process(): void
+    {
+        $branch = Branch::factory()->create();
+        $order = PosOpenOrder::factory()->for($branch)->create([
+            'status' => 'placed',
+        ]);
+
+        $this->actingAsEmployee()
+            ->putJson("/backoffice/pos/register/{$branch->id}/online-orders/{$order->id}", [
+                'status' => 'preparing',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['status' => 'That status is not available for this order.']);
+
+        $this->assertSame('placed', $order->fresh()->status);
+    }
+
+    public function test_register_can_mark_a_prepared_order_out_for_delivery(): void
+    {
+        $branch = Branch::factory()->create();
+        $order = PosOpenOrder::factory()->for($branch)->create([
+            'status' => 'preparing',
+        ]);
+
+        $this->actingAsEmployee()
+            ->putJson("/backoffice/pos/register/{$branch->id}/online-orders/{$order->id}", [
+                'status' => 'out_for_delivery',
+            ])
+            ->assertOk()
+            ->assertJsonPath('order.status', 'out_for_delivery');
+
+        $this->assertSame('out_for_delivery', $order->fresh()->status);
+    }
+
+    public function test_register_cannot_cancel_a_completed_order(): void
+    {
+        $branch = Branch::factory()->create();
+        $order = PosOpenOrder::factory()->for($branch)->create([
+            'status' => 'completed',
+        ]);
+
+        $this->actingAsEmployee()
+            ->putJson("/backoffice/pos/register/{$branch->id}/online-orders/{$order->id}", [
+                'status' => 'cancelled',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['status' => 'That status is not available for this order.']);
+
+        $this->assertSame('completed', $order->fresh()->status);
     }
 
     public function test_register_cannot_update_another_branch_order(): void

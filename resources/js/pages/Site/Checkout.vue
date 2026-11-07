@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import InstructionPhoto from '../../components/InstructionPhoto.vue';
 import SiteLayout from '../../layouts/SiteLayout.vue';
 
 defineOptions({
@@ -23,7 +24,7 @@ const props = defineProps({
 });
 
 const cart = ref([]);
-const quote = ref(null);
+const priced = ref(null);
 const quoteError = ref('');
 const voucherDraft = ref('');
 const appliedVoucher = ref('');
@@ -50,6 +51,29 @@ const form = useForm({
 const selectedDelivery = computed(() => props.deliveryMethods.find((method) => method.id === Number(form.delivery_method_id)) ?? null);
 const selectedPayment = computed(() => props.paymentMethods.find((method) => method.id === Number(form.payment_method_id)) ?? null);
 const asksForAddress = computed(() => Boolean(selectedDelivery.value?.asks_for_address));
+
+function peso(amount) {
+    const value = Number.isFinite(Number(amount)) ? Number(amount) : 0;
+
+    return `₱${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const summary = computed(() => {
+    const cartSubtotal = cart.value.reduce((sum, line) => sum + Number(line.price) * Number(line.quantity), 0);
+    const subtotal = priced.value ? Number(priced.value.subtotal) : cartSubtotal;
+    const discount = appliedVoucher.value && priced.value ? Number(priced.value.discount) : 0;
+    const deliveryFee = Number(selectedDelivery.value?.fee ?? 0);
+    const paymentFee = Number(selectedPayment.value?.fee ?? 0);
+    const total = Math.max(0, subtotal + deliveryFee + paymentFee - discount);
+
+    return {
+        subtotal_label: peso(subtotal),
+        delivery_fee_label: peso(deliveryFee),
+        payment_fee_label: peso(paymentFee),
+        discount_label: peso(discount),
+        total_label: peso(total),
+    };
+});
 const mapsHref = computed(() => {
     if (form.latitude && form.longitude) {
         return `https://www.google.com/maps?q=${encodeURIComponent(`${form.latitude},${form.longitude}`)}`;
@@ -94,8 +118,6 @@ async function refreshQuote() {
     quoteError.value = '';
 
     if (!props.branch || form.items.length === 0 || !form.delivery_method_id || !form.payment_method_id) {
-        quote.value = null;
-
         return;
     }
 
@@ -121,8 +143,6 @@ async function refreshQuote() {
     }
 
     if (!response.ok) {
-        quote.value = null;
-
         if (payload.errors?.voucher_code?.[0]) {
             voucherError.value = payload.errors.voucher_code[0];
             voucherMessage.value = '';
@@ -138,7 +158,10 @@ async function refreshQuote() {
         return;
     }
 
-    quote.value = payload;
+    priced.value = {
+        subtotal: Number(payload.subtotal),
+        discount: Number(payload.discount),
+    };
 }
 
 function useMyLocation() {
@@ -200,6 +223,14 @@ async function applyVoucher() {
     }
 }
 
+function removeVoucher() {
+    appliedVoucher.value = '';
+    voucherDraft.value = '';
+    voucherMessage.value = '';
+    voucherError.value = '';
+    form.clearErrors('voucher_code');
+}
+
 function placeOrder() {
     form.branch_id = props.branch?.id ?? null;
     form.voucher_code = appliedVoucher.value;
@@ -222,14 +253,13 @@ watch(voucherDraft, (value) => {
 });
 
 watch(
-    () => [form.delivery_method_id, form.payment_method_id, appliedVoucher.value, form.items],
+    () => `${appliedVoucher.value}|${JSON.stringify(form.items)}|${form.delivery_method_id && form.payment_method_id ? 1 : 0}`,
     () => {
         clearTimeout(quoteTimer);
         quoteTimer = setTimeout(() => {
             refreshQuote();
         }, 300);
     },
-    { deep: true, immediate: true },
 );
 </script>
 
@@ -264,12 +294,18 @@ watch(
                         <span class="font-medium text-ember">{{ line.price_label }}</span>
                     </li>
                 </ul>
-                <div v-if="quote" class="flex flex-col gap-1 border-t border-black/10 pt-3 text-sm">
-                    <p class="flex justify-between"><span>Subtotal</span><span>{{ quote.subtotal_label }}</span></p>
-                    <p class="flex justify-between"><span>Delivery fee</span><span>{{ quote.delivery_fee_label }}</span></p>
-                    <p class="flex justify-between"><span>Payment fee</span><span>{{ quote.payment_fee_label }}</span></p>
-                    <p class="flex justify-between"><span>Voucher</span><span>{{ quote.discount_label }}</span></p>
-                    <p class="flex justify-between pt-1 text-base font-semibold"><span>Total</span><span>{{ quote.total_label }}</span></p>
+                <div class="flex flex-col gap-1 border-t border-black/10 pt-3 text-sm">
+                    <p class="flex justify-between"><span>Subtotal</span><span>{{ summary.subtotal_label }}</span></p>
+                    <p class="flex justify-between"><span>Delivery fee</span><span>{{ summary.delivery_fee_label }}</span></p>
+                    <p class="flex justify-between"><span>Payment fee</span><span>{{ summary.payment_fee_label }}</span></p>
+                    <p v-if="appliedVoucher" class="flex items-center justify-between gap-3">
+                        <span>Voucher {{ appliedVoucher }}</span>
+                        <span class="flex items-center gap-3">
+                            <span>-{{ summary.discount_label }}</span>
+                            <button class="font-medium text-danger" type="button" @click="removeVoucher">Remove</button>
+                        </span>
+                    </p>
+                    <p class="flex justify-between pt-1 text-base font-semibold"><span>Total</span><span>{{ summary.total_label }}</span></p>
                 </div>
             </section>
 
@@ -301,9 +337,15 @@ watch(
                         </button>
                     </div>
                     <p v-if="deliveryMethods.length === 0" class="text-sm text-black/60">No delivery methods.</p>
-                    <p v-if="selectedDelivery?.instructions" class="rounded-xl border border-navy/20 bg-navy/10 px-4 py-3 text-sm" role="alert">
-                        {{ selectedDelivery.instructions }}
-                    </p>
+                    <div v-if="selectedDelivery?.instructions || selectedDelivery?.instruction_images?.length" class="flex flex-col gap-3 rounded-xl border border-navy/20 bg-navy/10 px-4 py-3 text-sm" role="alert">
+                        <p v-if="selectedDelivery.instructions">{{ selectedDelivery.instructions }}</p>
+                        <InstructionPhoto
+                            v-for="(image, index) in selectedDelivery.instruction_images"
+                            :key="image"
+                            :src="image"
+                            :alt="`Delivery instruction photo ${index + 1}`"
+                        />
+                    </div>
                     <p v-if="form.errors.delivery_method_id" class="text-sm text-danger">{{ form.errors.delivery_method_id }}</p>
                 </fieldset>
 
@@ -356,9 +398,15 @@ watch(
                         </button>
                     </div>
                     <p v-if="paymentMethods.length === 0" class="text-sm text-black/60">No payment methods.</p>
-                    <p v-if="selectedPayment?.instructions" class="rounded-xl border border-navy/20 bg-navy/10 px-4 py-3 text-sm" role="alert">
-                        {{ selectedPayment.instructions }}
-                    </p>
+                    <div v-if="selectedPayment?.instructions || selectedPayment?.instruction_images?.length" class="flex flex-col gap-3 rounded-xl border border-navy/20 bg-navy/10 px-4 py-3 text-sm" role="alert">
+                        <p v-if="selectedPayment.instructions">{{ selectedPayment.instructions }}</p>
+                        <InstructionPhoto
+                            v-for="(image, index) in selectedPayment.instruction_images"
+                            :key="image"
+                            :src="image"
+                            :alt="`Payment instruction photo ${index + 1}`"
+                        />
+                    </div>
                     <p v-if="form.errors.payment_method_id" class="text-sm text-danger">{{ form.errors.payment_method_id }}</p>
                 </fieldset>
 

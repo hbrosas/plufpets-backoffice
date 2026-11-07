@@ -53,4 +53,16 @@ class PayrollFilingFactory extends Factory
             'reason' => 'Boarding',
         ]);
     }
+
+    public function cashAdvance(): static
+    {
+        return $this->state(fn (): array => [
+            'type' => PayrollFilingType::CashAdvance,
+            'ends_on' => null,
+            'hours' => null,
+            'nights' => null,
+            'amount' => '500.00',
+            'reason' => 'Emergency',
+        ]);
+    }
 }

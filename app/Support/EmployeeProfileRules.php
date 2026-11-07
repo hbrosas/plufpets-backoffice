@@ -12,6 +12,40 @@ use Illuminate\Validation\Rule;
 class EmployeeProfileRules
 {
     /**
+     * @return list<string>
+     */
+    public static function personalFields(): array
+    {
+        return [
+            'first_name',
+            'middle_name',
+            'last_name',
+            'gender',
+            'civil_status',
+            'address',
+            'mobile',
+            'email',
+            'tin',
+            'sss',
+            'philhealth',
+            'pagibig',
+            'job_title',
+            'employment_status',
+            'emergency_contact_name',
+            'emergency_contact_relationship',
+            'emergency_contact_phone',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function personal(): array
+    {
+        return array_intersect_key(self::for(), array_flip(self::personalFields()));
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function for(): array

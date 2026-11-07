@@ -6,6 +6,7 @@ use App\Http\Requests\Concerns\PreparesBranchInstructions;
 use App\Support\PaymentMethodRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class StorePaymentMethodRequest extends FormRequest
 {
@@ -32,6 +33,13 @@ class StorePaymentMethodRequest extends FormRequest
         return PaymentMethodRules::messages();
     }
 
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $this->guardInstructionImageLimit($validator, null);
+        });
+    }
+
     protected function prepareForValidation(): void
     {
         $instructions = $this->string('instructions')->trim()->toString();
@@ -46,5 +54,6 @@ class StorePaymentMethodRequest extends FormRequest
             'is_cash' => $this->boolean('is_cash'),
             'is_active' => $this->boolean('is_active'),
         ]);
+        $this->prepareInstructionImages();
     }
 }

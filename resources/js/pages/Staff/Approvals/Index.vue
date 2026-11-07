@@ -39,24 +39,20 @@ function review(filing, status) {
 </script>
 
 <template>
-    <Head title="For Approval" />
+    <Head title="Filed Requests" />
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div>
-            <h2 class="text-lg font-medium">For Approval</h2>
-            <p class="text-sm text-ink/60 dark:text-foam/60">Leave, overtime, and overnight filed by employees.</p>
-        </div>
-
         <p v-if="flash.status" class="rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
             {{ flash.status }}
         </p>
 
-        <div class="flex flex-wrap gap-2" role="tablist" aria-label="Filing status">
+        <Teleport defer to="#admin-header-tabs">
+        <div class="flex w-max gap-2" role="tablist" aria-label="Filing status">
             <button
                 v-for="tab in tabs"
                 :id="`approval-tab-${tab.value}`"
                 :key="tab.value"
-                class="h-10 rounded-xl px-4 text-sm font-medium"
+                class="h-10 shrink-0 rounded-xl px-4 text-sm font-medium whitespace-nowrap"
                 :class="filters.tab === tab.value ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
                 type="button"
                 role="tab"
@@ -66,6 +62,7 @@ function review(filing, status) {
                 {{ tab.label }}
             </button>
         </div>
+        </Teleport>
 
         <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5" role="tabpanel" :aria-labelledby="`approval-tab-${filters.tab}`">
             <table class="w-full min-w-[48rem] text-left text-sm">

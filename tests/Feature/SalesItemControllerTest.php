@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Branch;
+use App\Models\CatalogItem;
+use App\Models\CatalogItemVariant;
 use App\Models\PosSale;
 use App\Models\PosSaleItem;
 use App\Models\PosShift;
@@ -43,16 +45,30 @@ class SalesItemControllerTest extends TestCase
             'quantity' => 1,
             'line_total' => 550,
         ]);
+        $service = CatalogItemVariant::factory()->for(CatalogItem::factory()->service())->create(['name' => 'Default']);
+        PosSaleItem::factory()->create([
+            'pos_sale_id' => $sale->id,
+            'catalog_item_variant_id' => $service->id,
+            'product_name' => 'Dematting',
+            'variant_name' => 'Default',
+            'quantity' => 1,
+            'line_total' => 0,
+        ]);
 
         $response = $this->actingAsEmployee()->get('/backoffice/sales/items');
 
         $response->assertOk();
         $response->assertInertia(fn (Assert $page) => $page
             ->component('Sales/Items/Index')
-            ->has('items', 1)
-            ->where('items.0.product', 'The Full Pluf')
-            ->where('items.0.variant', 'Small')
-            ->where('items.0.quantity', 3)
-            ->where('items.0.total', '₱1,650.00'));
+            ->has('products', 1)
+            ->where('products.0.product', 'The Full Pluf')
+            ->where('products.0.variant', 'Small')
+            ->where('products.0.quantity', 3)
+            ->where('products.0.total', '₱1,650.00')
+            ->has('services', 1)
+            ->where('services.0.product', 'Dematting')
+            ->where('services.0.variant', 'Default')
+            ->where('services.0.quantity', 1)
+            ->where('services.0.total', '₱0.00'));
     }
 }

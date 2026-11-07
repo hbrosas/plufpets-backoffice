@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>Payroll</title>
     <style>
-        body { font-family: DejaVu Sans, sans-serif; color: #14231f; font-size: 12px; }
+        body { font-family: Calibri, "DejaVu Sans", sans-serif; color: #14231f; font-size: 12px; }
         h1 { font-size: 20px; letter-spacing: 0.14em; text-align: center; margin: 0 0 16px; }
         .letterhead { text-align: center; margin: 0 0 16px; }
         .letterhead img { height: 56px; margin: 0 0 6px; }
@@ -18,6 +18,7 @@
         td.side { width: 50%; border: 0; padding: 0 8px 0 0; vertical-align: top; }
         td.side-right { width: 50%; border: 0; padding: 0 0 0 8px; vertical-align: top; }
         td.side table, td.side-right table { margin: 0; }
+        .section { font-size: 14px; font-weight: bold; margin: 0 0 6px; }
         .summary { width: 50%; margin-left: auto; }
         .net td { font-weight: bold; }
     </style>
@@ -61,7 +62,7 @@
                     </tr>
                     <tr>
                         <th>No. of days worked</th>
-                        <td>{{ $payroll['days_worked'] }}</td>
+                        <td>{{ $payroll['days_worked_with_holidays'] ?? $payroll['days_worked'] }}</td>
                     </tr>
                 </table>
             </td>
@@ -88,45 +89,60 @@
         </tr>
     </table>
 
-    <table>
+    <table class="split">
         <tr>
-            <th>Earnings</th>
-            <th class="num">Amount</th>
-            <th class="num">Unit</th>
-            <th class="num">Subtotal</th>
+            <td class="side">
+                <p class="section">Earnings</p>
+                <table>
+                    <tr>
+                        <th></th>
+                        <th class="num">Amount</th>
+                        <th class="num">Unit</th>
+                        <th class="num">Subtotal</th>
+                    </tr>
+                    @php $previousGroup = null; @endphp
+                    @foreach ($payroll['earnings'] as $line)
+                        @if ((float) ($line['unit'] ?? 1) == 0)
+                            @continue
+                        @endif
+                        @if (! empty($line['group']) && $line['group'] !== $previousGroup)
+                            <tr>
+                                <td colspan="4">{{ $line['group'] }}</td>
+                            </tr>
+                        @endif
+                        <tr>
+                            <td @if (! empty($line['group'])) style="padding-left: 18px;" @endif>{{ $line['label'] ?? $line['name'] }}</td>
+                            <td class="num">{{ number_format((float) ($line['rate'] ?? $line['amount']), 2) }}</td>
+                            <td class="num">{{ number_format((float) ($line['unit'] ?? 1), 2) }}</td>
+                            <td class="num">{{ number_format((float) $line['amount'], 2) }}</td>
+                        </tr>
+                        @php $previousGroup = $line['group'] ?? null; @endphp
+                    @endforeach
+                </table>
+            </td>
+            <td class="side-right">
+                <p class="section">Deductions</p>
+                <table>
+                    <tr>
+                        <th></th>
+                        <th class="num">Amount</th>
+                        <th class="num">Unit</th>
+                        <th class="num">Subtotal</th>
+                    </tr>
+                    @foreach ($payroll['deductions'] as $line)
+                        @if ((float) ($line['unit'] ?? 1) == 0)
+                            @continue
+                        @endif
+                        <tr>
+                            <td>{{ $line['label'] ?? $line['name'] }}</td>
+                            <td class="num">{{ number_format((float) ($line['rate'] ?? $line['amount']), 2) }}</td>
+                            <td class="num">{{ number_format((float) ($line['unit'] ?? 1), 2) }}</td>
+                            <td class="num">{{ number_format((float) $line['amount'], 2) }}</td>
+                        </tr>
+                    @endforeach
+                </table>
+            </td>
         </tr>
-        @php $previousGroup = null; @endphp
-        @foreach ($payroll['earnings'] as $line)
-            @if (! empty($line['group']) && $line['group'] !== $previousGroup)
-                <tr>
-                    <td colspan="4">{{ $line['group'] }}</td>
-                </tr>
-            @endif
-            <tr>
-                <td @if (! empty($line['group'])) style="padding-left: 18px;" @endif>{{ $line['label'] ?? $line['name'] }}</td>
-                <td class="num">{{ number_format((float) ($line['rate'] ?? $line['amount']), 2) }}</td>
-                <td class="num">{{ number_format((float) ($line['unit'] ?? 1), 2) }}</td>
-                <td class="num">{{ number_format((float) $line['amount'], 2) }}</td>
-            </tr>
-            @php $previousGroup = $line['group'] ?? null; @endphp
-        @endforeach
-    </table>
-
-    <table>
-        <tr>
-            <th>Deductions</th>
-            <th class="num">Amount</th>
-            <th class="num">Unit</th>
-            <th class="num">Subtotal</th>
-        </tr>
-        @foreach ($payroll['deductions'] as $line)
-            <tr>
-                <td>{{ $line['label'] ?? $line['name'] }}</td>
-                <td class="num">{{ number_format((float) ($line['rate'] ?? $line['amount']), 2) }}</td>
-                <td class="num">{{ number_format((float) ($line['unit'] ?? 1), 2) }}</td>
-                <td class="num">{{ number_format((float) $line['amount'], 2) }}</td>
-            </tr>
-        @endforeach
     </table>
 
     <table class="summary">
@@ -145,12 +161,6 @@
             <td>Net pay</td>
             <td class="num">{{ \App\Support\Peso::format($payroll['net']) }}</td>
         </tr>
-        @foreach ($payroll['employer_shares'] as $line)
-            <tr>
-                <td>{{ $line['name'] }} employer share</td>
-                <td class="num">{{ \App\Support\Peso::format($line['amount']) }}</td>
-            </tr>
-        @endforeach
     </table>
 </body>
 </html>

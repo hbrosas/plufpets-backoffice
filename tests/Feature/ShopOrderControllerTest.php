@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Enums\CommissionRole;
+use App\Enums\InventoryHold;
 use App\Models\Branch;
+use App\Models\BranchInventory;
 use App\Models\Brand;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
@@ -72,6 +74,46 @@ class ShopOrderControllerTest extends TestCase
         $this->assertDatabaseHas('sms_messages', [
             'number' => '09171234567',
             'body' => SmsDisclaimer::append('Hi Ada Reyes, we are preparing order '.$order->number.'.'),
+        ]);
+    }
+
+    public function test_cancelling_an_order_releases_its_held_stock(): void
+    {
+        $variant = CatalogItemVariant::factory()->create();
+        $order = PosOpenOrder::factory()->create([
+            'status' => 'placed',
+            'inventory_hold' => InventoryHold::Held,
+            'items' => [[
+                'catalog_item_variant_id' => $variant->id,
+                'product_name' => 'Treats',
+                'variant_name' => 'Default',
+                'price' => '40.00',
+                'quantity' => 2,
+                'notes' => null,
+                'is_product' => true,
+                'modifiers' => [],
+            ]],
+        ]);
+        BranchInventory::factory()->create([
+            'branch_id' => $order->branch_id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+            'reserved' => 2,
+        ]);
+
+        $this->actingAsEmployee()
+            ->from(route('shop.orders.index'))
+            ->put('/backoffice/shop/orders/'.$order->id, [
+                'status' => 'cancelled',
+            ])
+            ->assertRedirect(route('shop.orders.index'));
+
+        $this->assertSame('cancelled', $order->fresh()->status);
+        $this->assertSame(InventoryHold::Released, $order->fresh()->inventory_hold);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+            'reserved' => 0,
         ]);
     }
 

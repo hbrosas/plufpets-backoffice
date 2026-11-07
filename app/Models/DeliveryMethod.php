@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Support\InstructionImages;
 use Database\Factories\DeliveryMethodFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'fee', 'notes', 'instructions_for_all_branches', 'asks_for_address', 'is_active'])]
+#[Fillable(['name', 'fee', 'notes', 'instructions_for_all_branches', 'instruction_images', 'asks_for_address', 'is_active'])]
 class DeliveryMethod extends Model
 {
     /** @use HasFactory<DeliveryMethodFactory> */
@@ -30,6 +31,7 @@ class DeliveryMethod extends Model
     {
         return [
             'instructions_for_all_branches' => 'boolean',
+            'instruction_images' => 'array',
             'fee' => 'decimal:2',
             'asks_for_address' => 'boolean',
             'is_active' => 'boolean',
@@ -55,6 +57,22 @@ class DeliveryMethod extends Model
         }
 
         return $this->present($this->branchInstructions->firstWhere('branch_id', $branchId)?->instructions);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function instructionImageUrls(?int $branchId): array
+    {
+        if ($this->instructions_for_all_branches || $branchId === null) {
+            return InstructionImages::urls($this->instruction_images);
+        }
+
+        if (! $this->relationLoaded('branchInstructions')) {
+            $this->load('branchInstructions');
+        }
+
+        return InstructionImages::urls($this->branchInstructions->firstWhere('branch_id', $branchId)?->images);
     }
 
     private function present(mixed $instructions): ?string

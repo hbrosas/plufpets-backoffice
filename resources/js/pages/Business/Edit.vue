@@ -83,13 +83,6 @@ function submit() {
     <Head title="Business Information" />
 
     <form class="mx-auto flex w-full max-w-2xl flex-col gap-6" @submit.prevent="submit">
-        <div class="flex flex-col gap-1">
-            <h1 class="text-2xl font-medium">Business Information</h1>
-            <p class="text-sm text-ink/70 dark:text-foam/70">
-                Payroll, purchase orders, and other printed documents use this name, address, and logo.
-            </p>
-        </div>
-
         <div class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-6 dark:border-white/10 dark:bg-white/5">
             <div class="flex flex-col gap-2">
                 <label class="text-sm font-medium" for="business-name">Business name</label>

@@ -50,6 +50,7 @@ class HomeController extends Controller
                     'fee' => $method->fee === null ? '0.00' : $method->fee,
                     'fee_label' => Peso::format($method->fee ?? 0),
                     'instructions' => $method->instructionFor($branch?->id),
+                    'instruction_images' => $method->instructionImageUrls($branch?->id),
                     'asks_for_address' => $method->asks_for_address,
                 ]),
             'paymentMethods' => PaymentMethod::query()
@@ -64,6 +65,7 @@ class HomeController extends Controller
                     'fee' => $method->fee === null ? '0.00' : $method->fee,
                     'fee_label' => Peso::format($method->fee ?? 0),
                     'instructions' => $method->instructionFor($branch?->id),
+                    'instruction_images' => $method->instructionImageUrls($branch?->id),
                 ]),
         ]);
     }
@@ -78,6 +80,8 @@ class HomeController extends Controller
         ]), $request->validated('items'));
 
         return response()->json([
+            'subtotal' => $priced['subtotal'],
+            'discount' => $priced['discount'],
             'subtotal_label' => Peso::format($priced['subtotal']),
             'delivery_fee_label' => Peso::format($priced['delivery_fee']),
             'payment_fee_label' => Peso::format($priced['payment_fee']),
@@ -199,11 +203,13 @@ class HomeController extends Controller
                 'name' => $delivery['name'] ?? null,
                 'fee_label' => Peso::format($delivery['fee'] ?? 0),
                 'instructions' => $this->present($delivery['instructions'] ?? null),
+                'instruction_images' => $this->imageUrls($delivery['instruction_images'] ?? null),
             ],
             'payment' => [
                 'name' => $payment['name'] ?? null,
                 'fee_label' => Peso::format($payment['fee'] ?? 0),
                 'instructions' => $this->present($payment['instructions'] ?? null),
+                'instruction_images' => $this->imageUrls($payment['instruction_images'] ?? null),
             ],
             'address' => $address === null ? null : collect([
                 $address['line_1'] ?? null,
@@ -223,5 +229,17 @@ class HomeController extends Controller
         $text = trim((string) $value);
 
         return $text === '' ? null : $text;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function imageUrls(mixed $images): array
+    {
+        if (! is_array($images)) {
+            return [];
+        }
+
+        return array_values(array_filter($images, fn (mixed $url): bool => is_string($url) && $url !== ''));
     }
 }

@@ -28,6 +28,7 @@ class PosOpenOrderRules
             'items.*.assigned_employee_ids.*' => ['integer', 'distinct', 'exists:employees,id'],
             'items.*.assisted_employee_ids' => ['nullable', 'array'],
             'items.*.assisted_employee_ids.*' => ['integer', 'distinct', 'exists:employees,id'],
+            'items.*.is_free' => ['sometimes', 'boolean'],
         ];
     }
 

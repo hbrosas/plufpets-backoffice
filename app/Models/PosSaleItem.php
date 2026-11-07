@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'quantity',
     'unit_price',
     'line_total',
+    'is_free',
 ])]
 class PosSaleItem extends Model
 {
@@ -35,6 +36,7 @@ class PosSaleItem extends Model
             'quantity' => 'integer',
             'unit_price' => 'decimal:2',
             'line_total' => 'decimal:2',
+            'is_free' => 'boolean',
             'modifiers' => 'array',
         ];
     }

@@ -7,8 +7,10 @@ use App\Http\Requests\GeneratePayrollRequest;
 use App\Models\Business;
 use App\Models\Employee;
 use App\Models\EmployeePayroll;
+use App\Models\PayrollFiling;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
 class EmployeePayrollController extends Controller
@@ -27,22 +29,32 @@ class EmployeePayrollController extends Controller
         $profile = $employee->profile()->with('payLines')->firstOrFail();
         $payroll = $generatePayroll->handle($employee, $profile, $request->validated());
 
-        EmployeePayroll::query()->create([
-            'employee_id' => $employee->id,
-            'employee_name' => $employee->name,
-            'employee_number' => $employee->employee_number,
-            'period_start' => $payroll['period_start'],
-            'period_end' => $payroll['period_end'],
-            'net' => $payroll['net'],
-            'snapshot' => [
+        DB::transaction(function () use ($employee, $profile, $payroll): void {
+            $record = EmployeePayroll::query()->create([
+                'employee_id' => $employee->id,
                 'employee_name' => $employee->name,
                 'employee_number' => $employee->employee_number,
-                'job_title' => $profile->job_title,
-                'employment_status' => $profile->employment_status?->label(),
-                'date_hired' => $employee->start_date->toDateString(),
-                'payroll' => $payroll,
-            ],
-        ]);
+                'period_start' => $payroll['period_start'],
+                'period_end' => $payroll['period_end'],
+                'net' => $payroll['net'],
+                'snapshot' => [
+                    'employee_name' => $employee->name,
+                    'employee_number' => $employee->employee_number,
+                    'job_title' => $profile->job_title,
+                    'employment_status' => $profile->employment_status?->label(),
+                    'date_hired' => $employee->start_date->toDateString(),
+                    'payroll' => $payroll,
+                ],
+            ]);
+
+            if ($payroll['cash_advance_ids'] !== []) {
+                PayrollFiling::query()
+                    ->where('employee_id', $employee->id)
+                    ->whereIn('id', $payroll['cash_advance_ids'])
+                    ->whereNull('deducted_payroll_id')
+                    ->update(['deducted_payroll_id' => $record->id]);
+            }
+        });
 
         return redirect()
             ->route('staff.record.show', $this->query($employee, $request))

@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Actions\RecordPosSale;
+use App\Actions\SendShopOrderText;
+use App\Actions\ShopOrderStock;
 use App\Enums\PrinterRole;
+use App\Enums\ShopOrderStatus;
 use App\Http\Requests\StorePosSaleRequest;
 use App\Models\Branch;
 use App\Models\PosOpenOrder;
@@ -17,13 +20,15 @@ use App\Support\Peso;
 use App\Support\SaleReceipt;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Response;
 
 class PosSaleController extends Controller
 {
-    public function preview(StorePosSaleRequest $request, Branch $branch, RecordPosSale $recordPosSale): JsonResponse
+    public function preview(StorePosSaleRequest $request, Branch $branch, RecordPosSale $recordPosSale, ShopOrderStock $shopOrderStock): JsonResponse
     {
+        $openOrder = $this->onlineOrderForSale($this->shopOrder($branch, $request->validated('pos_open_order_id')));
         $quote = $recordPosSale->quote(
             $this->openShift($branch),
             $request->safe()->only([
@@ -33,6 +38,7 @@ class PosSaleController extends Controller
                 'delivery_fee',
                 'tax_fee_ids',
             ]),
+            $shopOrderStock->coveredQuantities($openOrder),
         );
         $printer = Printer::defaultFor(PrinterRole::Receipt, $branch);
         $width = $printer !== null && $printer->paper_width_mm <= 58 ? 32 : 48;
@@ -57,35 +63,48 @@ class PosSaleController extends Controller
         ]);
     }
 
-    public function store(StorePosSaleRequest $request, Branch $branch, RecordPosSale $recordPosSale, PosController $posController): JsonResponse|RedirectResponse|Response
+    public function store(StorePosSaleRequest $request, Branch $branch, RecordPosSale $recordPosSale, PosController $posController, SendShopOrderText $sendShopOrderText): JsonResponse|RedirectResponse|Response
     {
         $employee = EmployeeSession::current();
-        $sale = $recordPosSale->handle(
-            $this->openShift($branch),
-            $request->safe()->only([
-                'items',
-                'payments',
-                'delivery_method_id',
-                'delivery_fee',
-                'tax_fee_ids',
-                'number',
-            ]),
-            $employee ?? ['employee_number' => '', 'name' => ''],
-        );
+        $shopOrder = null;
+        $sale = DB::transaction(function () use ($request, $branch, $recordPosSale, $employee, &$shopOrder): PosSale {
+            $ticket = $this->shopOrder($branch, $request->validated('pos_open_order_id'));
+            $onlineOrder = $this->onlineOrderForSale($ticket);
+            $alreadyPreparing = $onlineOrder?->status === ShopOrderStatus::Preparing->value;
+            $sale = $recordPosSale->handle(
+                $this->openShift($branch),
+                $request->safe()->only([
+                    'items',
+                    'payments',
+                    'delivery_method_id',
+                    'delivery_fee',
+                    'tax_fee_ids',
+                    'number',
+                ]),
+                $employee ?? ['employee_number' => '', 'name' => ''],
+                $onlineOrder ?? $ticket,
+            );
 
-        $openOrderId = $request->validated('pos_open_order_id');
+            if ($onlineOrder instanceof PosOpenOrder) {
+                $onlineOrder->update([
+                    'pos_sale_id' => $sale->id,
+                    'status' => ShopOrderStatus::Preparing->value,
+                ]);
 
-        if ($openOrderId !== null) {
-            $openOrder = PosOpenOrder::query()
-                ->where('branch_id', $branch->id)
-                ->whereKey($openOrderId)
-                ->first();
-
-            if ($openOrder instanceof PosOpenOrder && is_string($openOrder->status) && $openOrder->status !== '') {
-                $openOrder->update(['pos_sale_id' => $sale->id]);
-            } elseif ($openOrder instanceof PosOpenOrder) {
-                $openOrder->delete();
+                if (! $alreadyPreparing) {
+                    $shopOrder = $onlineOrder;
+                }
             }
+
+            if ($ticket instanceof PosOpenOrder && (! is_string($ticket->status) || $ticket->status === '')) {
+                $ticket->delete();
+            }
+
+            return $sale;
+        });
+
+        if ($shopOrder instanceof PosOpenOrder) {
+            $sendShopOrderText->handle($shopOrder->fresh(['branch']) ?? $shopOrder);
         }
 
         $notice = [
@@ -128,7 +147,7 @@ class PosSaleController extends Controller
             'number' => $sale->number,
             'items' => $sale->items
                 ->map(fn (PosSaleItem $item): array => [
-                    'name' => trim($item->product_name.' '.$item->variant_name),
+                    'name' => trim($item->product_name.' '.$item->variant_name.($item->is_free ? ' Free' : '')),
                     'quantity' => $item->quantity,
                     'subtotal' => Peso::format($item->line_total),
                 ])
@@ -149,6 +168,47 @@ class PosSaleController extends Controller
                 ])
                 ->all(),
         ], $width);
+    }
+
+    private function onlineOrderForSale(?PosOpenOrder $ticket): ?PosOpenOrder
+    {
+        if (! $ticket instanceof PosOpenOrder) {
+            return null;
+        }
+
+        $checkout = is_array($ticket->checkout) ? $ticket->checkout : [];
+        $linkedId = $checkout['online_order_id'] ?? null;
+
+        if (is_numeric($linkedId)) {
+            $linked = PosOpenOrder::query()
+                ->where('branch_id', $ticket->branch_id)
+                ->whereKey((int) $linkedId)
+                ->first();
+
+            if ($linked instanceof PosOpenOrder && is_string($linked->status) && $linked->status !== '') {
+                return $linked;
+            }
+        }
+
+        if (is_string($ticket->status) && $ticket->status !== '') {
+            return $ticket;
+        }
+
+        return null;
+    }
+
+    private function shopOrder(Branch $branch, mixed $openOrderId): ?PosOpenOrder
+    {
+        if ($openOrderId === null) {
+            return null;
+        }
+
+        $order = PosOpenOrder::query()
+            ->where('branch_id', $branch->id)
+            ->whereKey($openOrderId)
+            ->first();
+
+        return $order instanceof PosOpenOrder ? $order : null;
     }
 
     private function openShift(Branch $branch): PosShift

@@ -7,6 +7,7 @@ use App\Enums\PayBasis;
 use App\Models\CatalogItem;
 use App\Models\Employee;
 use App\Models\EmployeePayLine;
+use App\Models\EmployeePayroll;
 use App\Models\EmployeeServiceCommission;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -131,7 +132,37 @@ class EmployeeProfileControllerTest extends TestCase
             ->where('profile.government_lines', [])
             ->where('services.0.name', 'Full groom')
             ->has('payBases', 2)
-            ->has('employmentStatuses', 4));
+            ->has('employmentStatuses', 4)
+            ->has('finalizedPayrolls', 0));
+    }
+
+    public function test_record_page_lists_only_that_employees_pay_slips(): void
+    {
+        $employee = Employee::query()->where('employee_number', '10001')->firstOrFail();
+        $employee->profile()->create(['pay_basis' => 'month']);
+        $slip = EmployeePayroll::factory()->create([
+            'employee_id' => $employee->id,
+            'employee_name' => $employee->name,
+            'employee_number' => $employee->employee_number,
+            'period_start' => '2026-10-01',
+            'period_end' => '2026-10-15',
+            'net' => '1000.00',
+        ]);
+        $other = Employee::factory()->create();
+        EmployeePayroll::factory()->create([
+            'employee_id' => $other->id,
+            'net' => '50.00',
+        ]);
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/staff/{$employee->id}/record")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('finalizedPayrolls', 1)
+                ->where('finalizedPayrolls.0.id', $slip->id)
+                ->where('finalizedPayrolls.0.period_start', '2026-10-01')
+                ->where('finalizedPayrolls.0.period_end', '2026-10-15')
+                ->where('finalizedPayrolls.0.net', '1000.00'));
     }
 
     public function test_missing_profile_is_not_found(): void

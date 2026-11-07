@@ -5,11 +5,15 @@ namespace App\Actions;
 use App\Enums\HolidayType;
 use App\Enums\PayBasis;
 use App\Enums\PayLineKind;
+use App\Enums\PayrollFilingStatus;
+use App\Enums\PayrollFilingType;
 use App\Models\Employee;
 use App\Models\EmployeeProfile;
 use App\Models\Holiday;
+use App\Models\PayrollFiling;
 use App\Models\PosSaleItemCommission;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class GeneratePayroll
 {
@@ -111,7 +115,13 @@ class GeneratePayroll
         }
 
         $basicDaily = $compensationDaily;
-        $holiday = $this->holidayEarning($input['period_start'], $input['period_end'], $workedIds, $basicDaily);
+        $holidays = Holiday::query()
+            ->whereDate('date', '>=', $input['period_start'])
+            ->whereDate('date', '<=', $input['period_end'])
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+        $holiday = $this->holidayEarning($holidays, $workedIds, $basicDaily);
 
         if ($holiday !== null) {
             $insertAt = $basicIndex === null ? count($compensation) : $basicIndex + 1;
@@ -222,16 +232,34 @@ class GeneratePayroll
             $deductionCents += $amountCents;
         }
 
+        $cashAdvanceIds = [];
+
+        foreach ($this->cashAdvances($employee, $input['period_end']) as $filing) {
+            $amountCents = $this->cents((float) $filing->amount);
+            $amount = $this->fromCents($amountCents);
+            $deductions[] = $this->earning(
+                filled($filing->reason) ? 'Cash advance — '.$filing->reason : 'Cash advance',
+                'cash_advance',
+                $amount,
+                '1.00',
+                $amount,
+            );
+            $deductionCents += $amountCents;
+            $cashAdvanceIds[] = $filing->id;
+        }
+
         return [
             'period_start' => $input['period_start'],
             'period_end' => $input['period_end'],
             'days_worked' => (string) $input['days_worked'],
+            'days_worked_with_holidays' => $this->daysWorkedWithHolidays($days, count($workedIds)),
             'late_hours' => (string) $input['late_hours'],
             'overtime_hours' => (string) $input['overtime_hours'],
             'overnight_nights' => (string) $nights,
             'deduct_government' => $deductGovernment,
             'worked_holiday_ids' => $workedIds,
             'adjustments' => $adjustments,
+            'cash_advance_ids' => $cashAdvanceIds,
             'pay_basis' => $basis->value,
             'monthly_work_days' => $basis === PayBasis::Month ? self::MONTHLY_WORK_DAYS : null,
             'hours_per_day' => self::HOURS_PER_DAY,
@@ -247,18 +275,85 @@ class GeneratePayroll
     }
 
     /**
+     * Attendance defaults and computed additions for a payroll run.
+     * Overnight nights come from approved overnight filings whose start falls in the period.
+     * Cash advances use the same open approved filings that payroll deducts.
+     *
+     * @param  Collection<int, Employee>  $employees
+     * @return array<int, array{
+     *     overnight_nights: int,
+     *     commissions: list<array{name: string, amount: string}>,
+     *     cash_advances: list<array{id: int, reason: string, amount: string}>
+     * }>
+     */
+    public function periodItems(Collection $employees, string $periodStart, string $periodEnd): array
+    {
+        if ($employees->isEmpty()) {
+            return [];
+        }
+
+        $nights = [];
+
+        foreach (PayrollFiling::query()
+            ->whereIn('employee_id', $employees->modelKeys())
+            ->where('type', PayrollFilingType::Overnight)
+            ->where('status', PayrollFilingStatus::Approved)
+            ->whereDate('starts_on', '>=', $periodStart)
+            ->whereDate('starts_on', '<=', $periodEnd)
+            ->get() as $filing) {
+            $nights[(int) $filing->employee_id] = ($nights[(int) $filing->employee_id] ?? 0) + (int) $filing->nights;
+        }
+
+        $items = [];
+
+        foreach ($employees as $employee) {
+            $items[$employee->id] = [
+                'overnight_nights' => $nights[$employee->id] ?? 0,
+                'commissions' => array_map(
+                    fn (array $line): array => [
+                        'name' => $line['name'],
+                        'amount' => $line['amount'],
+                    ],
+                    $this->commissionLines($employee, $periodStart, $periodEnd),
+                ),
+                'cash_advances' => array_map(
+                    fn (PayrollFiling $filing): array => [
+                        'id' => $filing->id,
+                        'reason' => (string) ($filing->reason ?? ''),
+                        'amount' => $this->money((float) $filing->amount),
+                    ],
+                    $this->cashAdvances($employee, $periodEnd),
+                ),
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * @return list<PayrollFiling>
+     */
+    private function cashAdvances(Employee $employee, string $periodEnd): array
+    {
+        return PayrollFiling::query()
+            ->where('employee_id', $employee->id)
+            ->where('type', PayrollFilingType::CashAdvance)
+            ->where('status', PayrollFilingStatus::Approved)
+            ->whereNull('deducted_payroll_id')
+            ->whereDate('starts_on', '<=', $periodEnd)
+            ->orderBy('starts_on')
+            ->orderBy('id')
+            ->get()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, Holiday>  $holidays
      * @param  list<int>  $workedIds
      * @return array{line: array<string, mixed>, cents: int}|null
      */
-    private function holidayEarning(string $periodStart, string $periodEnd, array $workedIds, float $basicDaily): ?array
+    private function holidayEarning(Collection $holidays, array $workedIds, float $basicDaily): ?array
     {
-        $holidays = Holiday::query()
-            ->whereDate('date', '>=', $periodStart)
-            ->whereDate('date', '<=', $periodEnd)
-            ->orderBy('date')
-            ->orderBy('id')
-            ->get();
-
         if ($holidays->isEmpty()) {
             return null;
         }
@@ -377,6 +472,17 @@ class GeneratePayroll
             'daily_rate' => $basis === 'days' ? $rate : null,
             'amount' => $amount,
         ];
+    }
+
+    private function daysWorkedWithHolidays(float $days, int $holidayDays): string
+    {
+        $total = round($days + $holidayDays, 2);
+
+        if (abs($total - round($total)) < 0.001) {
+            return (string) (int) round($total);
+        }
+
+        return number_format($total, 2, '.', '');
     }
 
     private function unit(float $value): string

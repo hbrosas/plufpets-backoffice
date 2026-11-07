@@ -1,6 +1,7 @@
 <script setup>
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import InstructionPhotos from '../../../components/InstructionPhotos.vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
 defineOptions({
@@ -54,10 +55,16 @@ const paymentForm = useForm({
     instructions: '',
     instructions_for_all_branches: true,
     branch_instructions: [],
+    images: [],
+    remove_images: [],
     fee: '',
     is_cash: false,
     is_active: true,
 });
+const paymentExisting = ref([]);
+const paymentPending = ref([]);
+const paymentBranchExisting = ref({});
+const paymentBranchPending = ref({});
 
 const deliveryModalOpen = ref(false);
 const editingDeliveryMethod = ref(null);
@@ -67,9 +74,17 @@ const deliveryForm = useForm({
     notes: '',
     instructions_for_all_branches: true,
     branch_instructions: [],
+    images: [],
+    remove_images: [],
     asks_for_address: false,
     is_active: true,
 });
+const deliveryExisting = ref([]);
+const deliveryPending = ref([]);
+const deliveryBranchExisting = ref({});
+const deliveryBranchPending = ref({});
+
+const settingsTab = ref('taxes');
 
 const voucherModalOpen = ref(false);
 const editingVoucher = ref(null);
@@ -131,7 +146,32 @@ function instructionRows(saved = []) {
     return props.branches.map((branch) => ({
         branch_id: branch.id,
         instructions: saved.find((row) => row.branch_id === branch.id)?.instructions ?? '',
+        images: [],
+        remove_images: [],
     }));
+}
+
+function savedImages(saved = []) {
+    return Object.fromEntries(props.branches.map((branch) => [
+        branch.id,
+        saved.find((row) => row.branch_id === branch.id)?.images ?? [],
+    ]));
+}
+
+function emptyPending() {
+    return Object.fromEntries(props.branches.map((branch) => [branch.id, []]));
+}
+
+function rememberPhotos(files, existing, pending) {
+    const room = Math.max(0, 4 - existing.length - pending.length);
+
+    return [
+        ...pending,
+        ...files.slice(0, room).map((file) => ({
+            url: URL.createObjectURL(file),
+            file,
+        })),
+    ];
 }
 
 function fillEmptyBranchInstructions(rows, shared) {
@@ -141,6 +181,69 @@ function fillEmptyBranchInstructions(rows, shared) {
     }));
 }
 
+function resetPaymentPhotos(method = null) {
+    paymentExisting.value = method?.instruction_images ?? [];
+    paymentPending.value = [];
+    paymentBranchExisting.value = savedImages(method?.branch_instructions ?? []);
+    paymentBranchPending.value = emptyPending();
+    paymentForm.images = [];
+    paymentForm.remove_images = [];
+}
+
+function addPaymentPhotos(files) {
+    paymentPending.value = rememberPhotos(files, paymentExisting.value, paymentPending.value);
+    paymentForm.images = paymentPending.value.map((photo) => photo.file);
+}
+
+function removePaymentExisting(path) {
+    paymentExisting.value = paymentExisting.value.filter((photo) => photo.path !== path);
+    paymentForm.remove_images = [...paymentForm.remove_images, path];
+}
+
+function removePaymentPending(index) {
+    URL.revokeObjectURL(paymentPending.value[index]?.url ?? '');
+    paymentPending.value = paymentPending.value.filter((_, photoIndex) => photoIndex !== index);
+    paymentForm.images = paymentPending.value.map((photo) => photo.file);
+}
+
+function addPaymentBranchPhotos(branchId, files) {
+    const row = paymentForm.branch_instructions.find((item) => item.branch_id === branchId);
+
+    if (!row) {
+        return;
+    }
+
+    const pending = rememberPhotos(files, paymentBranchExisting.value[branchId] ?? [], paymentBranchPending.value[branchId] ?? []);
+    paymentBranchPending.value = { ...paymentBranchPending.value, [branchId]: pending };
+    row.images = pending.map((photo) => photo.file);
+}
+
+function removePaymentBranchExisting(branchId, path) {
+    const row = paymentForm.branch_instructions.find((item) => item.branch_id === branchId);
+
+    if (!row) {
+        return;
+    }
+
+    paymentBranchExisting.value = {
+        ...paymentBranchExisting.value,
+        [branchId]: (paymentBranchExisting.value[branchId] ?? []).filter((photo) => photo.path !== path),
+    };
+    row.remove_images = [...row.remove_images, path];
+}
+
+function removePaymentBranchPending(branchId, index) {
+    const row = paymentForm.branch_instructions.find((item) => item.branch_id === branchId);
+    const pending = paymentBranchPending.value[branchId] ?? [];
+    URL.revokeObjectURL(pending[index]?.url ?? '');
+    const next = pending.filter((_, photoIndex) => photoIndex !== index);
+    paymentBranchPending.value = { ...paymentBranchPending.value, [branchId]: next };
+
+    if (row) {
+        row.images = next.map((photo) => photo.file);
+    }
+}
+
 function openCreatePaymentMethod() {
     editingPaymentMethod.value = null;
     paymentForm.reset();
@@ -148,6 +251,7 @@ function openCreatePaymentMethod() {
     paymentForm.branch_instructions = instructionRows();
     paymentForm.is_cash = false;
     paymentForm.is_active = true;
+    resetPaymentPhotos();
     paymentForm.clearErrors();
     paymentModalOpen.value = true;
 }
@@ -161,6 +265,7 @@ function openEditPaymentMethod(paymentMethod) {
     paymentForm.fee = paymentMethod.fee ?? '';
     paymentForm.is_cash = paymentMethod.is_cash;
     paymentForm.is_active = paymentMethod.is_active;
+    resetPaymentPhotos(paymentMethod);
     paymentForm.clearErrors();
     paymentModalOpen.value = true;
 }
@@ -168,15 +273,23 @@ function openEditPaymentMethod(paymentMethod) {
 function submitPaymentMethod() {
     const options = {
         preserveScroll: true,
+        forceFormData: true,
         onSuccess: () => {
             paymentModalOpen.value = false;
             paymentForm.reset();
             editingPaymentMethod.value = null;
+            resetPaymentPhotos();
         },
     };
 
     if (editingPaymentMethod.value) {
-        paymentForm.put(`/backoffice/shop/payment-methods/${editingPaymentMethod.value.id}`, options);
+        paymentForm.transform((data) => ({
+            ...data,
+            _method: 'put',
+        })).post(`/backoffice/shop/payment-methods/${editingPaymentMethod.value.id}`, {
+            ...options,
+            onFinish: () => paymentForm.transform((data) => data),
+        });
         return;
     }
 
@@ -193,12 +306,76 @@ function deletePaymentMethod(paymentMethod) {
     });
 }
 
+function resetDeliveryPhotos(method = null) {
+    deliveryExisting.value = method?.instruction_images ?? [];
+    deliveryPending.value = [];
+    deliveryBranchExisting.value = savedImages(method?.branch_instructions ?? []);
+    deliveryBranchPending.value = emptyPending();
+    deliveryForm.images = [];
+    deliveryForm.remove_images = [];
+}
+
+function addDeliveryPhotos(files) {
+    deliveryPending.value = rememberPhotos(files, deliveryExisting.value, deliveryPending.value);
+    deliveryForm.images = deliveryPending.value.map((photo) => photo.file);
+}
+
+function removeDeliveryExisting(path) {
+    deliveryExisting.value = deliveryExisting.value.filter((photo) => photo.path !== path);
+    deliveryForm.remove_images = [...deliveryForm.remove_images, path];
+}
+
+function removeDeliveryPending(index) {
+    URL.revokeObjectURL(deliveryPending.value[index]?.url ?? '');
+    deliveryPending.value = deliveryPending.value.filter((_, photoIndex) => photoIndex !== index);
+    deliveryForm.images = deliveryPending.value.map((photo) => photo.file);
+}
+
+function addDeliveryBranchPhotos(branchId, files) {
+    const row = deliveryForm.branch_instructions.find((item) => item.branch_id === branchId);
+
+    if (!row) {
+        return;
+    }
+
+    const pending = rememberPhotos(files, deliveryBranchExisting.value[branchId] ?? [], deliveryBranchPending.value[branchId] ?? []);
+    deliveryBranchPending.value = { ...deliveryBranchPending.value, [branchId]: pending };
+    row.images = pending.map((photo) => photo.file);
+}
+
+function removeDeliveryBranchExisting(branchId, path) {
+    const row = deliveryForm.branch_instructions.find((item) => item.branch_id === branchId);
+
+    if (!row) {
+        return;
+    }
+
+    deliveryBranchExisting.value = {
+        ...deliveryBranchExisting.value,
+        [branchId]: (deliveryBranchExisting.value[branchId] ?? []).filter((photo) => photo.path !== path),
+    };
+    row.remove_images = [...row.remove_images, path];
+}
+
+function removeDeliveryBranchPending(branchId, index) {
+    const row = deliveryForm.branch_instructions.find((item) => item.branch_id === branchId);
+    const pending = deliveryBranchPending.value[branchId] ?? [];
+    URL.revokeObjectURL(pending[index]?.url ?? '');
+    const next = pending.filter((_, photoIndex) => photoIndex !== index);
+    deliveryBranchPending.value = { ...deliveryBranchPending.value, [branchId]: next };
+
+    if (row) {
+        row.images = next.map((photo) => photo.file);
+    }
+}
+
 function openCreateDeliveryMethod() {
     editingDeliveryMethod.value = null;
     deliveryForm.reset();
     deliveryForm.instructions_for_all_branches = true;
     deliveryForm.branch_instructions = instructionRows();
     deliveryForm.is_active = true;
+    resetDeliveryPhotos();
     deliveryForm.clearErrors();
     deliveryModalOpen.value = true;
 }
@@ -212,6 +389,7 @@ function openEditDeliveryMethod(deliveryMethod) {
     deliveryForm.branch_instructions = instructionRows(deliveryMethod.branch_instructions ?? []);
     deliveryForm.asks_for_address = deliveryMethod.asks_for_address;
     deliveryForm.is_active = deliveryMethod.is_active;
+    resetDeliveryPhotos(deliveryMethod);
     deliveryForm.clearErrors();
     deliveryModalOpen.value = true;
 }
@@ -219,15 +397,23 @@ function openEditDeliveryMethod(deliveryMethod) {
 function submitDeliveryMethod() {
     const options = {
         preserveScroll: true,
+        forceFormData: true,
         onSuccess: () => {
             deliveryModalOpen.value = false;
             deliveryForm.reset();
             editingDeliveryMethod.value = null;
+            resetDeliveryPhotos();
         },
     };
 
     if (editingDeliveryMethod.value) {
-        deliveryForm.put(`/backoffice/shop/delivery-methods/${editingDeliveryMethod.value.id}`, options);
+        deliveryForm.transform((data) => ({
+            ...data,
+            _method: 'put',
+        })).post(`/backoffice/shop/delivery-methods/${editingDeliveryMethod.value.id}`, {
+            ...options,
+            onFinish: () => deliveryForm.transform((data) => data),
+        });
         return;
     }
 
@@ -296,8 +482,46 @@ function deleteDeliveryMethod(deliveryMethod) {
 <template>
     <Head title="Settings" />
 
+    <Teleport defer to="#admin-header-tabs">
+        <div class="flex w-max gap-2" role="tablist" aria-label="Shop settings">
+            <button
+                id="settings-tab-taxes"
+                class="inline-flex h-10 shrink-0 items-center rounded-xl px-4 text-sm font-medium whitespace-nowrap"
+                :class="settingsTab === 'taxes' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                type="button"
+                role="tab"
+                :aria-selected="settingsTab === 'taxes'"
+                @click="settingsTab = 'taxes'"
+            >
+                Taxes & Fees
+            </button>
+            <button
+                id="settings-tab-methods"
+                class="inline-flex h-10 shrink-0 items-center rounded-xl px-4 text-sm font-medium whitespace-nowrap"
+                :class="settingsTab === 'methods' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                type="button"
+                role="tab"
+                :aria-selected="settingsTab === 'methods'"
+                @click="settingsTab = 'methods'"
+            >
+                Payment / Delivery Methods
+            </button>
+            <button
+                id="settings-tab-vouchers"
+                class="inline-flex h-10 shrink-0 items-center rounded-xl px-4 text-sm font-medium whitespace-nowrap"
+                :class="settingsTab === 'vouchers' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                type="button"
+                role="tab"
+                :aria-selected="settingsTab === 'vouchers'"
+                @click="settingsTab = 'vouchers'"
+            >
+                Vouchers
+            </button>
+        </div>
+    </Teleport>
+
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div class="grid gap-6 xl:grid-cols-3">
+        <div v-if="settingsTab === 'taxes'" role="tabpanel" aria-labelledby="settings-tab-taxes">
             <section class="flex flex-col gap-4">
                 <div class="flex items-center justify-between gap-3">
                     <h2 class="text-lg font-medium">Taxes & Fees</h2>
@@ -349,8 +573,15 @@ function deleteDeliveryMethod(deliveryMethod) {
                     </table>
                 </div>
             </section>
+        </div>
 
-            <section class="flex flex-col gap-4">
+        <div
+            v-if="settingsTab === 'methods'"
+            class="grid gap-6 lg:grid-cols-2"
+            role="tabpanel"
+            aria-labelledby="settings-tab-methods"
+        >
+            <section class="flex min-w-0 flex-col gap-4">
                 <div class="flex items-center justify-between gap-3">
                     <h2 class="text-lg font-medium">Payment Methods</h2>
                     <button
@@ -408,7 +639,7 @@ function deleteDeliveryMethod(deliveryMethod) {
                 </div>
             </section>
 
-            <section class="flex flex-col gap-4">
+            <section class="flex min-w-0 flex-col gap-4">
                 <div class="flex items-center justify-between gap-3">
                     <h2 class="text-lg font-medium">Delivery Methods</h2>
                     <button
@@ -466,13 +697,12 @@ function deleteDeliveryMethod(deliveryMethod) {
                     </table>
                 </div>
             </section>
+        </div>
 
+        <div v-if="settingsTab === 'vouchers'" role="tabpanel" aria-labelledby="settings-tab-vouchers">
             <section class="flex flex-col gap-4">
                 <div class="flex items-center justify-between gap-3">
-                    <div>
-                        <h2 class="text-lg font-medium">Vouchers</h2>
-                        <p class="text-sm text-ink/60 dark:text-foam/60">Codes customers can use at checkout.</p>
-                    </div>
+                    <h2 class="text-lg font-medium">Vouchers</h2>
                     <button class="h-10 shrink-0 rounded-xl bg-pine px-3 text-sm font-medium text-foam" type="button" @click="openCreateVoucher">
                         Add
                     </button>
@@ -608,6 +838,15 @@ function deleteDeliveryMethod(deliveryMethod) {
                             class="min-h-24 rounded-xl border border-mist bg-white px-4 py-3 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
                         />
                         <p v-if="paymentForm.errors.instructions" class="text-sm text-danger">{{ paymentForm.errors.instructions }}</p>
+                        <InstructionPhotos
+                            id="payment-instruction-photos"
+                            :existing="paymentExisting"
+                            :pending="paymentPending"
+                            @add="addPaymentPhotos"
+                            @remove-existing="removePaymentExisting"
+                            @remove-pending="removePaymentPending"
+                        />
+                        <p v-if="paymentForm.errors.images" class="text-sm text-danger">{{ paymentForm.errors.images }}</p>
                     </template>
                     <template v-else>
                         <p v-if="branches.length === 0" class="text-sm text-ink/60 dark:text-foam/60">Add a branch before setting instructions.</p>
@@ -620,6 +859,17 @@ function deleteDeliveryMethod(deliveryMethod) {
                             />
                             <p v-if="paymentForm.errors[`branch_instructions.${index}.instructions`]" class="text-sm text-danger">
                                 {{ paymentForm.errors[`branch_instructions.${index}.instructions`] }}
+                            </p>
+                            <InstructionPhotos
+                                :id="`payment-instruction-photos-${row.branch_id}`"
+                                :existing="paymentBranchExisting[row.branch_id] ?? []"
+                                :pending="paymentBranchPending[row.branch_id] ?? []"
+                                @add="addPaymentBranchPhotos(row.branch_id, $event)"
+                                @remove-existing="removePaymentBranchExisting(row.branch_id, $event)"
+                                @remove-pending="removePaymentBranchPending(row.branch_id, $event)"
+                            />
+                            <p v-if="paymentForm.errors[`branch_instructions.${index}.images`]" class="text-sm text-danger">
+                                {{ paymentForm.errors[`branch_instructions.${index}.images`] }}
                             </p>
                         </div>
                     </template>
@@ -723,6 +973,15 @@ function deleteDeliveryMethod(deliveryMethod) {
                             class="min-h-24 rounded-xl border border-mist bg-white px-4 py-3 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
                         />
                         <p v-if="deliveryForm.errors.notes" class="text-sm text-danger">{{ deliveryForm.errors.notes }}</p>
+                        <InstructionPhotos
+                            id="delivery-instruction-photos"
+                            :existing="deliveryExisting"
+                            :pending="deliveryPending"
+                            @add="addDeliveryPhotos"
+                            @remove-existing="removeDeliveryExisting"
+                            @remove-pending="removeDeliveryPending"
+                        />
+                        <p v-if="deliveryForm.errors.images" class="text-sm text-danger">{{ deliveryForm.errors.images }}</p>
                     </template>
                     <template v-else>
                         <p v-if="branches.length === 0" class="text-sm text-ink/60 dark:text-foam/60">Add a branch before setting instructions.</p>
@@ -735,6 +994,17 @@ function deleteDeliveryMethod(deliveryMethod) {
                             />
                             <p v-if="deliveryForm.errors[`branch_instructions.${index}.instructions`]" class="text-sm text-danger">
                                 {{ deliveryForm.errors[`branch_instructions.${index}.instructions`] }}
+                            </p>
+                            <InstructionPhotos
+                                :id="`delivery-instruction-photos-${row.branch_id}`"
+                                :existing="deliveryBranchExisting[row.branch_id] ?? []"
+                                :pending="deliveryBranchPending[row.branch_id] ?? []"
+                                @add="addDeliveryBranchPhotos(row.branch_id, $event)"
+                                @remove-existing="removeDeliveryBranchExisting(row.branch_id, $event)"
+                                @remove-pending="removeDeliveryBranchPending(row.branch_id, $event)"
+                            />
+                            <p v-if="deliveryForm.errors[`branch_instructions.${index}.images`]" class="text-sm text-danger">
+                                {{ deliveryForm.errors[`branch_instructions.${index}.images`] }}
                             </p>
                         </div>
                     </template>

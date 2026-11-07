@@ -3,11 +3,14 @@
 namespace Tests\Feature;
 
 use App\Enums\PayrollFilingStatus;
+use App\Enums\PayrollFilingType;
 use App\Models\Employee;
 use App\Models\EmployeePayroll;
 use App\Models\PayrollFiling;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class MyPayrollControllerTest extends TestCase
@@ -65,6 +68,62 @@ class MyPayrollControllerTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Me/Payroll')
                 ->has('filings', 3));
+    }
+
+    public function test_employee_requests_a_cash_advance(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-07 02:00:00', 'UTC'));
+        $employee = Employee::factory()->create();
+
+        $this->actingAsEmployee($employee)
+            ->post('/backoffice/me/payroll', [
+                'type' => 'cash_advance',
+                'amount' => '1500.50',
+                'reason' => 'Medicine',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', 'Cash advance filed.');
+
+        $filing = PayrollFiling::query()->whereBelongsTo($employee)->firstOrFail();
+        $this->assertSame(PayrollFilingType::CashAdvance, $filing->type);
+        $this->assertSame(PayrollFilingStatus::Pending, $filing->status);
+        $this->assertSame('1500.50', $filing->amount);
+        $this->assertSame('2026-11-07', $filing->starts_on->toDateString());
+        $this->assertSame('Medicine', $filing->reason);
+    }
+
+    public function test_cash_advance_requires_an_amount_and_a_reason(): void
+    {
+        $employee = Employee::factory()->create();
+
+        $this->actingAsEmployee($employee)
+            ->from('/backoffice/me/payroll')
+            ->post('/backoffice/me/payroll', [
+                'type' => 'cash_advance',
+            ])
+            ->assertRedirect('/backoffice/me/payroll')
+            ->assertSessionHasErrors([
+                'amount' => 'Enter the cash advance amount.',
+                'reason' => 'Enter a reason.',
+            ]);
+    }
+
+    #[TestWith(['0', 'Cash advance must be more than zero.'])]
+    #[TestWith(['10000000', 'Cash advance cannot be more than 9,999,999.99.'])]
+    #[TestWith(['10.999', 'Cash advance can have at most 2 decimal places.'])]
+    public function test_cash_advance_rejects_an_invalid_amount(string $amount, string $message): void
+    {
+        $employee = Employee::factory()->create();
+
+        $this->actingAsEmployee($employee)
+            ->from('/backoffice/me/payroll')
+            ->post('/backoffice/me/payroll', [
+                'type' => 'cash_advance',
+                'amount' => $amount,
+                'reason' => 'Medicine',
+            ])
+            ->assertRedirect('/backoffice/me/payroll')
+            ->assertSessionHasErrors(['amount' => $message]);
     }
 
     public function test_overtime_requires_hours(): void

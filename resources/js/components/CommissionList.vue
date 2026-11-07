@@ -1,4 +1,6 @@
 <script setup>
+import { Link } from '@inertiajs/vue3';
+
 defineProps({
     report: {
         type: Object,
@@ -8,13 +10,22 @@ defineProps({
         type: String,
         required: true,
     },
+    reportHref: {
+        type: String,
+        default: '',
+    },
 });
 </script>
 
 <template>
     <div class="flex flex-col gap-4">
         <article class="flex flex-col gap-2 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
-            <p class="text-sm text-ink/60 dark:text-foam/60">{{ report.label }}</p>
+            <div class="flex items-start justify-between gap-3">
+                <p class="text-sm text-ink/60 dark:text-foam/60">{{ report.label }}</p>
+                <Link v-if="reportHref" :href="reportHref" class="shrink-0 text-sm font-medium text-pine dark:text-sand">
+                    Commissions report
+                </Link>
+            </div>
             <p class="text-3xl font-medium">{{ report.total }}</p>
             <p class="text-sm text-ink/55 dark:text-foam/50">
                 {{ scope === 'all' ? 'Total commissions' : 'Your commissions' }}

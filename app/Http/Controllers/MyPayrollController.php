@@ -65,6 +65,7 @@ class MyPayrollController extends Controller
             'ends_on' => $type === PayrollFilingType::Leave ? $request->validated('ends_on') : null,
             'hours' => $type === PayrollFilingType::Overtime ? $request->validated('hours') : null,
             'nights' => $type === PayrollFilingType::Overnight ? $request->validated('nights') : null,
+            'amount' => $type === PayrollFilingType::CashAdvance ? $request->validated('amount') : null,
             'reason' => $request->validated('reason'),
         ]);
 

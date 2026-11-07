@@ -20,7 +20,6 @@ defineProps({
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <p class="text-sm text-ink/55 dark:text-foam/50">{{ filters.label }}. Refunded receipts are left out of the totals.</p>
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <article v-for="card in [
                 ['Gross', sales.summary.gross],

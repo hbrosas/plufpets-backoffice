@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref, watch } from 'vue';
+import InstructionPhoto from '../../components/InstructionPhoto.vue';
 import SiteLayout from '../../layouts/SiteLayout.vue';
 
 defineOptions({
@@ -115,17 +116,29 @@ function lookup() {
                 <h2 class="text-base font-semibold">Delivery</h2>
                 <p class="text-sm">{{ order.delivery.name }} · {{ order.delivery.fee_label }}</p>
                 <p v-if="order.address" class="text-sm">{{ order.address }}</p>
-                <p v-if="order.delivery.instructions" class="rounded-xl border border-navy/20 bg-navy/10 px-4 py-3 text-sm" role="status">
-                    {{ order.delivery.instructions }}
-                </p>
+                <div v-if="order.delivery.instructions || order.delivery.instruction_images?.length" class="flex flex-col gap-3 rounded-xl border border-navy/20 bg-navy/10 px-4 py-3 text-sm" role="status">
+                    <p v-if="order.delivery.instructions">{{ order.delivery.instructions }}</p>
+                    <InstructionPhoto
+                        v-for="(image, index) in order.delivery.instruction_images"
+                        :key="image"
+                        :src="image"
+                        :alt="`Delivery instruction photo ${index + 1}`"
+                    />
+                </div>
             </section>
 
             <section class="flex flex-col gap-2 rounded-2xl border border-black/10 bg-white p-4">
                 <h2 class="text-base font-semibold">Payment</h2>
                 <p class="text-sm">{{ order.payment.name }} · {{ order.payment.fee_label }}</p>
-                <p v-if="order.payment.instructions" class="rounded-xl border border-navy/20 bg-navy/10 px-4 py-3 text-sm" role="status">
-                    {{ order.payment.instructions }}
-                </p>
+                <div v-if="order.payment.instructions || order.payment.instruction_images?.length" class="flex flex-col gap-3 rounded-xl border border-navy/20 bg-navy/10 px-4 py-3 text-sm" role="status">
+                    <p v-if="order.payment.instructions">{{ order.payment.instructions }}</p>
+                    <InstructionPhoto
+                        v-for="(image, index) in order.payment.instruction_images"
+                        :key="image"
+                        :src="image"
+                        :alt="`Payment instruction photo ${index + 1}`"
+                    />
+                </div>
             </section>
 
             <section class="flex flex-col gap-3 rounded-2xl border border-black/10 bg-white p-4">

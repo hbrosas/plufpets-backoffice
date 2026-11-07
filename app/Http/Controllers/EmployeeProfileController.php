@@ -16,7 +16,6 @@ use App\Models\EmployeePayLine;
 use App\Models\EmployeePayroll;
 use App\Models\EmployeeProfile;
 use App\Models\EmployeeServiceCommission;
-use App\Models\Holiday;
 use App\Support\PayrollRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -87,23 +86,10 @@ class EmployeeProfileController extends Controller
             'civilStatuses' => $this->options(CivilStatus::cases()),
             'employmentStatuses' => $this->options(EmploymentStatus::cases()),
             'payBases' => $this->options(PayBasis::cases()),
-            'payrollAssumptions' => GeneratePayroll::assumptions(),
             'payroll' => $this->payrollFromQuery($request, $employee, $profile, $generatePayroll),
-            'holidays' => Holiday::query()
-                ->orderBy('date')
-                ->orderBy('id')
-                ->get()
-                ->map(fn (Holiday $holiday): array => [
-                    'id' => $holiday->id,
-                    'date' => $holiday->date->toDateString(),
-                    'name' => $holiday->name,
-                    'type' => $holiday->type->value,
-                    'type_label' => $holiday->type->label(),
-                    'worked_label' => $holiday->type->workedLabel(),
-                    'unworked_label' => $holiday->type->unworkedLabel(),
-                ]),
             'finalizedPayrolls' => EmployeePayroll::query()
                 ->whereBelongsTo($employee)
+                ->orderByDesc('period_end')
                 ->orderByDesc('id')
                 ->get()
                 ->map(fn (EmployeePayroll $payroll): array => [

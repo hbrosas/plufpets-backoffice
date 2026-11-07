@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\BranchInventory;
 use App\Models\CatalogItemVariant;
+use App\Models\PosSaleItem;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\StockAssignment;
 use App\Models\StockConversion;
@@ -74,9 +75,19 @@ class InventoryProductReport
             ->orderByDesc('id')
             ->get();
 
+        $saleItems = PosSaleItem::query()
+            ->with(['sale:id,branch_id,number,sold_at,refunded_at,refund_reason', 'sale.branch:id,name'])
+            ->where('catalog_item_variant_id', $variant->id)
+            ->where('is_free', false)
+            ->orderByDesc('id')
+            ->get();
+
         $purchasePrice = $this->inventoryCosts->latestUnitCost($variant->id);
         $onHand = (int) $inventories->sum('quantity');
         $purchased = (int) $receiptItems->sum('quantity');
+        $sold = (int) $saleItems
+            ->filter(fn (PosSaleItem $item): bool => $item->sale?->refunded_at === null)
+            ->sum('quantity');
         $convertedIn = (int) $conversionsIn->sum('to_quantity');
         $convertedOut = (int) $conversionsOut->sum('from_quantity');
 
@@ -100,8 +111,18 @@ class InventoryProductReport
             ->values()
             ->all();
 
+        $sales = $saleItems->map(fn (PosSaleItem $item): array => [
+            'id' => $item->id,
+            'occurred_at' => $this->formatDate($item->sale?->sold_at),
+            'quantity' => $item->quantity,
+            'reference' => $item->sale?->number,
+            'branch' => $item->sale?->branch?->name,
+            'refunded' => $item->sale?->refunded_at !== null,
+        ])->values();
+
         $history = collect()
             ->concat($this->purchaseHistory($purchases))
+            ->concat($this->saleHistory($saleItems))
             ->concat($this->assignmentHistory($assignments))
             ->concat($this->transferHistory($transfers))
             ->concat($this->conversionInHistory($conversionsIn))
@@ -139,7 +160,7 @@ class InventoryProductReport
                 'on_hand' => $onHand,
                 'value' => Peso::format($purchasePrice === null ? 0 : $purchasePrice * $onHand),
                 'purchased' => $purchased,
-                'sold' => 0,
+                'sold' => $sold,
                 'converted_in' => $convertedIn,
                 'converted_out' => $convertedOut,
                 'last_purchased' => data_get($purchases->first(), 'occurred_at'),
@@ -157,7 +178,7 @@ class InventoryProductReport
                 'unit_cost' => $row['unit_cost'],
                 'received_by' => $row['received_by'],
             ])->all(),
-            'sales' => [],
+            'sales' => $sales->all(),
             'history' => $history,
             'repack_dates' => $repackDates,
         ];
@@ -179,6 +200,42 @@ class InventoryProductReport
             'reference' => trim(($purchase['reference'] ?? '').' · '.($purchase['delivery_receipt'] ?? ''), ' ·'),
             'detail' => $purchase['unit_cost'].' each',
         ]);
+    }
+
+    /**
+     * @param  Collection<int, PosSaleItem>  $saleItems
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function saleHistory(Collection $saleItems): Collection
+    {
+        return $saleItems->flatMap(function (PosSaleItem $item): array {
+            $sale = $item->sale;
+            $rows = [[
+                'id' => 'sale-'.$item->id,
+                'sort_at' => $sale?->sold_at?->timestamp ?? 0,
+                'occurred_at' => $this->formatDate($sale?->sold_at),
+                'type' => 'Sale',
+                'quantity' => -$item->quantity,
+                'location' => $sale?->branch?->name ?? '—',
+                'reference' => $sale?->number,
+                'detail' => 'Sold',
+            ]];
+
+            if ($sale?->refunded_at !== null) {
+                $rows[] = [
+                    'id' => 'refund-'.$item->id,
+                    'sort_at' => $sale->refunded_at->timestamp,
+                    'occurred_at' => $this->formatDate($sale->refunded_at),
+                    'type' => 'Refund',
+                    'quantity' => $item->quantity,
+                    'location' => $sale->branch?->name ?? '—',
+                    'reference' => $sale->number,
+                    'detail' => filled($sale->refund_reason) ? $sale->refund_reason : 'Refunded',
+                ];
+            }
+
+            return $rows;
+        });
     }
 
     /**

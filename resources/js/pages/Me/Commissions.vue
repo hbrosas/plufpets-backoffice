@@ -31,14 +31,11 @@ defineProps({
 <template>
     <Head title="My Commissions" />
 
+    <Teleport defer to="#admin-header-actions">
+        <CommissionPeriodFilter action="/backoffice/me/commissions" :filters="filters" />
+    </Teleport>
+
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div class="flex flex-wrap items-end justify-between gap-3">
-            <div>
-                <h2 class="text-lg font-medium">My Commissions</h2>
-                <p class="text-sm text-ink/60 dark:text-foam/60">Commissions from sales in the period you choose.</p>
-            </div>
-            <CommissionPeriodFilter action="/backoffice/me/commissions" :filters="filters" />
-        </div>
 
         <p v-if="!account" class="rounded-xl border border-mist bg-white px-4 py-3 text-sm dark:border-white/10 dark:bg-white/5">
             Sign in with your employee account to see your commissions.

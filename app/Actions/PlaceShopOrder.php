@@ -18,6 +18,8 @@ use RuntimeException;
 
 class PlaceShopOrder
 {
+    public function __construct(private ShopOrderStock $shopOrderStock) {}
+
     /**
      * @param  array{
      *     name: string,
@@ -38,8 +40,10 @@ class PlaceShopOrder
     {
         return DB::transaction(function () use ($branch, $customer, $items): PosOpenOrder {
             $priced = $this->price($branch, $customer, $items, true);
+            $order = $this->createOrder($branch, $customer, $priced);
+            $this->shopOrderStock->hold($order);
 
-            return $this->createOrder($branch, $customer, $priced);
+            return $order;
         });
     }
 
@@ -152,7 +156,8 @@ class PlaceShopOrder
                     $inventoryQuery->lockForUpdate();
                 }
 
-                $onHand = (int) ($inventoryQuery->first()?->quantity ?? 0);
+                $inventory = $inventoryQuery->first();
+                $onHand = $inventory instanceof BranchInventory ? $inventory->available() : 0;
                 $preorder = $onHand < 1 && $variant->catalogItem->allows_preorder;
 
                 if ($onHand < 1 && ! $variant->catalogItem->allows_preorder) {
@@ -206,6 +211,7 @@ class PlaceShopOrder
                     'name' => $delivery->name,
                     'fee' => number_format($deliveryFee, 2, '.', ''),
                     'instructions' => $delivery->instructionFor($branch->id),
+                    'instruction_images' => $delivery->instructionImageUrls($branch->id),
                     'asks_for_address' => $delivery->asks_for_address,
                 ],
                 'payment' => [
@@ -213,6 +219,7 @@ class PlaceShopOrder
                     'name' => $payment->name,
                     'fee' => number_format($paymentFee, 2, '.', ''),
                     'instructions' => $payment->instructionFor($branch->id),
+                    'instruction_images' => $payment->instructionImageUrls($branch->id),
                 ],
                 'address' => $address,
                 'voucher' => $voucher instanceof Voucher ? [

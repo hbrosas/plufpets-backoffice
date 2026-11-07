@@ -120,9 +120,19 @@ class PurchaseOrderControllerTest extends TestCase
             'address' => 'Ayala Avenue',
             'tin' => '123-456-789-00000',
         ]);
+        $supplier = Supplier::factory()->create([
+            'name' => 'Acme Feeds',
+            'tin' => '999-888-777-00000',
+            'address' => 'Pasig Boulevard',
+            'contact_name' => 'Jane Cruz',
+            'email' => 'jane@example.com',
+            'phone' => '09171234567',
+        ]);
         $order = PurchaseOrder::factory()->create([
             'number' => 'PO-0099',
             'branch_id' => $branch->id,
+            'supplier_id' => $supplier->id,
+            'notes' => 'Deliver before noon',
         ]);
         $variant = $this->productVariant();
         $order->items()->create([
@@ -137,7 +147,15 @@ class PurchaseOrderControllerTest extends TestCase
         $response->assertSee('PO-0099', false);
         $response->assertSee('Print', false);
         $response->assertSee('Supplier', false);
-        $response->assertSee('Business information', false);
+        $response->assertSee('Notes', false);
+        $response->assertSee('Deliver before noon', false);
+        $response->assertSee('Acme Feeds', false);
+        $response->assertSee('TIN 999-888-777-00000', false);
+        $response->assertSee('Pasig Boulevard', false);
+        $response->assertDontSee('Jane Cruz', false);
+        $response->assertDontSee('jane@example.com', false);
+        $response->assertDontSee('09171234567', false);
+        $response->assertSee('Purchase order', false);
         $response->assertSee('Ayala Avenue', false);
         $response->assertSee('TIN 123-456-789-00000', false);
         $response->assertSee('₱30.00', false);
@@ -153,7 +171,12 @@ class PurchaseOrderControllerTest extends TestCase
         $response = $this->actingAsEmployee()->get("/backoffice/inventory/purchase-orders/{$order->id}/print?download=1");
 
         $response->assertOk();
-        $response->assertHeader('content-disposition', 'attachment; filename="PO-0099.html"');
+        $response->assertHeader('content-type', 'application/pdf');
+        $this->assertStringContainsString(
+            'PO-0099.pdf',
+            (string) $response->headers->get('content-disposition'),
+        );
+        $this->assertStringStartsWith('%PDF', $response->getContent());
     }
 
     public function test_create_form_lists_categories_brands_and_branches(): void
@@ -163,6 +186,7 @@ class PurchaseOrderControllerTest extends TestCase
         Branch::factory()->create(['name' => 'Makati Branch']);
         Supplier::factory()->create([
             'name' => 'Acme Feeds',
+            'tin' => '999-888-777-00000',
             'contact_name' => 'Jane Cruz',
             'phone' => '09171234567',
             'address' => 'Pasig Boulevard',
@@ -177,8 +201,9 @@ class PurchaseOrderControllerTest extends TestCase
             ->where('brands', ['Pluf Pets'])
             ->where('branches.0.name', 'Makati Branch')
             ->where('suppliers.0.name', 'Acme Feeds')
-            ->where('suppliers.0.contact_name', 'Jane Cruz')
-            ->where('suppliers.0.address', 'Pasig Boulevard'));
+            ->where('suppliers.0.tin', '999-888-777-00000')
+            ->where('suppliers.0.address', 'Pasig Boulevard')
+            ->missing('suppliers.0.contact_name'));
     }
 
     public function test_show_page_lists_business_information_and_peso_totals(): void

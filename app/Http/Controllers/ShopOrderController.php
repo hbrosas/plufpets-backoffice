@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\SendShopOrderText;
+use App\Actions\ShopOrderStock;
 use App\Enums\ShopOrderStatus;
 use App\Http\Requests\UpdateShopOrderRequest;
 use App\Models\CatalogItemVariant;
@@ -14,6 +15,7 @@ use App\Support\EmployeeSession;
 use App\Support\Peso;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -82,7 +84,7 @@ class ShopOrderController extends Controller
         ]);
     }
 
-    public function update(UpdateShopOrderRequest $request, PosOpenOrder $posOpenOrder, SendShopOrderText $sendShopOrderText): RedirectResponse
+    public function update(UpdateShopOrderRequest $request, PosOpenOrder $posOpenOrder, SendShopOrderText $sendShopOrderText, ShopOrderStock $shopOrderStock): RedirectResponse
     {
         $this->ensureShopOrder($posOpenOrder);
 
@@ -90,7 +92,13 @@ class ShopOrderController extends Controller
         $message = 'Order status saved.';
 
         if ($posOpenOrder->status !== $status) {
-            $posOpenOrder->update(['status' => $status]);
+            DB::transaction(function () use ($posOpenOrder, $status, $shopOrderStock): void {
+                if ($status === ShopOrderStatus::Cancelled->value) {
+                    $shopOrderStock->release($posOpenOrder);
+                }
+
+                $posOpenOrder->update(['status' => $status]);
+            });
             $smsError = $sendShopOrderText->handle($posOpenOrder->fresh(['branch']) ?? $posOpenOrder);
 
             if (is_string($smsError)) {
@@ -115,7 +123,7 @@ class ShopOrderController extends Controller
             ->with('branch:id,name')
             ->whereNotNull('status')
             ->where('status', '!=', '')
-            ->where('status', '!=', ShopOrderStatus::Completed->value)
+            ->whereNotIn('status', [ShopOrderStatus::Completed->value, ShopOrderStatus::Cancelled->value])
             ->orderByDesc('id')
             ->get();
 
@@ -206,14 +214,18 @@ class ShopOrderController extends Controller
     private function detail(PosOpenOrder $order): array
     {
         $checkout = is_array($order->checkout) ? $order->checkout : [];
+        $delivery = is_array($checkout['delivery'] ?? null) ? $checkout['delivery'] : [];
+        $payment = is_array($checkout['payment'] ?? null) ? $checkout['payment'] : [];
         $address = is_array($checkout['address'] ?? null) ? $checkout['address'] : null;
         $status = ShopOrderStatus::tryFrom((string) $order->status);
         $employees = $this->employeesFor($order);
 
         return [
             ...$this->payload($order),
-            'delivery_instructions' => $checkout['delivery']['instructions'] ?? null,
-            'payment_instructions' => $checkout['payment']['instructions'] ?? null,
+            'delivery_instructions' => $delivery['instructions'] ?? null,
+            'delivery_instruction_images' => $this->imageUrls($delivery['instruction_images'] ?? null),
+            'payment_instructions' => $payment['instructions'] ?? null,
+            'payment_instruction_images' => $this->imageUrls($payment['instruction_images'] ?? null),
             'voucher_discount_label' => isset($checkout['voucher']['discount']) ? Peso::format($checkout['voucher']['discount']) : null,
             'lines' => collect($order->items)->map(function (mixed $item) use ($employees): ?array {
                 if (! is_array($item)) {
@@ -290,6 +302,18 @@ class ShopOrderController extends Controller
                 'amount_label' => Peso::format($tax->amount),
             ])->all(),
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function imageUrls(mixed $images): array
+    {
+        if (! is_array($images)) {
+            return [];
+        }
+
+        return array_values(array_filter($images, fn (mixed $url): bool => is_string($url) && $url !== ''));
     }
 
     /**

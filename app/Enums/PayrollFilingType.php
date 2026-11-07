@@ -7,6 +7,7 @@ enum PayrollFilingType: string
     case Leave = 'leave';
     case Overtime = 'overtime';
     case Overnight = 'overnight';
+    case CashAdvance = 'cash_advance';
 
     public function label(): string
     {
@@ -14,6 +15,7 @@ enum PayrollFilingType: string
             self::Leave => 'Leave',
             self::Overtime => 'Overtime',
             self::Overnight => 'Overnight',
+            self::CashAdvance => 'Cash advance',
         };
     }
 

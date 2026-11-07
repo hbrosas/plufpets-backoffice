@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\CatalogItemType;
+use App\Enums\InventoryHold;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\CatalogItem;
@@ -19,6 +20,7 @@ use App\Models\PosSalePayment;
 use App\Models\PosShift;
 use App\Models\TaxFee;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class PosSaleControllerTest extends TestCase
@@ -580,6 +582,213 @@ class PosSaleControllerTest extends TestCase
         $sale = PosSale::query()->first();
         $this->assertNotNull($sale);
         $this->assertSame($sale->id, $order->fresh()->pos_sale_id);
+        $this->assertSame('preparing', $order->fresh()->status);
+    }
+
+    public function test_a_sale_cannot_take_stock_held_by_an_online_order(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['name' => 'Treats', 'type' => CatalogItemType::Product]))
+            ->create(['name' => 'Default', 'price' => 40]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+            'reserved' => 2,
+        ]);
+        $payment = PaymentMethod::factory()->create(['is_cash' => false]);
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/pos/register/{$branch->id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('variants.0.quantity', 0));
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '40',
+                    'reference_number' => 'REF-40',
+                ]],
+            ]);
+
+        $response->assertRedirect("/backoffice/pos/register/{$branch->id}");
+        $response->assertSessionHasErrors(['items.0.quantity' => 'Only 0 units are available at this branch.']);
+        $this->assertDatabaseCount('pos_sales', 0);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+            'reserved' => 2,
+        ]);
+    }
+
+    public function test_charging_a_held_shop_order_takes_the_stock_once(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['type' => CatalogItemType::Product]))
+            ->create(['price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+            'reserved' => 2,
+        ]);
+        $order = PosOpenOrder::factory()->create([
+            'branch_id' => $branch->id,
+            'status' => 'placed',
+            'inventory_hold' => InventoryHold::Held,
+            'items' => [[
+                'catalog_item_variant_id' => $variant->id,
+                'product_name' => 'Treats',
+                'variant_name' => 'Default',
+                'price' => '100.00',
+                'quantity' => 2,
+                'notes' => null,
+                'is_product' => true,
+                'modifiers' => [],
+            ]],
+        ]);
+        $payment = PaymentMethod::factory()->create(['is_cash' => false]);
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 2]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '200',
+                    'reference_number' => 'REF-200',
+                ]],
+                'pos_open_order_id' => $order->id,
+            ]);
+
+        $response->assertRedirect(route('pos.index', $branch));
+        $response->assertSessionHasNoErrors();
+        $this->assertSame(InventoryHold::Sold, $order->fresh()->inventory_hold);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 3,
+            'reserved' => 0,
+        ]);
+    }
+
+    public function test_charging_the_saved_open_order_finishes_the_online_order(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['type' => CatalogItemType::Product]))
+            ->create(['price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+            'reserved' => 2,
+        ]);
+        $order = PosOpenOrder::factory()->create([
+            'branch_id' => $branch->id,
+            'number' => 'OPEN-SHOP-2',
+            'status' => 'placed',
+            'inventory_hold' => InventoryHold::Held,
+            'items' => [[
+                'catalog_item_variant_id' => $variant->id,
+                'product_name' => 'Treats',
+                'variant_name' => 'Default',
+                'price' => '100.00',
+                'quantity' => 2,
+                'notes' => null,
+                'is_product' => true,
+                'modifiers' => [],
+            ]],
+        ]);
+        $payment = PaymentMethod::factory()->create(['is_cash' => false]);
+
+        $this->actingAsEmployee()
+            ->postJson("/backoffice/pos/register/{$branch->id}/online-orders/{$order->id}/sale")
+            ->assertOk()
+            ->assertJsonPath('order.status', 'preparing');
+
+        $ticket = PosOpenOrder::query()->whereNull('status')->first();
+        $this->assertNotNull($ticket);
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 2]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '200',
+                    'reference_number' => 'REF-200',
+                ]],
+                'pos_open_order_id' => $ticket->id,
+            ]);
+
+        $response->assertRedirect(route('pos.index', $branch));
+        $response->assertSessionHasNoErrors();
+        $sale = PosSale::query()->first();
+        $this->assertNotNull($sale);
+        $this->assertSame($sale->id, $order->fresh()->pos_sale_id);
+        $this->assertSame('preparing', $order->fresh()->status);
+        $this->assertSame(InventoryHold::Sold, $order->fresh()->inventory_hold);
+        $this->assertModelMissing($ticket);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 3,
+            'reserved' => 0,
+        ]);
+    }
+
+    public function test_a_preorder_cannot_be_turned_into_a_sale(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['type' => CatalogItemType::Product]))
+            ->create(['price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+        $order = PosOpenOrder::factory()->create([
+            'branch_id' => $branch->id,
+            'status' => 'placed',
+            'items' => [[
+                'catalog_item_variant_id' => $variant->id,
+                'product_name' => 'Aozi Dog',
+                'variant_name' => 'Beef',
+                'price' => '100.00',
+                'quantity' => 1,
+                'notes' => 'Preorder',
+                'is_product' => true,
+                'modifiers' => [],
+            ]],
+        ]);
+        $payment = PaymentMethod::factory()->create(['is_cash' => false]);
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '100',
+                    'reference_number' => 'REF-100',
+                ]],
+                'pos_open_order_id' => $order->id,
+            ]);
+
+        $response->assertRedirect("/backoffice/pos/register/{$branch->id}");
+        $response->assertSessionHasErrors(['pos_open_order_id' => 'A pre-order cannot be turned into a sale.']);
+        $this->assertDatabaseCount('pos_sales', 0);
+        $this->assertNull($order->fresh()->pos_sale_id);
         $this->assertSame('placed', $order->fresh()->status);
     }
 
@@ -1070,6 +1279,113 @@ class PosSaleControllerTest extends TestCase
         $response->assertRedirect("/backoffice/pos/register/{$branch->id}");
         $response->assertSessionHasErrors([
             'items.0.assigned_employee_ids' => 'Choose an active employee with a record.',
+        ]);
+        $this->assertDatabaseCount('pos_sales', 0);
+    }
+
+    public function test_a_free_line_offsets_the_price_and_keeps_the_service_commission(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $service = CatalogItem::factory()->service()->create(['name' => 'Full groom']);
+        $variant = CatalogItemVariant::factory()->for($service)->create(['name' => 'Standard', 'price' => 1000]);
+        $groomer = $this->employeeOnService($service, 'Mina Cruz', 10, 0);
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [
+                    [
+                        'catalog_item_variant_id' => $variant->id,
+                        'quantity' => 1,
+                        'assigned_employee_ids' => [$groomer->id],
+                    ],
+                    [
+                        'catalog_item_variant_id' => $variant->id,
+                        'quantity' => 1,
+                        'is_free' => true,
+                    ],
+                ],
+                'payments' => [],
+            ]);
+
+        $response->assertRedirect(route('pos.index', $branch));
+        $response->assertSessionHasNoErrors();
+        $sale = PosSale::query()->first();
+        $paid = $sale?->items()->where('is_free', false)->first();
+        $free = $sale?->items()->where('is_free', true)->first();
+
+        $this->assertNotNull($sale);
+        $this->assertSame('0.00', $sale->total);
+        $this->assertSame('Free', $sale->payment_method_name);
+        $this->assertSame(0, $sale->payments()->count());
+        $this->assertNotNull($paid);
+        $this->assertNotNull($free);
+        $this->assertSame('1000.00', $paid->unit_price);
+        $this->assertSame('1000.00', $paid->line_total);
+        $this->assertSame('-1000.00', $free->unit_price);
+        $this->assertSame('-1000.00', $free->line_total);
+        $this->assertSame(0, $free->commissions()->count());
+        $this->assertDatabaseHas('pos_sale_item_commissions', [
+            'pos_sale_item_id' => $paid->id,
+            'employee_id' => $groomer->id,
+            'commissionable_amount' => '1000.00',
+            'amount' => '100.00',
+        ]);
+    }
+
+    public function test_a_free_product_line_does_not_remove_stock_twice(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['type' => CatalogItemType::Product, 'name' => 'Kibble']))
+            ->create(['name' => 'Large', 'price' => 100]);
+        $inventory = BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [
+                    ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+                    ['catalog_item_variant_id' => $variant->id, 'quantity' => 1, 'is_free' => true],
+                ],
+                'payments' => [],
+            ]);
+
+        $response->assertRedirect(route('pos.index', $branch));
+        $inventory->refresh();
+        $this->assertSame(4, $inventory->quantity);
+        $this->assertSame(2, PosSaleItem::query()->count());
+        $this->assertSame(1, PosSaleItem::query()->where('is_free', true)->count());
+    }
+
+    public function test_free_lines_cannot_make_the_sale_total_negative(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->service()->create())
+            ->create(['price' => 100]);
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [
+                    ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+                    ['catalog_item_variant_id' => $variant->id, 'quantity' => 1, 'is_free' => true],
+                    ['catalog_item_variant_id' => $variant->id, 'quantity' => 1, 'is_free' => true],
+                ],
+                'payments' => [],
+            ]);
+
+        $response->assertRedirect("/backoffice/pos/register/{$branch->id}");
+        $response->assertSessionHasErrors([
+            'items' => 'A free line cannot make the sale total less than zero.',
         ]);
         $this->assertDatabaseCount('pos_sales', 0);
     }

@@ -20,6 +20,7 @@ use App\Models\Category;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Support\Peso;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -159,20 +160,21 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder->load(['supplier', 'branch', 'items.variant.catalogItem']);
 
-        $view = view('inventory.purchase-orders.print', [
+        $business = $this->businessInformation($purchaseOrder->branch);
+        $business['logo_data_uri'] = Business::current()?->logoDataUri();
+        $data = [
             'purchaseOrder' => $purchaseOrder,
-            'business' => $this->businessInformation($purchaseOrder->branch),
+            'business' => $business,
             'appName' => config('app.name'),
-        ]);
+            'forDownload' => $request->boolean('download'),
+        ];
 
         if ($request->boolean('download')) {
-            return response($view->render(), 200, [
-                'Content-Type' => 'text/html; charset=UTF-8',
-                'Content-Disposition' => 'attachment; filename="'.$purchaseOrder->number.'.html"',
-            ]);
+            return Pdf::loadView('inventory.purchase-orders.print', $data)
+                ->download($purchaseOrder->number.'.pdf');
         }
 
-        return $view;
+        return view('inventory.purchase-orders.print', $data);
     }
 
     public function storeProduct(StorePurchaseOrderProductRequest $request, SaveCatalogItem $saveCatalogItem): RedirectResponse
@@ -217,7 +219,7 @@ class PurchaseOrderController extends Controller
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->orderBy('id')
-                ->get(['id', 'name', 'code', 'contact_name', 'email', 'phone', 'address']),
+                ->get(['id', 'name', 'tin', 'address']),
             'variants' => CatalogItemVariant::query()
                 ->with('catalogItem:id,name,type')
                 ->whereHas('catalogItem', fn ($query) => $query->where('type', CatalogItemType::Product))
@@ -312,9 +314,7 @@ class PurchaseOrderController extends Controller
             'receipts' => $order->receiptHistory(),
             'supplier_detail' => [
                 'name' => $order->supplier?->name,
-                'contact_name' => $order->supplier?->contact_name,
-                'email' => $order->supplier?->email,
-                'phone' => $order->supplier?->phone,
+                'tin' => $order->supplier?->tin,
                 'address' => $order->supplier?->address,
             ],
         ];

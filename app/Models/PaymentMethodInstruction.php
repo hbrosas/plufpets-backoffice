@@ -6,9 +6,19 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['payment_method_id', 'branch_id', 'instructions'])]
+#[Fillable(['payment_method_id', 'branch_id', 'instructions', 'images'])]
 class PaymentMethodInstruction extends Model
 {
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'images' => 'array',
+        ];
+    }
+
     /**
      * @return BelongsTo<PaymentMethod, $this>
      */

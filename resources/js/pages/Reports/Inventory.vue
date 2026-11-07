@@ -20,10 +20,6 @@ defineProps({
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <p class="text-sm text-ink/55 dark:text-foam/50">
-            {{ filters.label }}. Stock value uses the latest purchase cost, or the selling price when no cost is on file.
-            Turnover is units sold divided by units on hand. Wastage is not recorded.
-        </p>
         <div class="grid gap-4 sm:grid-cols-3">
             <article class="flex flex-col gap-2 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
                 <p class="text-sm text-ink/60 dark:text-foam/60">On hand</p>

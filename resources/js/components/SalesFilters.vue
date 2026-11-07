@@ -53,12 +53,12 @@ function apply() {
 </script>
 
 <template>
-    <form class="flex flex-wrap items-center justify-end gap-2" @submit.prevent="apply">
+    <form class="flex w-full max-w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end" @submit.prevent="apply">
         <label class="sr-only" for="sales-preset">Period</label>
         <select
             id="sales-preset"
             v-model="form.preset"
-            class="h-10 rounded-xl border border-mist bg-white pr-10 pl-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
+            class="h-10 max-w-full rounded-xl border border-mist bg-white pr-10 pl-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
         >
             <option value="today">Today</option>
             <option value="7d">Last 7 days</option>
@@ -70,7 +70,7 @@ function apply() {
             v-if="form.preset === 'custom'"
             id="sales-from"
             v-model="form.from"
-            class="h-10 rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
+            class="h-10 max-w-full rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
             type="date"
         />
         <label v-if="form.preset === 'custom'" class="sr-only" for="sales-to">To</label>
@@ -78,14 +78,14 @@ function apply() {
             v-if="form.preset === 'custom'"
             id="sales-to"
             v-model="form.to"
-            class="h-10 rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
+            class="h-10 max-w-full rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
             type="date"
         />
         <label class="sr-only" for="sales-branch">Branch</label>
         <select
             id="sales-branch"
             v-model="form.branch_id"
-            class="h-10 max-w-[10rem] rounded-xl border border-mist bg-white pr-10 pl-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
+            class="h-10 w-full max-w-full rounded-xl border border-mist bg-white pr-10 pl-3 text-sm outline-none transition focus:border-pine sm:w-auto sm:max-w-[10rem] dark:border-white/15 dark:bg-ink"
         >
             <option value="">All branches</option>
             <option v-for="branch in branches" :key="branch.id" :value="branch.id">
@@ -97,7 +97,7 @@ function apply() {
             v-if="showSearch"
             id="sales-search"
             v-model="form.search"
-            class="h-10 w-44 rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
+            class="h-10 w-full max-w-full rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine sm:w-44 dark:border-white/15 dark:bg-ink"
             :placeholder="searchPlaceholder"
             type="search"
         />

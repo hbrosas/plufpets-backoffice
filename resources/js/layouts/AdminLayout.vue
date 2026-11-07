@@ -1,6 +1,6 @@
 <script setup>
 import { Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import FlashToast from '../components/FlashToast.vue';
 
 const page = usePage();
@@ -8,16 +8,18 @@ const appName = computed(() => page.props.appName);
 const employee = computed(() => page.props.employee);
 const smsCreditBalance = computed(() => page.props.smsCreditBalance);
 const form = useForm({});
-const sidebarOpen = ref(false);
+const desktopNavQuery = '(min-width: 1280px)';
+const sidebarOpen = ref(window.matchMedia(desktopNavQuery).matches);
 const openGroups = ref({
     sales: false,
     reports: false,
-    me: false,
     shop: false,
     inventory: false,
     pos: false,
     business: false,
-    staff: false,
+    accounts: false,
+    calendar: false,
+    employees: false,
 });
 const permissions = computed(() => page.props.employee?.permissions ?? []);
 
@@ -29,17 +31,9 @@ const menu = [
     { key: 'pos-launch', type: 'link', name: 'Open POS', href: '/backoffice/pos', permission: 'pos.access', emphasis: true },
     { key: 'dashboard', type: 'link', name: 'Dashboard', href: '/backoffice/dashboard', match: '/backoffice/dashboard', permission: 'dashboard.view' },
     { key: 'orders', type: 'link', name: 'Orders', href: '/backoffice/shop/orders', match: '/backoffice/shop/orders', permission: 'shop.orders' },
-    {
-        key: 'me',
-        type: 'group',
-        id: 'me',
-        name: 'My Account',
-        prefix: '/backoffice/me',
-        items: [
-            { name: 'My Commissions', href: '/backoffice/me/commissions', match: '/backoffice/me/commissions' },
-            { name: 'My Payroll', href: '/backoffice/me/payroll', match: '/backoffice/me/payroll' },
-        ],
-    },
+    { key: 'my-commissions', type: 'link', name: 'My Commissions', href: '/backoffice/me/commissions', match: '/backoffice/me/commissions' },
+    { key: 'my-payroll', type: 'link', name: 'My Payroll', href: '/backoffice/me/payroll', match: '/backoffice/me/payroll' },
+    { key: 'my-employee-201', type: 'link', name: 'My Employee 201', href: '/backoffice/me/employee-201', match: '/backoffice/me/employee-201' },
     { key: 'divider-operations', type: 'divider' },
     {
         key: 'inventory',
@@ -65,7 +59,6 @@ const menu = [
             { name: 'Catalog', href: '/backoffice/shop/catalog', match: '/backoffice/shop/catalog', permission: 'shop.catalog' },
             { name: 'Categories & Brands', href: '/backoffice/shop/catalog-meta', match: '/backoffice/shop/catalog-meta', permission: 'shop.catalog-meta' },
             { name: 'Modifiers', href: '/backoffice/shop/modifiers', match: '/backoffice/shop/modifiers', permission: 'shop.modifiers' },
-            { name: 'Settings', href: '/backoffice/shop/settings', match: '/backoffice/shop/settings', permission: 'shop.settings' },
         ],
     },
     {
@@ -77,6 +70,7 @@ const menu = [
         items: [
             { name: 'Banner', href: '/backoffice/shop/banner', match: '/backoffice/shop/banner', permission: 'shop.settings' },
             { name: 'Promotional Text', href: '/backoffice/shop/promotion', match: '/backoffice/shop/promotion', permission: 'shop.settings' },
+            { name: 'Settings', href: '/backoffice/shop/settings', match: '/backoffice/shop/settings', permission: 'shop.settings' },
         ],
     },
     {
@@ -146,17 +140,36 @@ const menu = [
         ],
     },
     {
-        key: 'staff',
+        key: 'accounts',
         type: 'group',
-        id: 'staff',
-        name: 'Staff Management',
+        id: 'accounts',
+        name: 'User Accounts',
         prefix: '/backoffice/staff',
         items: [
-            { name: 'Staff', href: '/backoffice/staff', match: '/backoffice/staff', permission: 'staff.manage' },
-            { name: 'Employees Records', href: '/backoffice/staff/records', match: '/backoffice/staff/records', permission: 'staff.manage' },
-            { name: 'For Approval', href: '/backoffice/staff/approvals', match: '/backoffice/staff/approvals', permission: 'staff.manage' },
-            { name: 'Holidays', href: '/backoffice/staff/holidays', match: '/backoffice/staff/holidays', permission: 'staff.manage' },
+            { name: 'Users', href: '/backoffice/staff', match: '/backoffice/staff', permission: 'staff.manage' },
             { name: 'Roles', href: '/backoffice/staff/roles', match: '/backoffice/staff/roles', permission: 'roles.manage' },
+        ],
+    },
+    {
+        key: 'calendar',
+        type: 'group',
+        id: 'calendar',
+        name: 'Business Calendar',
+        prefix: '/backoffice/staff/holidays',
+        items: [
+            { name: 'Holidays', href: '/backoffice/staff/holidays', match: '/backoffice/staff/holidays', permission: 'staff.manage' },
+        ],
+    },
+    {
+        key: 'employees',
+        type: 'group',
+        id: 'employees',
+        name: 'Employee Management',
+        prefix: '/backoffice/staff/records',
+        items: [
+            { name: 'Employees', href: '/backoffice/staff/records', match: '/backoffice/staff/records', permission: 'staff.manage' },
+            { name: 'Filed Requests', href: '/backoffice/staff/approvals', match: '/backoffice/staff/approvals', permission: 'staff.manage' },
+            { name: 'Run Payroll', href: '/backoffice/staff/payroll', match: '/backoffice/staff/payroll', permission: 'staff.manage' },
         ],
     },
 ];
@@ -198,12 +211,12 @@ const backLink = computed(() => {
     const path = currentPath.value;
     const links = [
         [/^\/backoffice\/reports\//, '/backoffice/dashboard', 'Back to dashboard'],
-        [/^\/backoffice\/sales\/receipts\/.+/, '/backoffice/sales/receipts', 'Back to receipts'],
         [/^\/backoffice\/inventory\/products\/.+/, '/backoffice/inventory', 'Back to inventory'],
         [/^\/backoffice\/inventory\/purchase-orders\/.+/, '/backoffice/inventory/purchase-orders', 'Back to purchase orders'],
+        [/^\/backoffice\/inventory\/suppliers\/.+/, '/backoffice/inventory/suppliers', 'Back to suppliers'],
         [/^\/backoffice\/inventory\/delivery-orders\/.+/, '/backoffice/inventory/delivery-orders', 'Back to delivery orders'],
         [/^\/backoffice\/shop\/orders\/.+/, '/backoffice/shop/orders', 'Back to orders'],
-        [/^\/backoffice\/staff\/\d+\/record$/, '/backoffice/staff/records', 'Back to records'],
+        [/^\/backoffice\/staff\/\d+\/record$/, '/backoffice/staff/records', 'Back to employees'],
     ];
     const match = links.find(([pattern]) => pattern.test(path));
 
@@ -215,14 +228,20 @@ const pageTitle = computed(() => {
         return 'Employee record';
     }
 
+    if (/^\/backoffice\/inventory\/suppliers\/\d+$/.test(currentPath.value)) {
+        return 'Supplier';
+    }
+
     const titles = [
         ['/backoffice/me/commissions', 'My Commissions'],
+        ['/backoffice/me/employee-201', 'My Employee 201'],
         ['/backoffice/me/payroll', 'My Payroll'],
-        ['/backoffice/staff/approvals', 'For Approval'],
-        ['/backoffice/staff/records', 'Employees Records'],
+        ['/backoffice/staff/payroll', 'Run Payroll'],
+        ['/backoffice/staff/approvals', 'Filed Requests'],
+        ['/backoffice/staff/records', 'Employees'],
         ['/backoffice/staff/holidays', 'Holidays'],
         ['/backoffice/staff/roles', 'Roles'],
-        ['/backoffice/staff', 'Staff'],
+        ['/backoffice/staff', 'Users'],
         ['/backoffice/reports/sales', 'Sales report'],
         ['/backoffice/reports/profit', 'Profit'],
         ['/backoffice/reports/inventory', 'Inventory'],
@@ -302,21 +321,35 @@ function logout() {
     form.post('/backoffice/logout');
 }
 
+function closeSidebarOnNarrowScreens() {
+    if (!window.matchMedia(desktopNavQuery).matches) {
+        sidebarOpen.value = false;
+    }
+}
+
+onMounted(() => {
+    window.matchMedia(desktopNavQuery).addEventListener('change', closeSidebarOnNarrowScreens);
+});
+
+onUnmounted(() => {
+    window.matchMedia(desktopNavQuery).removeEventListener('change', closeSidebarOnNarrowScreens);
+});
+
 watch(
     currentPath,
     (path) => {
-        sidebarOpen.value = false;
+        closeSidebarOnNarrowScreens();
 
         visibleMenu.value.forEach((entry) => {
             if (entry.type !== 'group') {
                 return;
             }
 
-            if (entry.id === 'shop' && (path.startsWith('/backoffice/shop/orders') || path.startsWith('/backoffice/shop/branches') || path.startsWith('/backoffice/shop/banner') || path.startsWith('/backoffice/shop/promotion'))) {
+            if (entry.id === 'shop' && (path.startsWith('/backoffice/shop/orders') || path.startsWith('/backoffice/shop/branches') || path.startsWith('/backoffice/shop/banner') || path.startsWith('/backoffice/shop/promotion') || path.startsWith('/backoffice/shop/settings'))) {
                 return;
             }
 
-            if (entry.id === 'storefront' && (path.startsWith('/backoffice/shop/banner') || path.startsWith('/backoffice/shop/promotion'))) {
+            if (entry.id === 'storefront' && (path.startsWith('/backoffice/shop/banner') || path.startsWith('/backoffice/shop/promotion') || path.startsWith('/backoffice/shop/settings'))) {
                 openGroups.value.storefront = true;
 
                 return;
@@ -324,6 +357,30 @@ watch(
 
             if (entry.id === 'business' && path.startsWith('/backoffice/shop/branches')) {
                 openGroups.value.business = true;
+
+                return;
+            }
+
+            if (entry.id === 'accounts') {
+                if (path === '/backoffice/staff' || path.startsWith('/backoffice/staff/roles')) {
+                    openGroups.value.accounts = true;
+                }
+
+                return;
+            }
+
+            if (entry.id === 'calendar') {
+                if (path.startsWith('/backoffice/staff/holidays')) {
+                    openGroups.value.calendar = true;
+                }
+
+                return;
+            }
+
+            if (entry.id === 'employees') {
+                if (path.startsWith('/backoffice/staff/records') || path.startsWith('/backoffice/staff/approvals') || path.startsWith('/backoffice/staff/payroll') || /^\/backoffice\/staff\/\d+\/record$/.test(path)) {
+                    openGroups.value.employees = true;
+                }
 
                 return;
             }
@@ -348,18 +405,19 @@ watch(
 </script>
 
 <template>
-    <div class="admin-shell min-h-screen bg-cream text-black lg:flex">
+    <div class="admin-shell min-h-screen bg-cream text-black xl:flex">
         <FlashToast />
         <div
             v-if="sidebarOpen"
-            class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            class="fixed inset-0 z-40 bg-black/40 xl:hidden"
             @click="sidebarOpen = false"
         />
 
         <aside
             id="admin-sidebar"
-            class="fixed inset-y-0 left-0 z-50 flex h-dvh w-72 shrink-0 flex-col overflow-hidden border-r border-black/10 bg-white text-black transition-transform duration-200 lg:sticky lg:top-0 lg:translate-x-0"
-            :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+            class="fixed inset-y-0 left-0 z-50 flex h-dvh w-72 shrink-0 flex-col overflow-hidden border-r border-black/10 bg-white text-black transition-[transform,width] duration-200 xl:sticky xl:top-0"
+            :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full xl:w-0 xl:translate-x-0 xl:border-r-0'"
+            :inert="!sidebarOpen"
         >
             <div class="flex shrink-0 items-center gap-3 px-6 py-6">
                 <img
@@ -369,10 +427,20 @@ watch(
                     class="h-10 w-10 rounded-xl bg-white object-contain"
                 />
                 <span v-else class="flex h-10 w-10 items-center justify-center rounded-xl bg-ember text-sm font-semibold text-black">PP</span>
-                <div class="flex min-w-0 flex-col gap-0.5">
+                <div class="flex min-w-0 flex-1 flex-col gap-0.5">
                     <p class="truncate text-sm font-medium">{{ appName }}</p>
                     <p class="text-xs text-black/60">Backoffice</p>
                 </div>
+                <button
+                    class="shrink-0 rounded-xl border border-black/15 p-2 xl:hidden"
+                    type="button"
+                    @click="sidebarOpen = false"
+                >
+                    <span class="sr-only">Close navigation</span>
+                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                    </svg>
+                </button>
             </div>
 
             <nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-4" aria-label="Admin">
@@ -466,43 +534,51 @@ watch(
             </div>
         </aside>
 
-        <div class="flex min-h-screen min-w-0 flex-1 flex-col">
-            <header class="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-black/10 bg-white px-4 py-3 lg:px-8">
-                <div class="flex items-center gap-3">
-                    <button
-                        class="rounded-xl border border-black/15 p-2 lg:hidden"
-                        type="button"
-                        :aria-expanded="sidebarOpen"
-                        aria-controls="admin-sidebar"
-                        @click="sidebarOpen = !sidebarOpen"
-                    >
-                        <span class="sr-only">Open navigation</span>
-                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path
-                                fill-rule="evenodd"
-                                d="M3 5.75A.75.75 0 0 1 3.75 5h12.5a.75.75 0 0 1 0 1.5H3.75A.75.75 0 0 1 3 5.75Zm0 4.5a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 0 1.5H3.75A.75.75 0 0 1 3 10.25Zm0 4.5a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75Z"
-                                clip-rule="evenodd"
-                            />
-                        </svg>
-                    </button>
-                    <Link
-                        v-if="backLink"
-                        :href="backLink.href"
-                        class="inline-flex items-center gap-1.5 text-sm font-medium"
-                    >
-                        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path
-                                fill-rule="evenodd"
-                                d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z"
-                                clip-rule="evenodd"
-                            />
-                        </svg>
-                        {{ backLink.label }}
-                    </Link>
-                    <p v-else class="text-sm font-medium">{{ pageTitle }}</p>
-                </div>
+        <div class="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-clip">
+            <header class="sticky top-0 z-30 border-b border-black/10 bg-white">
+                <div class="flex min-w-0 flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+                    <div class="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+                        <button
+                            class="shrink-0 rounded-xl border border-black/15 p-2"
+                            type="button"
+                            :aria-expanded="sidebarOpen"
+                            aria-controls="admin-sidebar"
+                            @click="sidebarOpen = !sidebarOpen"
+                        >
+                            <span class="sr-only">{{ sidebarOpen ? 'Close navigation' : 'Open navigation' }}</span>
+                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path
+                                    fill-rule="evenodd"
+                                    d="M3 5.75A.75.75 0 0 1 3.75 5h12.5a.75.75 0 0 1 0 1.5H3.75A.75.75 0 0 1 3 5.75Zm0 4.5a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 0 1.5H3.75A.75.75 0 0 1 3 10.25Zm0 4.5a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75Z"
+                                    clip-rule="evenodd"
+                                />
+                            </svg>
+                        </button>
+                        <Link
+                            v-if="backLink"
+                            :href="backLink.href"
+                            class="inline-flex max-w-[45%] min-w-0 items-center gap-1.5 text-sm font-medium sm:max-w-none"
+                        >
+                            <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path
+                                    fill-rule="evenodd"
+                                    d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z"
+                                    clip-rule="evenodd"
+                                />
+                            </svg>
+                            <span class="truncate">{{ backLink.label }}</span>
+                        </Link>
+                        <div id="admin-header-tabs" class="peer order-2 flex min-w-0 flex-1 items-center overflow-x-auto empty:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" />
+                        <h1
+                            class="order-1 min-w-0 max-w-[9rem] shrink truncate text-lg font-medium sm:max-w-[14rem]"
+                            :class="backLink ? 'peer-[:empty]:hidden' : ''"
+                        >
+                            {{ pageTitle }}
+                        </h1>
+                    </div>
 
-                <div id="admin-header-actions" class="flex min-w-0 flex-wrap items-center justify-end gap-3" />
+                    <div id="admin-header-actions" class="flex w-full min-w-0 flex-wrap items-center gap-2 empty:hidden lg:w-auto lg:justify-end lg:gap-3" />
+                </div>
             </header>
 
             <main class="flex-1 px-4 py-6 lg:px-8 lg:py-8">

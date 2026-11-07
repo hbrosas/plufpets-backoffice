@@ -48,7 +48,7 @@ const stats = computed(() => [
     { label: 'On hand', value: props.summary.on_hand, hint: 'Units across locations' },
     { label: 'Inventory value', value: props.summary.value, hint: 'At latest purchase price' },
     { label: 'Purchased', value: props.summary.purchased, hint: props.summary.last_purchased || 'No deliveries yet' },
-    { label: 'Sold', value: props.summary.sold, hint: 'POS sales are not recorded here yet' },
+    { label: 'Sold', value: props.summary.sold, hint: 'Units sold and not refunded' },
 ]);
 </script>
 
@@ -187,9 +187,31 @@ const stats = computed(() => [
 
         <section class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
             <h2 class="text-lg font-medium">Sales</h2>
-            <p class="text-sm text-ink/70 dark:text-foam/70">
-                No sales have been recorded for this product. Point-of-sale transactions will show here once they are connected.
-            </p>
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[36rem] text-left text-sm">
+                    <thead class="text-ink/50 dark:text-foam/50">
+                        <tr class="border-b border-mist dark:border-white/10">
+                            <th class="py-3 pr-4 font-medium">Sold</th>
+                            <th class="py-3 pr-4 font-medium">Receipt</th>
+                            <th class="py-3 pr-4 font-medium">Branch</th>
+                            <th class="py-3 pr-4 font-medium">Qty</th>
+                            <th class="py-3 font-medium">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-if="sales.length === 0">
+                            <td class="py-8 text-ink/60 dark:text-foam/60" colspan="5">No sales recorded yet.</td>
+                        </tr>
+                        <tr v-for="sale in sales" :key="sale.id" class="border-b border-mist last:border-b-0 dark:border-white/10">
+                            <td class="py-3 pr-4">{{ sale.occurred_at }}</td>
+                            <td class="py-3 pr-4">{{ sale.reference }}</td>
+                            <td class="py-3 pr-4">{{ sale.branch || '—' }}</td>
+                            <td class="py-3 pr-4 tabular-nums">{{ sale.quantity }}</td>
+                            <td class="py-3">{{ sale.refunded ? 'Refunded' : 'Sold' }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </section>
 
         <section class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">

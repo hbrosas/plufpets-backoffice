@@ -1,7 +1,7 @@
 <script setup>
-import { Head, router, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
-import { formatAmount, formatPeso } from '../../formatPeso';
+import { Head, useForm } from '@inertiajs/vue3';
+import { ref } from 'vue';
+import { formatPeso } from '../../formatPeso';
 import AdminLayout from '../../layouts/AdminLayout.vue';
 
 defineOptions({
@@ -16,17 +16,14 @@ const props = defineProps({
     civilStatuses: { type: Array, required: true },
     employmentStatuses: { type: Array, required: true },
     payBases: { type: Array, required: true },
-    payrollAssumptions: { type: Object, required: true },
-    payroll: { type: Object, default: null },
-    holidays: { type: Array, default: () => [] },
     finalizedPayrolls: { type: Array, default: () => [] },
 });
 
-const tab = ref(props.payroll ? 'payroll' : 'record');
+const tab = ref('record');
 const tabs = [
     { id: 'record', label: 'Employee 201 Record' },
     { id: 'compensation', label: 'Compensation' },
-    { id: 'payroll', label: 'Payroll' },
+    { id: 'payslips', label: 'Pay Slips' },
 ];
 
 const compensationSuggestions = ['Basic salary', 'COLA'];
@@ -111,12 +108,6 @@ function removeLine(kind, index) {
     form[linesKey(kind)].splice(index, 1);
 }
 
-function showGroup(lines, index) {
-    const line = lines[index];
-
-    return Boolean(line?.group) && (index === 0 || lines[index - 1]?.group !== line.group);
-}
-
 function formatDate(value) {
     return new Intl.DateTimeFormat('en-US', {
         month: 'short',
@@ -131,108 +122,30 @@ function submit() {
         preserveScroll: true,
     });
 }
-
-const payrollForm = useForm({
-    period_start: props.payroll?.period_start ?? '',
-    period_end: props.payroll?.period_end ?? '',
-    days_worked: props.payroll?.days_worked ?? '',
-    late_hours: props.payroll?.late_hours ?? '0',
-    overtime_hours: props.payroll?.overtime_hours ?? '0',
-    overnight_nights: props.payroll?.overnight_nights ?? '0',
-    deduct_government: props.payroll?.deduct_government ?? true,
-    worked_holiday_ids: props.payroll?.worked_holiday_ids ?? [],
-    adjustments: (props.payroll?.adjustments ?? []).map((item) => ({ ...item })),
-});
-
-const periodHolidays = computed(() => {
-    if (!payrollForm.period_start || !payrollForm.period_end) {
-        return [];
-    }
-
-    return props.holidays.filter((holiday) => holiday.date >= payrollForm.period_start && holiday.date <= payrollForm.period_end);
-});
-
-function generatePayroll() {
-    payrollForm.post(`/backoffice/staff/${props.staff.id}/payroll`, {
-        preserveScroll: true,
-    });
-}
-
-function payrollQuery() {
-    const params = new URLSearchParams({
-        period_start: props.payroll.period_start,
-        period_end: props.payroll.period_end,
-        days_worked: props.payroll.days_worked,
-        late_hours: props.payroll.late_hours,
-        overtime_hours: props.payroll.overtime_hours,
-        deduct_government: props.payroll.deduct_government ? '1' : '0',
-        overnight_nights: props.payroll.overnight_nights,
-    });
-
-    props.payroll.worked_holiday_ids.forEach((id) => {
-        params.append('worked_holiday_ids[]', id);
-    });
-
-    (props.payroll.adjustments ?? []).forEach((item, index) => {
-        params.append(`adjustments[${index}][name]`, item.name);
-        params.append(`adjustments[${index}][side]`, item.side);
-        params.append(`adjustments[${index}][amount]`, item.amount);
-    });
-
-    return params;
-}
-
-function payrollDownloadHref() {
-    return `/backoffice/staff/${props.staff.id}/payroll/download?${payrollQuery().toString()}`;
-}
-
-function addAdjustment() {
-    payrollForm.adjustments.push({
-        name: '',
-        side: 'earning',
-        amount: '',
-    });
-}
-
-function removeAdjustment(index) {
-    payrollForm.adjustments.splice(index, 1);
-}
-
-function finalizePayroll() {
-    router.post(`/backoffice/staff/${props.staff.id}/payroll/finalize`, {
-        period_start: props.payroll.period_start,
-        period_end: props.payroll.period_end,
-        days_worked: props.payroll.days_worked,
-        late_hours: props.payroll.late_hours,
-        overtime_hours: props.payroll.overtime_hours,
-        overnight_nights: props.payroll.overnight_nights,
-        deduct_government: props.payroll.deduct_government,
-        worked_holiday_ids: props.payroll.worked_holiday_ids,
-        adjustments: props.payroll.adjustments,
-    }, {
-        preserveScroll: true,
-    });
-}
 </script>
 
 <template>
     <Head :title="`${staff.name} · Employee record`" />
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div class="flex flex-wrap gap-2">
-            <button
-                v-for="item in tabs"
-                :key="item.id"
-                class="h-10 rounded-xl px-4 text-sm font-medium"
-                :class="tab === item.id ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
-                type="button"
-                @click="tab = item.id"
-            >
-                {{ item.label }}
-            </button>
-        </div>
+        <Teleport defer to="#admin-header-tabs">
+            <div class="flex w-max gap-2" role="tablist" aria-label="Employee record">
+                <button
+                    v-for="item in tabs"
+                    :key="item.id"
+                    class="h-10 shrink-0 rounded-xl px-4 text-sm font-medium whitespace-nowrap"
+                    :class="tab === item.id ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                    type="button"
+                    role="tab"
+                    :aria-selected="tab === item.id"
+                    @click="tab = item.id"
+                >
+                    {{ item.label }}
+                </button>
+            </div>
+        </Teleport>
 
-        <form v-show="tab !== 'payroll'" class="flex flex-col gap-6" @submit.prevent="submit">
+        <form v-show="tab !== 'payslips'" class="flex flex-col gap-6" @submit.prevent="submit">
         <div v-show="tab === 'record'" class="flex flex-col gap-6">
             <section class="grid gap-4 rounded-2xl border border-mist bg-white p-5 sm:grid-cols-4 dark:border-white/10 dark:bg-white/5">
                 <div>
@@ -582,7 +495,7 @@ function finalizePayroll() {
             </section>
         </div>
 
-        <div v-if="tab !== 'payroll'" class="flex justify-end">
+        <div v-if="tab !== 'payslips'" class="flex justify-end">
             <button
                 class="h-11 rounded-xl bg-pine px-5 text-sm font-medium text-foam disabled:opacity-70"
                 type="submit"
@@ -593,269 +506,30 @@ function finalizePayroll() {
         </div>
         </form>
 
-        <div v-show="tab === 'payroll'" class="flex flex-col gap-6">
-            <form class="grid gap-4 rounded-2xl border border-mist bg-white p-5 sm:grid-cols-2 lg:grid-cols-3 dark:border-white/10 dark:bg-white/5" @submit.prevent="generatePayroll">
-                <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium" for="payroll-start">Start date</label>
-                    <input id="payroll-start" v-model="payrollForm.period_start" :class="fieldClass" required type="date" />
-                    <p v-if="payrollForm.errors.period_start" class="text-sm text-danger">{{ payrollForm.errors.period_start }}</p>
-                </div>
-                <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium" for="payroll-end">End date</label>
-                    <input id="payroll-end" v-model="payrollForm.period_end" :class="fieldClass" required type="date" />
-                    <p v-if="payrollForm.errors.period_end" class="text-sm text-danger">{{ payrollForm.errors.period_end }}</p>
-                </div>
-                <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium" for="payroll-days">Ordinary days worked</label>
-                    <input
-                        id="payroll-days"
-                        v-model="payrollForm.days_worked"
-                        :class="fieldClass"
-                        max="31"
-                        min="0"
-                        required
-                        step="0.01"
-                        type="number"
-                    />
-                    <p v-if="payrollForm.errors.days_worked" class="text-sm text-danger">{{ payrollForm.errors.days_worked }}</p>
-                </div>
-                <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium" for="payroll-nights">Overnight nights</label>
-                    <input
-                        id="payroll-nights"
-                        v-model="payrollForm.overnight_nights"
-                        :class="fieldClass"
-                        max="31"
-                        min="0"
-                        required
-                        step="1"
-                        type="number"
-                    />
-                    <p v-if="payrollForm.errors.overnight_nights" class="text-sm text-danger">{{ payrollForm.errors.overnight_nights }}</p>
-                    <p class="text-sm text-ink/50 dark:text-foam/50">{{ formatPeso(profile.overnight_allowance || 0) }} per night, from Compensation.</p>
-                </div>
-                <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium" for="payroll-late">Late (hours)</label>
-                    <input
-                        id="payroll-late"
-                        v-model="payrollForm.late_hours"
-                        :class="fieldClass"
-                        max="744"
-                        min="0"
-                        required
-                        step="0.01"
-                        type="number"
-                    />
-                    <p v-if="payrollForm.errors.late_hours" class="text-sm text-danger">{{ payrollForm.errors.late_hours }}</p>
-                </div>
-                <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium" for="payroll-overtime">Overtime (hours)</label>
-                    <input
-                        id="payroll-overtime"
-                        v-model="payrollForm.overtime_hours"
-                        :class="fieldClass"
-                        max="744"
-                        min="0"
-                        required
-                        step="0.01"
-                        type="number"
-                    />
-                    <p v-if="payrollForm.errors.overtime_hours" class="text-sm text-danger">{{ payrollForm.errors.overtime_hours }}</p>
-                </div>
-                <label class="flex items-center gap-3 text-sm sm:col-span-2 lg:col-span-3">
-                    <input v-model="payrollForm.deduct_government" class="size-4 rounded border-mist" type="checkbox" />
-                    Deduct government benefits (SSS, PhilHealth, Pag-IBIG)
-                </label>
-                <div v-if="periodHolidays.length > 0" class="flex flex-col gap-2 sm:col-span-2 lg:col-span-3">
-                    <p class="text-sm font-medium">Holidays in this period</p>
-                    <p v-if="payrollForm.errors.worked_holiday_ids" class="text-sm text-danger">{{ payrollForm.errors.worked_holiday_ids }}</p>
-                    <label v-for="holiday in periodHolidays" :key="holiday.id" class="flex items-start gap-3 text-sm">
-                        <input v-model="payrollForm.worked_holiday_ids" class="mt-1 size-4 rounded border-mist" type="checkbox" :value="holiday.id" />
-                        <span>
-                            {{ formatDate(holiday.date) }} · {{ holiday.name }} · {{ holiday.type_label }}
-                            <span class="block text-ink/50 dark:text-foam/50">Check this if the employee worked. Unchecked uses the unworked rate: {{ holiday.unworked_label }}.</span>
-                        </span>
-                    </label>
-                </div>
-                <div class="flex flex-col gap-3 sm:col-span-2 lg:col-span-3">
-                    <div class="flex items-center justify-between gap-3">
-                        <h2 class="text-sm font-medium">One-time items</h2>
-                        <button class="text-sm font-medium text-pine dark:text-sand" type="button" @click="addAdjustment">
-                            Add item
-                        </button>
-                    </div>
-                    <p class="text-sm text-ink/60 dark:text-foam/60">
-                        Add a bonus, a cash advance, or another amount that belongs only to this payroll.
-                    </p>
-                    <div v-for="(item, index) in payrollForm.adjustments" :key="`adjustment-${index}`" class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem_10rem_auto]">
-                        <input v-model="item.name" :class="fieldClass" placeholder="Name" type="text" />
-                        <select v-model="item.side" :class="fieldClass">
-                            <option value="earning">Earning</option>
-                            <option value="deduction">Deduction</option>
-                        </select>
-                        <input v-model="item.amount" :class="fieldClass" min="0.01" placeholder="Amount" step="0.01" type="number" />
-                        <button class="h-11 px-2 text-sm font-medium text-danger" type="button" @click="removeAdjustment(index)">
-                            Remove
-                        </button>
-                        <p v-if="payrollForm.errors[`adjustments.${index}.name`]" class="text-sm text-danger sm:col-span-4">
-                            {{ payrollForm.errors[`adjustments.${index}.name`] }}
-                        </p>
-                        <p v-if="payrollForm.errors[`adjustments.${index}.side`]" class="text-sm text-danger sm:col-span-4">
-                            {{ payrollForm.errors[`adjustments.${index}.side`] }}
-                        </p>
-                        <p v-if="payrollForm.errors[`adjustments.${index}.amount`]" class="text-sm text-danger sm:col-span-4">
-                            {{ payrollForm.errors[`adjustments.${index}.amount`] }}
-                        </p>
-                    </div>
-                </div>
-                <div class="flex flex-col gap-2 text-sm text-ink/60 sm:col-span-2 lg:col-span-3 dark:text-foam/60">
-                    <p>Days worked are ordinary days only. Holidays in this period are paid separately.</p>
-                    <p v-if="profile.pay_basis === 'month'">
-                        Monthly amounts are divided by {{ payrollAssumptions.monthly_work_days }} working days, then multiplied by the ordinary days worked.
-                    </p>
-                    <p v-else>Daily amounts are multiplied by the ordinary days worked.</p>
-                    <p>
-                        A day is {{ payrollAssumptions.hours_per_day }} hours. Late is deducted at the hourly basic rate. Ordinary overtime is
-                        {{ payrollAssumptions.overtime_multiplier }}× that rate. Regular holidays: 200% if worked, 100% if not. Special holidays: 130% if worked, no pay if not. Government contributions are deducted only when selected.
-                    </p>
-                </div>
-                <div class="flex justify-end sm:col-span-2 lg:col-span-3">
-                    <button
-                        class="h-11 rounded-xl bg-pine px-5 text-sm font-medium text-foam disabled:opacity-70"
-                        type="submit"
-                        :disabled="payrollForm.processing"
-                    >
-                        {{ payrollForm.processing ? 'Generating…' : 'Generate payroll' }}
-                    </button>
-                </div>
-            </form>
-
-            <section
-                v-if="payroll"
-                class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5"
-            >
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div class="flex flex-col gap-1">
-                        <h2 class="text-sm font-medium">Generated payroll</h2>
-                        <p class="text-sm text-ink/60 dark:text-foam/60">
-                            {{ formatDate(payroll.period_start) }} to {{ formatDate(payroll.period_end) }}
-                            · {{ payroll.days_worked }} ordinary {{ Number(payroll.days_worked) === 1 ? 'day' : 'days' }}
-                            · {{ payroll.late_hours }} late {{ Number(payroll.late_hours) === 1 ? 'hour' : 'hours' }}
-                            · {{ payroll.overtime_hours }} overtime {{ Number(payroll.overtime_hours) === 1 ? 'hour' : 'hours' }}
-                        </p>
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                        <a
-                            class="inline-flex h-10 items-center rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
-                            :href="payrollDownloadHref()"
-                        >
-                            Download PDF
-                        </a>
-                        <button
-                            class="inline-flex h-10 items-center rounded-xl bg-pine px-4 text-sm font-medium text-foam"
-                            type="button"
-                            @click="finalizePayroll"
-                        >
-                            Finalize payroll
-                        </button>
-                    </div>
-                </div>
-
-                <div class="flex flex-col gap-6">
-                    <div class="overflow-x-auto">
-                        <table class="w-full min-w-[32rem] text-left text-sm">
-                            <thead class="text-ink/50 dark:text-foam/50">
-                                <tr class="border-b border-mist dark:border-white/10">
-                                    <th class="py-2 pr-4 font-medium">Earnings</th>
-                                    <th class="w-28 py-2 pr-4 text-right font-medium">Amount</th>
-                                    <th class="w-24 py-2 pr-4 text-right font-medium">Unit</th>
-                                    <th class="w-28 py-2 text-right font-medium">Subtotal</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template v-for="(line, index) in payroll.earnings" :key="`earning-${index}`">
-                                    <tr v-if="showGroup(payroll.earnings, index)">
-                                        <td class="pt-3 font-medium" colspan="4">{{ line.group }}</td>
-                                    </tr>
-                                    <tr class="border-b border-mist last:border-b-0 dark:border-white/10">
-                                        <td class="py-2 pr-4" :class="line.group ? 'pl-4' : ''">{{ line.label || line.name }}</td>
-                                        <td class="py-2 pr-4 text-right tabular-nums">{{ formatAmount(line.rate) }}</td>
-                                        <td class="py-2 pr-4 text-right tabular-nums">{{ formatAmount(line.unit) }}</td>
-                                        <td class="py-2 text-right tabular-nums">{{ formatAmount(line.amount) }}</td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="w-full min-w-[32rem] text-left text-sm">
-                            <thead class="text-ink/50 dark:text-foam/50">
-                                <tr class="border-b border-mist dark:border-white/10">
-                                    <th class="py-2 pr-4 font-medium">Deductions</th>
-                                    <th class="w-28 py-2 pr-4 text-right font-medium">Amount</th>
-                                    <th class="w-24 py-2 pr-4 text-right font-medium">Unit</th>
-                                    <th class="w-28 py-2 text-right font-medium">Subtotal</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template v-for="(line, index) in payroll.deductions" :key="`deduction-${index}`">
-                                    <tr v-if="showGroup(payroll.deductions, index)">
-                                        <td class="pt-3 font-medium" colspan="4">{{ line.group }}</td>
-                                    </tr>
-                                    <tr class="border-b border-mist last:border-b-0 dark:border-white/10">
-                                        <td class="py-2 pr-4" :class="line.group ? 'pl-4' : ''">{{ line.label || line.name }}</td>
-                                        <td class="py-2 pr-4 text-right tabular-nums">{{ formatAmount(line.rate) }}</td>
-                                        <td class="py-2 pr-4 text-right tabular-nums">{{ formatAmount(line.unit) }}</td>
-                                        <td class="py-2 text-right tabular-nums">{{ formatAmount(line.amount) }}</td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div class="flex flex-col gap-2 border-t border-mist pt-4 text-sm dark:border-white/10">
-                    <div class="flex justify-between gap-4">
-                        <span>Gross pay</span>
-                        <span>{{ formatPeso(payroll.gross) }}</span>
-                    </div>
-                    <div class="flex justify-between gap-4">
-                        <span>Deductions</span>
-                        <span>{{ formatPeso(payroll.total_deductions) }}</span>
-                    </div>
-                    <div class="flex justify-between gap-4 text-base font-medium">
-                        <span>Net pay</span>
-                        <span>{{ formatPeso(payroll.net) }}</span>
-                    </div>
-                </div>
-
-                <div v-if="payroll.employer_shares.length > 0" class="flex flex-col gap-2">
-                    <h3 class="text-sm font-medium">Employer share</h3>
-                    <p class="text-sm text-ink/60 dark:text-foam/60">Not deducted from pay.</p>
-                    <div
-                        v-for="line in payroll.employer_shares"
-                        :key="`employer-${line.name}`"
-                        class="flex justify-between gap-4 text-sm"
-                    >
-                        <span>{{ line.name }}</span>
-                        <span>{{ formatPeso(line.amount) }}</span>
-                    </div>
-                </div>
-            </section>
-
-            <section class="flex flex-col gap-3 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
-                <h2 class="text-sm font-medium">Finalized payrolls</h2>
-                <p v-if="finalizedPayrolls.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No payroll has been finalized yet.</p>
-                <div
-                    v-for="saved in finalizedPayrolls"
-                    :key="saved.id"
-                    class="flex flex-wrap items-center justify-between gap-3 text-sm"
-                >
-                    <span>{{ formatDate(saved.period_start) }} to {{ formatDate(saved.period_end) }} · {{ formatPeso(saved.net) }}</span>
-                    <a class="font-medium text-pine" :href="`/backoffice/staff/payrolls/${saved.id}/download`">Download PDF</a>
-                </div>
-            </section>
+        <div v-show="tab === 'payslips'">
+            <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
+                <table class="w-full text-left text-sm">
+                    <thead class="text-ink/50 dark:text-foam/50">
+                        <tr class="border-b border-mist dark:border-white/10">
+                            <th class="px-4 py-3 font-medium">Period</th>
+                            <th class="px-4 py-3 font-medium">Net</th>
+                            <th class="px-4 py-3 font-medium"><span class="sr-only">Download</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-if="finalizedPayrolls.length === 0">
+                            <td class="px-4 py-8 text-ink/60 dark:text-foam/60" colspan="3">No pay slips yet.</td>
+                        </tr>
+                        <tr v-for="payroll in finalizedPayrolls" :key="payroll.id" class="border-b border-mist last:border-b-0 dark:border-white/10">
+                            <td class="px-4 py-3">{{ formatDate(payroll.period_start) }} – {{ formatDate(payroll.period_end) }}</td>
+                            <td class="px-4 py-3 font-medium">{{ formatPeso(payroll.net) }}</td>
+                            <td class="px-4 py-3 text-right">
+                                <a class="font-medium text-pine dark:text-sand" :href="`/backoffice/staff/payrolls/${payroll.id}/download`">Download</a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </template>

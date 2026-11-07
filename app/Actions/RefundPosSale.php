@@ -46,7 +46,7 @@ class RefundPosSale
     {
         $variant = $item->variant;
 
-        if ($variant === null || $variant->catalogItem?->type !== CatalogItemType::Product) {
+        if ($item->is_free || $variant === null || $variant->catalogItem?->type !== CatalogItemType::Product) {
             return;
         }
 

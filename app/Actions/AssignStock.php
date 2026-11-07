@@ -3,7 +3,6 @@
 namespace App\Actions;
 
 use App\Models\BranchInventory;
-use App\Models\BranchVariantPrice;
 use App\Models\PurchaseOrderItem;
 use App\Models\StockAssignment;
 use Illuminate\Support\Facades\DB;
@@ -12,61 +11,56 @@ use Illuminate\Validation\ValidationException;
 class AssignStock
 {
     /**
-     * @param  array{purchase_order_item_id: int, branch_id: int, quantity: int, selling_price: mixed}  $attributes
+     * @param  list<array{purchase_order_item_id: int, quantity: int}>  $items
      */
-    public function handle(array $attributes): StockAssignment
+    public function handle(int $branchId, array $items): void
     {
-        return DB::transaction(function () use ($attributes): StockAssignment {
-            $item = PurchaseOrderItem::query()
-                ->with(['assignments', 'variant.catalogItem'])
-                ->whereKey($attributes['purchase_order_item_id'])
-                ->lockForUpdate()
-                ->firstOrFail();
+        DB::transaction(function () use ($branchId, $items): void {
+            $rows = collect($items)->sortBy('purchase_order_item_id')->values();
 
-            if ($attributes['quantity'] > $item->remainingToAssign()) {
-                throw ValidationException::withMessages([
-                    'quantity' => 'Only '.$item->remainingToAssign().' units remain to assign.',
-                ]);
+            foreach ($rows as $row) {
+                $this->assignItem($branchId, (int) $row['purchase_order_item_id'], (int) $row['quantity']);
             }
-
-            $assignment = StockAssignment::query()->create([
-                'purchase_order_item_id' => $item->id,
-                'branch_id' => $attributes['branch_id'],
-                'quantity' => $attributes['quantity'],
-                'selling_price' => $attributes['selling_price'],
-            ]);
-
-            $inventory = BranchInventory::query()
-                ->where('branch_id', $attributes['branch_id'])
-                ->where('catalog_item_variant_id', $item->catalog_item_variant_id)
-                ->lockForUpdate()
-                ->first();
-
-            if ($inventory === null) {
-                BranchInventory::query()->create([
-                    'branch_id' => $attributes['branch_id'],
-                    'catalog_item_variant_id' => $item->catalog_item_variant_id,
-                    'quantity' => $attributes['quantity'],
-                ]);
-            } else {
-                $inventory->update([
-                    'quantity' => $inventory->quantity + $attributes['quantity'],
-                ]);
-            }
-
-            BranchVariantPrice::query()->updateOrCreate(
-                [
-                    'branch_id' => $attributes['branch_id'],
-                    'catalog_item_variant_id' => $item->catalog_item_variant_id,
-                ],
-                ['price' => $attributes['selling_price']],
-            );
-
-            $item->variant?->update([
-                'price' => $attributes['selling_price'],
-            ]);
-
-            return $assignment;
         });
+    }
+
+    private function assignItem(int $branchId, int $purchaseOrderItemId, int $quantity): void
+    {
+        $item = PurchaseOrderItem::query()
+            ->with(['assignments', 'variant.catalogItem'])
+            ->whereKey($purchaseOrderItemId)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if ($quantity > $item->remainingToAssign()) {
+            throw ValidationException::withMessages([
+                'items' => 'Only '.$item->remainingToAssign().' units remain to assign for '.$item->variant?->catalogItem?->name.'.',
+            ]);
+        }
+
+        StockAssignment::query()->create([
+            'purchase_order_item_id' => $item->id,
+            'branch_id' => $branchId,
+            'quantity' => $quantity,
+            'selling_price' => $item->variant?->price ?? '0.00',
+        ]);
+
+        $inventory = BranchInventory::query()
+            ->where('branch_id', $branchId)
+            ->where('catalog_item_variant_id', $item->catalog_item_variant_id)
+            ->lockForUpdate()
+            ->first();
+
+        if ($inventory === null) {
+            BranchInventory::query()->create([
+                'branch_id' => $branchId,
+                'catalog_item_variant_id' => $item->catalog_item_variant_id,
+                'quantity' => $quantity,
+            ]);
+        } else {
+            $inventory->update([
+                'quantity' => $inventory->quantity + $quantity,
+            ]);
+        }
     }
 }

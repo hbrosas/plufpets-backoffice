@@ -7,11 +7,13 @@ use App\Enums\EmploymentStatus;
 use App\Enums\HolidayType;
 use App\Enums\PayBasis;
 use App\Enums\PayLineKind;
+use App\Enums\PayrollFilingStatus;
 use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\EmployeePayroll;
 use App\Models\EmployeeProfile;
 use App\Models\Holiday;
+use App\Models\PayrollFiling;
 use App\Models\PosSale;
 use App\Models\PosSaleItem;
 use App\Models\PosSaleItemCommission;
@@ -274,6 +276,7 @@ class EmployeePayrollControllerTest extends TestCase
             (string) $response->headers->get('content-disposition'),
         );
         $this->assertStringStartsWith('%PDF', $response->getContent());
+        $this->assertStringContainsString('DejaVuSans', $response->getContent());
 
         $payroll = app(GeneratePayroll::class)->handle(
             $employee,
@@ -298,6 +301,7 @@ class EmployeePayrollControllerTest extends TestCase
         $this->assertGreaterThan($right, strpos($html, '>Pay period start<'));
         $this->assertGreaterThan($right, strpos($html, '>Date hired<'));
         $this->assertStringContainsString('<h1>PAYROLL</h1>', $html);
+        $this->assertStringContainsString('Calibri', $html);
         $this->assertStringNotContainsString((string) config('app.name'), $html);
         $this->assertStringContainsString('Name', $html);
         $this->assertStringContainsString('Position', $html);
@@ -318,12 +322,18 @@ class EmployeePayrollControllerTest extends TestCase
         $this->assertStringContainsString('769.23', $html);
         $this->assertStringContainsString('10.00', $html);
         $this->assertStringContainsString('7,692.31', $html);
-        $this->assertStringContainsString('Earnings', $html);
-        $this->assertStringContainsString('Deductions', $html);
+        $earnings = strpos($html, 'class="section">Earnings');
+        $deductions = strpos($html, 'class="section">Deductions');
+        $this->assertNotFalse($earnings);
+        $this->assertNotFalse($deductions);
+        $this->assertLessThan($deductions, $earnings);
+        $this->assertGreaterThan($right, $earnings);
         $this->assertStringContainsString('Summary', $html);
         $this->assertStringContainsString('Net pay', $html);
         $this->assertStringContainsString('₱8,399.51', $html);
-        $this->assertStringContainsString('SSS employer share', $html);
+        $this->assertStringContainsString('>SSS<', $html);
+        $this->assertStringNotContainsString('employer share', $html);
+        $this->assertStringNotContainsString('Commissions', $html);
         $this->assertStringNotContainsString('Ordinary days are paid from the days worked', $html);
         $this->assertStringNotContainsString('Unrefunded sales in this period', $html);
         $this->assertStringNotContainsString('Employee contribution', $html);
@@ -605,6 +615,107 @@ class EmployeePayrollControllerTest extends TestCase
         );
         $this->assertStringStartsWith('%PDF', $download->getContent());
         $this->assertSame('1000.00', $saved->refresh()->snapshot['payroll']['net']);
+    }
+
+    public function test_approved_cash_advance_is_deducted_on_the_payslip(): void
+    {
+        $employee = $this->employeeWithProfile();
+        $employee->profile->payLines()->create([
+            'kind' => PayLineKind::Compensation,
+            'name' => 'Basic salary',
+            'amount' => '20000',
+            'sort' => 0,
+        ]);
+        $approved = PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $employee->id,
+            'status' => PayrollFilingStatus::Approved,
+            'starts_on' => '2026-10-05',
+            'amount' => '500.00',
+            'reason' => 'Emergency',
+        ]);
+        PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $employee->id,
+            'status' => PayrollFilingStatus::Pending,
+            'starts_on' => '2026-10-06',
+            'amount' => '100.00',
+            'reason' => 'Waiting',
+        ]);
+        PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $employee->id,
+            'status' => PayrollFilingStatus::Approved,
+            'starts_on' => '2026-10-20',
+            'amount' => '75.00',
+            'reason' => 'Later',
+        ]);
+
+        $this->actingAsEmployee()
+            ->post("/backoffice/staff/{$employee->id}/payroll", [
+                ...$this->hours(),
+                'late_hours' => '0',
+                'overtime_hours' => '0',
+                'deduct_government' => 0,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->actingAsEmployee()
+            ->get(route('staff.record.show', [
+                'employee' => $employee,
+                ...$this->hours(),
+                'late_hours' => '0',
+                'overtime_hours' => '0',
+                'deduct_government' => 0,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('payroll.deductions.1.name', 'Cash advance — Emergency')
+                ->where('payroll.deductions.1.amount', '500.00')
+                ->where('payroll.cash_advance_ids', [$approved->id])
+                ->where('payroll.net', '7192.31'));
+    }
+
+    public function test_finalized_cash_advance_is_not_deducted_on_the_next_payslip(): void
+    {
+        $employee = $this->employeeWithProfile();
+        $employee->profile->payLines()->create([
+            'kind' => PayLineKind::Compensation,
+            'name' => 'Basic salary',
+            'amount' => '20000',
+            'sort' => 0,
+        ]);
+        $advance = PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $employee->id,
+            'status' => PayrollFilingStatus::Approved,
+            'starts_on' => '2026-10-05',
+            'amount' => '500.00',
+            'reason' => 'Emergency',
+        ]);
+
+        $this->actingAsEmployee()
+            ->post("/backoffice/staff/{$employee->id}/payroll/finalize", [
+                ...$this->hours(),
+                'late_hours' => '0',
+                'overtime_hours' => '0',
+                'deduct_government' => 0,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', 'Payroll finalized.');
+
+        $saved = EmployeePayroll::query()->whereBelongsTo($employee)->firstOrFail();
+        $this->assertSame($saved->id, $advance->refresh()->deducted_payroll_id);
+
+        $this->actingAsEmployee()
+            ->get(route('staff.record.show', [
+                'employee' => $employee,
+                ...$this->hours('2026-11-01', '2026-11-15'),
+                'late_hours' => '0',
+                'overtime_hours' => '0',
+                'deduct_government' => 0,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('payroll.cash_advance_ids', [])
+                ->where('payroll.net', '7692.31'));
     }
 
     public function test_overnight_allowance_and_one_time_items_change_the_payroll(): void

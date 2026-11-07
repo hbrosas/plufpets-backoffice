@@ -39,12 +39,13 @@ function selectTab(tab) {
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div class="flex flex-wrap gap-2" role="tablist" aria-label="Purchase order status">
+        <Teleport defer to="#admin-header-tabs">
+        <div class="flex w-max gap-2" role="tablist" aria-label="Purchase order status">
             <button
                 v-for="tab in tabs"
                 :id="`purchase-orders-tab-${tab.value}`"
                 :key="tab.value"
-                class="h-10 rounded-xl px-4 text-sm font-medium"
+                class="h-10 shrink-0 rounded-xl px-4 text-sm font-medium whitespace-nowrap"
                 :class="filters.tab === tab.value ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
                 type="button"
                 role="tab"
@@ -54,6 +55,7 @@ function selectTab(tab) {
                 {{ tab.label }}
             </button>
         </div>
+        </Teleport>
         <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5" role="tabpanel" :aria-labelledby="`purchase-orders-tab-${filters.tab}`">
             <table class="w-full min-w-[48rem] text-left text-sm">
                 <thead class="text-ink/50 dark:text-foam/50">

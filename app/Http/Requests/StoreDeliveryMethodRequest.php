@@ -6,6 +6,7 @@ use App\Http\Requests\Concerns\PreparesBranchInstructions;
 use App\Support\DeliveryMethodRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class StoreDeliveryMethodRequest extends FormRequest
 {
@@ -32,6 +33,13 @@ class StoreDeliveryMethodRequest extends FormRequest
         return DeliveryMethodRules::messages();
     }
 
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $this->guardInstructionImageLimit($validator, null);
+        });
+    }
+
     protected function prepareForValidation(): void
     {
         $notes = $this->string('notes')->trim()->toString();
@@ -47,5 +55,6 @@ class StoreDeliveryMethodRequest extends FormRequest
             'asks_for_address' => $this->boolean('asks_for_address'),
             'is_active' => $this->boolean('is_active'),
         ]);
+        $this->prepareInstructionImages();
     }
 }

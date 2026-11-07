@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\InventoryHold;
 use Database\Factories\PosOpenOrderFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'saved_by_name',
     'phone',
     'status',
+    'inventory_hold',
     'discount',
     'total',
     'checkout',
@@ -35,6 +37,7 @@ class PosOpenOrder extends Model
     {
         return [
             'items' => 'array',
+            'inventory_hold' => InventoryHold::class,
             'subtotal' => 'decimal:2',
             'discount' => 'decimal:2',
             'total' => 'decimal:2',
@@ -56,5 +59,16 @@ class PosOpenOrder extends Model
     public function sale(): BelongsTo
     {
         return $this->belongsTo(PosSale::class, 'pos_sale_id');
+    }
+
+    public function hasPreorder(): bool
+    {
+        foreach ($this->items ?? [] as $item) {
+            if (is_array($item) && is_string($item['notes'] ?? null) && strcasecmp($item['notes'], 'Preorder') === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

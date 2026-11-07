@@ -97,6 +97,7 @@ class DeliveryOrderControllerTest extends TestCase
         $response = $this->actingAsEmployee()->post("/backoffice/inventory/delivery-orders/{$order->id}/receive", [
             'delivery_receipt_number' => 'DR-88',
             'sales_invoice_number' => 'SI-12',
+            'notes' => '  Left at the front desk  ',
             'items' => [[
                 'id' => $item->id,
                 'quantity' => 4,
@@ -109,6 +110,7 @@ class DeliveryOrderControllerTest extends TestCase
             'purchase_order_id' => $order->id,
             'delivery_receipt_number' => 'DR-88',
             'sales_invoice_number' => 'SI-12',
+            'notes' => 'Left at the front desk',
             'received_by_name' => 'Sample Employee',
             'received_by_employee_number' => '10001',
             'received_at' => now(),
@@ -164,6 +166,33 @@ class DeliveryOrderControllerTest extends TestCase
         $this->assertDatabaseCount('purchase_order_receipts', 0);
     }
 
+    public function test_delivery_show_page_lists_products_alphabetically(): void
+    {
+        $order = PurchaseOrder::factory()->confirmed()->create();
+        $zebra = CatalogItem::factory()->create(['name' => 'Zebra food']);
+        $apple = CatalogItem::factory()->create(['name' => 'Apple bites']);
+        $order->items()->create([
+            'catalog_item_variant_id' => CatalogItemVariant::factory()->for($zebra)->create(['name' => 'Large'])->id,
+            'quantity' => 2,
+            'unit_cost' => 10,
+        ]);
+        $order->items()->create([
+            'catalog_item_variant_id' => CatalogItemVariant::factory()->for($apple)->create(['name' => 'Small'])->id,
+            'quantity' => 3,
+            'unit_cost' => 10,
+        ]);
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/inventory/delivery-orders/{$order->id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('order.items.0.product', 'Apple bites')
+                ->where('order.items.0.variant', 'Small')
+                ->where('order.items.0.remaining', 3)
+                ->where('order.items.1.product', 'Zebra food')
+                ->where('order.items.1.variant', 'Large'));
+    }
+
     public function test_delivery_show_page_lists_the_logged_in_receiver_and_history(): void
     {
         $this->freezeTime();
@@ -173,6 +202,7 @@ class DeliveryOrderControllerTest extends TestCase
 
         $this->actingAsEmployee()->post("/backoffice/inventory/delivery-orders/{$order->id}/receive", [
             'delivery_receipt_number' => 'DR-01',
+            'notes' => 'Count the bags',
             'items' => [[
                 'id' => $item->id,
                 'quantity' => 6,
@@ -187,6 +217,7 @@ class DeliveryOrderControllerTest extends TestCase
             ->where('order.receiver.name', 'Sample Employee')
             ->where('order.receiver.employee_number', '10001')
             ->where('order.receipts.0.delivery_receipt_number', 'DR-01')
+            ->where('order.receipts.0.notes', 'Count the bags')
             ->where('order.receipts.0.received_by', 'Sample Employee')
             ->where('order.receipts.0.items.0.quantity', 6));
         $this->assertNotNull(PurchaseOrderReceipt::query()->first()?->received_at);

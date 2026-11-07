@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreSupplierRequest;
 use App\Http\Requests\UpdateSupplierRequest;
+use App\Models\PurchaseOrder;
 use App\Models\Supplier;
+use App\Support\Peso;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -22,6 +24,7 @@ class SupplierController extends Controller
                 ->map(fn (Supplier $supplier): array => [
                     'id' => $supplier->id,
                     'name' => $supplier->name,
+                    'tin' => $supplier->tin,
                     'code' => $supplier->code,
                     'contact_name' => $supplier->contact_name,
                     'email' => $supplier->email,
@@ -34,10 +37,40 @@ class SupplierController extends Controller
         ]);
     }
 
+    public function show(Supplier $supplier): Response
+    {
+        $supplier->load(['purchaseOrders' => function ($query): void {
+            $query->with('items')->orderByDesc('ordered_at')->orderByDesc('id');
+        }]);
+
+        return Inertia::render('Inventory/Suppliers/Show', [
+            'supplier' => [
+                'id' => $supplier->id,
+                'name' => $supplier->name,
+                'tin' => $supplier->tin,
+                'code' => $supplier->code,
+                'contact_name' => $supplier->contact_name,
+                'email' => $supplier->email,
+                'phone' => $supplier->phone,
+                'address' => $supplier->address,
+                'notes' => $supplier->notes,
+                'is_active' => $supplier->is_active,
+                'purchase_orders' => $supplier->purchaseOrders->map(fn (PurchaseOrder $order): array => [
+                    'id' => $order->id,
+                    'number' => $order->number,
+                    'status_label' => $order->status->label(),
+                    'ordered_at' => $order->ordered_at?->toDayDateTimeString(),
+                    'total' => Peso::format($order->totalAmount()),
+                ])->all(),
+            ],
+        ]);
+    }
+
     public function store(StoreSupplierRequest $request): RedirectResponse
     {
         Supplier::query()->create($request->safe()->only([
             'name',
+            'tin',
             'code',
             'contact_name',
             'email',
@@ -56,6 +89,7 @@ class SupplierController extends Controller
     {
         $supplier->update($request->safe()->only([
             'name',
+            'tin',
             'code',
             'contact_name',
             'email',

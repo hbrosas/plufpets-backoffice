@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['branch_id', 'catalog_item_variant_id', 'quantity'])]
+#[Fillable(['branch_id', 'catalog_item_variant_id', 'quantity', 'reserved'])]
 class BranchInventory extends Model
 {
     /** @use HasFactory<BranchInventoryFactory> */
@@ -21,7 +21,13 @@ class BranchInventory extends Model
     {
         return [
             'quantity' => 'integer',
+            'reserved' => 'integer',
         ];
+    }
+
+    public function available(): int
+    {
+        return max(0, $this->quantity - (int) $this->reserved);
     }
 
     public function branch(): BelongsTo

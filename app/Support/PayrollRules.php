@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Employee;
 use App\Models\Holiday;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
@@ -172,5 +173,131 @@ class PayrollRules
         if ($outside) {
             $validator->errors()->add('worked_holiday_ids', 'Choose a holiday inside this payroll period.');
         }
+    }
+
+    public static function afterSelection(Validator $validator): void
+    {
+        if ($validator->errors()->hasAny(['period_start', 'period_end', 'employee_ids'])) {
+            return;
+        }
+
+        $data = $validator->getData();
+        $start = Carbon::parse($data['period_start'])->startOfDay();
+        $end = Carbon::parse($data['period_end'])->startOfDay();
+
+        if ((int) $start->diffInDays($end) + 1 > 31) {
+            $validator->errors()->add('period_end', 'A payroll period cannot be longer than 31 days.');
+
+            return;
+        }
+
+        $ids = array_map(intval(...), $data['employee_ids'] ?? []);
+        $eligible = self::eligibleIds($ids);
+
+        if (count($eligible) !== count($ids)) {
+            $validator->errors()->add('employee_ids', 'Choose active employees with a pay record.');
+        }
+    }
+
+    public static function afterRun(Validator $validator): void
+    {
+        if ($validator->errors()->hasAny(['period_start', 'period_end', 'employees'])) {
+            return;
+        }
+
+        $data = $validator->getData();
+        $start = Carbon::parse($data['period_start'])->startOfDay();
+        $end = Carbon::parse($data['period_end'])->startOfDay();
+        $span = (int) $start->diffInDays($end) + 1;
+
+        if ($span > 31) {
+            $validator->errors()->add('period_end', 'A payroll period cannot be longer than 31 days.');
+
+            return;
+        }
+
+        $rows = is_array($data['employees'] ?? null) ? $data['employees'] : [];
+        $ids = [];
+        $holidayIds = [];
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $ids[] = (int) ($row['id'] ?? 0);
+
+            foreach ($row['worked_holiday_ids'] ?? [] as $id) {
+                $holidayIds[] = (int) $id;
+            }
+        }
+
+        $eligible = self::eligibleIds($ids);
+        $outside = $holidayIds === []
+            ? []
+            : Holiday::query()
+                ->whereIn('id', array_values(array_unique($holidayIds)))
+                ->where(function ($query) use ($start, $end): void {
+                    $query->whereDate('date', '<', $start->toDateString())
+                        ->orWhereDate('date', '>', $end->toDateString());
+                })
+                ->pluck('id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->all();
+
+        foreach ($rows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            if (! in_array((int) ($row['id'] ?? 0), $eligible, true)) {
+                $validator->errors()->add("employees.$index.id", 'Choose an active employee with a pay record.');
+
+                continue;
+            }
+
+            if (! $validator->errors()->has("employees.$index.days_worked") && (float) ($row['days_worked'] ?? 0) > $span) {
+                $validator->errors()->add("employees.$index.days_worked", 'Days worked cannot be more than the days in this payroll period.');
+            }
+
+            if (! $validator->errors()->has("employees.$index.overnight_nights") && (int) ($row['overnight_nights'] ?? 0) > $span) {
+                $validator->errors()->add("employees.$index.overnight_nights", 'Overnight nights cannot be more than the days in this payroll period.');
+            }
+
+            $chosen = array_map(intval(...), $row['worked_holiday_ids'] ?? []);
+
+            if (count($chosen) !== count(array_unique($chosen))) {
+                $validator->errors()->add("employees.$index.worked_holiday_ids", 'Each holiday can only be marked once.');
+            }
+
+            $workedDates = $row['worked_dates'] ?? null;
+
+            if (is_array($workedDates) && ! $validator->errors()->has("employees.$index.worked_dates") && count($workedDates) !== count(array_unique($workedDates))) {
+                $validator->errors()->add("employees.$index.worked_dates", 'Choose each day once.');
+            }
+
+            if (array_intersect($chosen, $outside) !== []) {
+                $validator->errors()->add("employees.$index.worked_holiday_ids", 'Choose a holiday inside this payroll period.');
+            }
+        }
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return list<int>
+     */
+    private static function eligibleIds(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        return Employee::query()
+            ->whereIn('id', $ids)
+            ->where('is_active', true)
+            ->whereHas('profile')
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
     }
 }

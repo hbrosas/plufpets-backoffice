@@ -39,7 +39,10 @@ class SalesReceiptControllerTest extends TestCase
             ->where('receipts.data.0.number', 'POS-KEEP')
             ->where('receipts.data.0.branch', 'Greenheights')
             ->where('receipts.data.0.is_refunded', false)
-            ->where('receipts.data.0.total', '₱'.$this->peso($visible->total)));
+            ->where('receipts.data.0.total', '₱'.$this->peso($visible->total))
+            ->where('receipts.data.0.items.0.product', 'The Full Pluf')
+            ->where('receipts.data.0.payments.0.name', 'Cash')
+            ->where('receipt', null));
     }
 
     public function test_receipt_show_includes_items_and_payments(): void
@@ -55,8 +58,9 @@ class SalesReceiptControllerTest extends TestCase
 
         $response->assertOk();
         $response->assertInertia(fn (Assert $page) => $page
-            ->component('Sales/Receipts/Show')
+            ->component('Sales/Receipts/Index')
             ->where('receipt.number', 'POS-SHOW')
+            ->where('receipts.data.0.number', 'POS-SHOW')
             ->where('receipt.branch', 'Greenheights')
             ->where('receipt.items.0.product', 'The Full Pluf')
             ->where('receipt.payments.0.name', 'Cash'));

@@ -13,7 +13,7 @@ class ReceivePurchaseOrder
 {
     /**
      * @param  list<array{id: int, quantity: int}>  $items
-     * @param  array{delivery_receipt_number: string|null, sales_invoice_number: string|null, received_by_employee_number: string, received_by_name: string}  $receipt
+     * @param  array{delivery_receipt_number: string|null, sales_invoice_number: string|null, notes: string|null, received_by_employee_number: string, received_by_name: string}  $receipt
      */
     public function handle(PurchaseOrder $purchaseOrder, array $items, array $receipt): PurchaseOrder
     {
@@ -39,6 +39,7 @@ class ReceivePurchaseOrder
                 'purchase_order_id' => $order->id,
                 'delivery_receipt_number' => $receipt['delivery_receipt_number'],
                 'sales_invoice_number' => $receipt['sales_invoice_number'],
+                'notes' => $receipt['notes'] ?? null,
                 'received_by_employee_number' => $receipt['received_by_employee_number'],
                 'received_by_name' => $receipt['received_by_name'],
                 'received_at' => now(),

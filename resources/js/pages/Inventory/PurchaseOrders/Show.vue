@@ -110,6 +110,9 @@ function deleteOrder() {
                 <p class="text-sm text-ink/60 dark:text-foam/60">{{ purchaseOrder.status_label }}</p>
                 <h2 class="mt-1 text-2xl font-medium">{{ purchaseOrder.number }}</h2>
                 <p class="mt-2">{{ purchaseOrder.supplier }}</p>
+                <p v-if="purchaseOrder.supplier_detail.tin" class="text-sm text-ink/70 dark:text-foam/70">
+                    TIN {{ purchaseOrder.supplier_detail.tin }}
+                </p>
                 <p v-if="purchaseOrder.supplier_detail.address" class="text-sm text-ink/70 dark:text-foam/70">
                     {{ purchaseOrder.supplier_detail.address }}
                 </p>

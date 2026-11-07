@@ -6,6 +6,7 @@ use App\Http\Requests\StorePaymentMethodRequest;
 use App\Http\Requests\UpdatePaymentMethodRequest;
 use App\Models\PaymentMethod;
 use App\Support\BranchInstructions;
+use App\Support\InstructionImages;
 use Illuminate\Http\RedirectResponse;
 
 class PaymentMethodController extends Controller
@@ -21,6 +22,7 @@ class PaymentMethodController extends Controller
             'is_active',
         ]));
         BranchInstructions::sync($paymentMethod, $request->validated('branch_instructions') ?? []);
+        InstructionImages::storeShared($paymentMethod, $request->file('images'), $request->input('remove_images'));
 
         return redirect()
             ->route('shop.settings.index')
@@ -38,6 +40,7 @@ class PaymentMethodController extends Controller
             'is_active',
         ]));
         BranchInstructions::sync($paymentMethod, $request->validated('branch_instructions') ?? []);
+        InstructionImages::storeShared($paymentMethod, $request->file('images'), $request->input('remove_images'));
 
         return redirect()
             ->route('shop.settings.index')
@@ -46,6 +49,7 @@ class PaymentMethodController extends Controller
 
     public function destroy(PaymentMethod $paymentMethod): RedirectResponse
     {
+        InstructionImages::deleteStored($paymentMethod);
         $paymentMethod->delete();
 
         return redirect()

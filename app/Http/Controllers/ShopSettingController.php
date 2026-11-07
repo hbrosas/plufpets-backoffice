@@ -11,6 +11,7 @@ use App\Models\PaymentMethod;
 use App\Models\PaymentMethodInstruction;
 use App\Models\TaxFee;
 use App\Models\Voucher;
+use App\Support\InstructionImages;
 use App\Support\Peso;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -45,10 +46,12 @@ class ShopSettingController extends Controller
                     'name' => $paymentMethod->name,
                     'instructions' => $paymentMethod->instructions ?? '',
                     'instructions_for_all_branches' => $paymentMethod->instructions_for_all_branches,
+                    'instruction_images' => InstructionImages::previews($paymentMethod->instruction_images),
                     'branch_instructions' => $paymentMethod->branchInstructions
                         ->map(fn (PaymentMethodInstruction $instruction): array => [
                             'branch_id' => $instruction->branch_id,
                             'instructions' => $instruction->instructions ?? '',
+                            'images' => InstructionImages::previews($instruction->images),
                         ])
                         ->values(),
                     'fee' => $paymentMethod->fee,
@@ -70,10 +73,12 @@ class ShopSettingController extends Controller
                         : Peso::format($deliveryMethod->fee),
                     'notes' => $deliveryMethod->notes ?? '',
                     'instructions_for_all_branches' => $deliveryMethod->instructions_for_all_branches,
+                    'instruction_images' => InstructionImages::previews($deliveryMethod->instruction_images),
                     'branch_instructions' => $deliveryMethod->branchInstructions
                         ->map(fn (DeliveryMethodInstruction $instruction): array => [
                             'branch_id' => $instruction->branch_id,
                             'instructions' => $instruction->instructions ?? '',
+                            'images' => InstructionImages::previews($instruction->images),
                         ])
                         ->values(),
                     'asks_for_address' => $deliveryMethod->asks_for_address,

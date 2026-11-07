@@ -19,6 +19,7 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\ModifierController;
 use App\Http\Controllers\MyCommissionController;
+use App\Http\Controllers\MyEmployeeRecordController;
 use App\Http\Controllers\MyPayrollController;
 use App\Http\Controllers\PaymentMethodController;
 use App\Http\Controllers\PayrollApprovalController;
@@ -41,6 +42,7 @@ use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\PwaController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\RunPayrollController;
 use App\Http\Controllers\SalesItemController;
 use App\Http\Controllers\SalesOverviewController;
 use App\Http\Controllers\SalesReceiptController;
@@ -106,6 +108,8 @@ Route::prefix('backoffice')->group(function () {
         Route::post('/me/payroll', [MyPayrollController::class, 'store'])->name('me.payroll.store');
         Route::delete('/me/payroll/{payrollFiling}', [MyPayrollController::class, 'destroy'])->name('me.payroll.destroy');
         Route::get('/me/payrolls/{employeePayroll}/download', [MyPayrollController::class, 'download'])->name('me.payrolls.download');
+        Route::get('/me/employee-201', [MyEmployeeRecordController::class, 'show'])->name('me.employee-201');
+        Route::put('/me/employee-201', [MyEmployeeRecordController::class, 'update'])->name('me.employee-201.update');
 
         Route::get('/dashboard', [DashboardController::class, 'index'])
             ->middleware('employee.permission:dashboard.view')
@@ -181,6 +185,7 @@ Route::prefix('backoffice')->group(function () {
             Route::get('/pos/register/{branch}/shop-orders', [PosController::class, 'shopOrders'])->name('pos.shop-orders');
             Route::get('/pos/register/{branch}/online-orders', [PosController::class, 'onlineOrders'])->name('pos.online-orders');
             Route::put('/pos/register/{branch}/online-orders/{pos_open_order}', [PosController::class, 'updateOnlineOrder'])->name('pos.online-orders.update');
+            Route::post('/pos/register/{branch}/online-orders/{pos_open_order}/sale', [PosController::class, 'createOnlineOrderSale'])->name('pos.online-orders.sale');
             Route::post('/pos/register/{branch}/shifts', [PosShiftController::class, 'store'])->name('pos.shifts.store');
             Route::post('/pos/register/{branch}/shifts/{pos_shift}/close', [PosShiftController::class, 'close'])->name('pos.shifts.close');
             Route::get('/pos/register/{branch}/shifts/{pos_shift}/z-report', [PosZReportController::class, 'show'])->name('pos.shifts.z-report');
@@ -252,6 +257,8 @@ Route::prefix('backoffice')->group(function () {
                 Route::post('catalog/import', [CatalogItemImportController::class, 'store'])
                     ->middleware('throttle:catalog-import')
                     ->name('catalog.import.store');
+                Route::post('catalog/bulk', [CatalogItemController::class, 'bulk'])
+                    ->name('catalog.bulk');
                 Route::get('catalog/{catalog_item}/supplies/{supply}/labels', [CatalogItemController::class, 'labels'])
                     ->name('catalog.supplies.labels');
                 Route::resource('catalog', CatalogItemController::class)
@@ -348,6 +355,7 @@ Route::prefix('backoffice')->group(function () {
 
             Route::middleware('employee.permission:inventory.suppliers')->group(function () {
                 Route::get('suppliers', [SupplierController::class, 'index'])->name('suppliers.index');
+                Route::get('suppliers/{supplier}', [SupplierController::class, 'show'])->name('suppliers.show');
                 Route::post('suppliers', [SupplierController::class, 'store'])->name('suppliers.store');
                 Route::put('suppliers/{supplier}', [SupplierController::class, 'update'])->name('suppliers.update');
                 Route::delete('suppliers/{supplier}', [SupplierController::class, 'destroy'])->name('suppliers.destroy');
@@ -359,6 +367,13 @@ Route::prefix('backoffice')->group(function () {
             Route::get('/staff/records', [EmployeeProfileController::class, 'index'])->name('staff.records.index');
             Route::get('/staff/approvals', [PayrollApprovalController::class, 'index'])->name('staff.approvals.index');
             Route::put('/staff/approvals/{payrollFiling}', [PayrollApprovalController::class, 'update'])->name('staff.approvals.update');
+            Route::get('/staff/payroll', [RunPayrollController::class, 'show'])->name('staff.payroll.run');
+            Route::get('/staff/payroll/prepare', [RunPayrollController::class, 'redirectToRun']);
+            Route::post('/staff/payroll/prepare', [RunPayrollController::class, 'prepare'])->name('staff.payroll.prepare');
+            Route::get('/staff/payroll/preview', [RunPayrollController::class, 'redirectToRun']);
+            Route::post('/staff/payroll/preview', [RunPayrollController::class, 'preview'])->name('staff.payroll.preview');
+            Route::post('/staff/payroll/finalize', [RunPayrollController::class, 'finalize'])->name('staff.payroll.finalize');
+            Route::get('/staff/payroll/download', [RunPayrollController::class, 'download'])->name('staff.payroll.download-all');
             Route::get('/staff/holidays', [HolidayController::class, 'index'])->name('staff.holidays.index');
             Route::post('/staff/holidays', [HolidayController::class, 'store'])->name('staff.holidays.store');
             Route::post('/staff/holidays/import', [HolidayController::class, 'import'])->name('staff.holidays.import');

@@ -45,12 +45,12 @@ function apply() {
 </script>
 
 <template>
-    <form class="flex flex-wrap items-center justify-end gap-2" @submit.prevent="apply">
+    <form class="flex w-full max-w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end" @submit.prevent="apply">
         <label class="sr-only" for="commission-preset">Period</label>
         <select
             id="commission-preset"
             v-model="form.preset"
-            class="h-10 rounded-xl border border-mist bg-white pr-10 pl-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
+            class="h-10 max-w-full rounded-xl border border-mist bg-white pr-10 pl-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
         >
             <option value="week">This week</option>
             <option value="two_weeks">Last 2 weeks</option>
@@ -62,7 +62,7 @@ function apply() {
             v-if="form.preset === 'custom'"
             id="commission-from"
             v-model="form.from"
-            class="h-10 rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
+            class="h-10 max-w-full rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
             type="date"
         />
         <label v-if="form.preset === 'custom'" class="sr-only" for="commission-to">To</label>
@@ -70,7 +70,7 @@ function apply() {
             v-if="form.preset === 'custom'"
             id="commission-to"
             v-model="form.to"
-            class="h-10 rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
+            class="h-10 max-w-full rounded-xl border border-mist bg-white px-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
             type="date"
         />
         <button class="h-10 rounded-xl bg-pine px-4 text-sm font-medium text-foam" type="submit">

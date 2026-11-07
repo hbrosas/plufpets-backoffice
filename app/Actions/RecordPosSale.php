@@ -4,6 +4,7 @@ namespace App\Actions;
 
 use App\Enums\CatalogItemType;
 use App\Enums\CommissionRole;
+use App\Enums\ShopOrderStatus;
 use App\Enums\TaxFeeType;
 use App\Models\BranchInventory;
 use App\Models\CatalogItem;
@@ -14,6 +15,7 @@ use App\Models\Employee;
 use App\Models\EmployeeServiceCommission;
 use App\Models\Modifier;
 use App\Models\PaymentMethod;
+use App\Models\PosOpenOrder;
 use App\Models\PosSale;
 use App\Models\PosSaleItem;
 use App\Models\PosSalePayment;
@@ -26,7 +28,10 @@ use Illuminate\Validation\ValidationException;
 
 class RecordPosSale
 {
-    public function __construct(private CalculateServiceCommission $calculateServiceCommission) {}
+    public function __construct(
+        private CalculateServiceCommission $calculateServiceCommission,
+        private ShopOrderStock $shopOrderStock,
+    ) {}
 
     /**
      * @param  array{employee_number: string, name: string}  $employee
@@ -37,9 +42,9 @@ class RecordPosSale
      *     delivery_fee?: mixed
      * }  $attributes
      */
-    public function handle(PosShift $shift, array $attributes, array $employee): PosSale
+    public function handle(PosShift $shift, array $attributes, array $employee, ?PosOpenOrder $shopOrder = null): PosSale
     {
-        return DB::transaction(function () use ($shift, $attributes, $employee): PosSale {
+        return DB::transaction(function () use ($shift, $attributes, $employee, $shopOrder): PosSale {
             $shift = PosShift::query()->whereKey($shift->id)->lockForUpdate()->firstOrFail();
 
             if (! $shift->isOpen()) {
@@ -48,7 +53,8 @@ class RecordPosSale
                 ]);
             }
 
-            $prepared = $this->prepare($shift, $attributes, true);
+            $shopOrder = $this->lockedShopOrder($shopOrder);
+            $prepared = $this->prepare($shift, $attributes, true, $this->shopOrderStock->coveredQuantities($shopOrder));
             $deliveryMethod = $prepared['delivery_method'];
             $preparedItems = $prepared['items'];
             $taxRows = $prepared['tax_rows'];
@@ -90,6 +96,7 @@ class RecordPosSale
                     'quantity' => $prepared['quantity'],
                     'unit_price' => $prepared['unit_price'],
                     'line_total' => $prepared['line_total'],
+                    'is_free' => $prepared['is_free'],
                 ])->commissions()->createMany($prepared['commissions']);
 
                 if ($prepared['decrement_inventory']) {
@@ -101,6 +108,10 @@ class RecordPosSale
             }
 
             foreach ($preparedPayments as $preparedPayment) {
+                if ($preparedPayment['payment_method_id'] === null) {
+                    continue;
+                }
+
                 PosSalePayment::query()->create([
                     'pos_sale_id' => $sale->id,
                     'payment_method_id' => $preparedPayment['payment_method_id'],
@@ -124,8 +135,35 @@ class RecordPosSale
                 ]);
             }
 
+            if ($shopOrder instanceof PosOpenOrder) {
+                $this->shopOrderStock->commit($shopOrder);
+            }
+
             return $sale->load(['items.commissions', 'taxes', 'payments']);
         });
+    }
+
+    private function lockedShopOrder(?PosOpenOrder $shopOrder): ?PosOpenOrder
+    {
+        if (! $shopOrder instanceof PosOpenOrder) {
+            return null;
+        }
+
+        $locked = PosOpenOrder::query()->whereKey($shopOrder->id)->lockForUpdate()->first();
+
+        if (! $locked instanceof PosOpenOrder) {
+            return null;
+        }
+
+        $canCharge = in_array($locked->status, [ShopOrderStatus::Placed->value, ShopOrderStatus::Preparing->value], true);
+
+        if (is_string($locked->status) && $locked->status !== '' && ! $canCharge) {
+            throw ValidationException::withMessages([
+                'pos_open_order_id' => 'Create a sale from an order that is still open.',
+            ]);
+        }
+
+        return $locked;
     }
 
     /**
@@ -192,6 +230,24 @@ class RecordPosSale
                 'change_due' => number_format($changeDue, 2, '.', ''),
                 'reference_number' => $method->is_cash ? null : $reference,
             ];
+        }
+
+        if ($prepared === [] && abs($total) < 0.005) {
+            return [[
+                'payment_method_id' => null,
+                'payment_method_name' => 'Free',
+                'is_cash' => false,
+                'amount' => '0.00',
+                'amount_tendered' => '0.00',
+                'change_due' => '0.00',
+                'reference_number' => null,
+            ]];
+        }
+
+        if ($prepared === []) {
+            throw ValidationException::withMessages([
+                'payments' => 'Add at least one payment.',
+            ]);
         }
 
         if (abs($applied - $total) > 0.005) {
@@ -394,6 +450,7 @@ class RecordPosSale
      *     delivery_fee?: mixed,
      *     tax_fee_ids?: list<int>
      * }  $attributes
+     * @param  array<int, int>  $held
      * @return array{
      *     delivery_method: DeliveryMethod|null,
      *     delivery_fee: float,
@@ -409,7 +466,7 @@ class RecordPosSale
      *     items: list<array{variant: CatalogItemVariant, product_name: string, variant_name: string, quantity: int, notes: string|null, modifiers: list<array{name: string, option: string, price: string}>, unit_price: string, line_total: string, decrement_inventory: bool}>
      * }
      */
-    private function prepare(PosShift $shift, array $attributes, bool $lock): array
+    private function prepare(PosShift $shift, array $attributes, bool $lock, array $held = []): array
     {
         $deliveryMethod = null;
         $deliveryFee = 0.0;
@@ -453,9 +510,10 @@ class RecordPosSale
             }
 
             $quantity = (int) $item['quantity'];
+            $isFree = filter_var($item['is_free'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $isProduct = $variant->catalogItem?->type === CatalogItemType::Product;
 
-            if ($isProduct) {
+            if ($isProduct && ! $isFree) {
                 $inventoryQuery = BranchInventory::query()
                     ->where('branch_id', $shift->branch_id)
                     ->where('catalog_item_variant_id', $variant->id);
@@ -464,7 +522,8 @@ class RecordPosSale
                     $inventoryQuery->lockForUpdate();
                 }
 
-                $onHand = $inventoryQuery->first()?->quantity ?? 0;
+                $inventory = $inventoryQuery->first();
+                $onHand = ($inventory instanceof BranchInventory ? $inventory->available() : 0) + ($held[$variant->id] ?? 0);
 
                 if ($quantity > $onHand) {
                     throw ValidationException::withMessages([
@@ -478,6 +537,12 @@ class RecordPosSale
             $unitPrice = $basePrice + $selectedModifiers['extra'];
             $lineTotal = round($unitPrice * $quantity, 2);
             $commissionable = round(($basePrice + $selectedModifiers['included']) * $quantity, 2);
+
+            if ($isFree) {
+                $unitPrice *= -1;
+                $lineTotal *= -1;
+            }
+
             $subtotal += $lineTotal;
 
             $preparedItems[] = [
@@ -489,8 +554,9 @@ class RecordPosSale
                 'modifiers' => $selectedModifiers['snapshot'],
                 'unit_price' => number_format($unitPrice, 2, '.', ''),
                 'line_total' => number_format($lineTotal, 2, '.', ''),
-                'decrement_inventory' => $isProduct,
-                'commissions' => $this->commissionsFor($variant, $isProduct, $commissionable, $item, $index),
+                'decrement_inventory' => $isProduct && ! $isFree,
+                'is_free' => $isFree,
+                'commissions' => $isFree ? [] : $this->commissionsFor($variant, $isProduct, $commissionable, $item, $index),
             ];
         }
 
@@ -512,6 +578,13 @@ class RecordPosSale
         }
 
         $total = round($taxable + $taxTotal, 2);
+
+        if ($total < -0.005) {
+            throw ValidationException::withMessages([
+                'items' => 'A free line cannot make the sale total less than zero.',
+            ]);
+        }
+
         $preparedPayments = $this->preparedPayments($attributes['payments'] ?? [], $total);
 
         return [
@@ -530,7 +603,10 @@ class RecordPosSale
         ];
     }
 
-    public function quote(PosShift $shift, array $attributes): array
+    /**
+     * @param  array<int, int>  $held
+     */
+    public function quote(PosShift $shift, array $attributes, array $held = []): array
     {
         if (! $shift->isOpen()) {
             throw ValidationException::withMessages([
@@ -539,7 +615,7 @@ class RecordPosSale
         }
 
         return [
-            ...$this->receiptLines($shift, $attributes, false),
+            ...$this->receiptLines($shift, $attributes, false, $held),
             'number' => $this->nextNumber($shift->branch_id, false),
         ];
     }
@@ -551,6 +627,7 @@ class RecordPosSale
      *     delivery_method_id?: int|null,
      *     delivery_fee?: mixed
      * }  $attributes
+     * @param  array<int, int>  $held
      * @return array{
      *     has_cash: bool,
      *     total: float,
@@ -560,9 +637,9 @@ class RecordPosSale
      *     payments: list<array{name: string, reference: string|null}>
      * }
      */
-    private function receiptLines(PosShift $shift, array $attributes, bool $lock): array
+    private function receiptLines(PosShift $shift, array $attributes, bool $lock, array $held = []): array
     {
-        $prepared = $this->prepare($shift, $attributes, $lock);
+        $prepared = $this->prepare($shift, $attributes, $lock, $held);
 
         return [
             'has_cash' => $prepared['has_cash'],
@@ -570,7 +647,7 @@ class RecordPosSale
             'change_due' => $prepared['change_due'],
             'amount_tendered' => $prepared['amount_tendered'],
             'items' => array_map(fn (array $item): array => [
-                'name' => trim(($item['product_name'] ?? '').' '.($item['variant_name'] ?? '')),
+                'name' => trim(($item['product_name'] ?? '').' '.($item['variant_name'] ?? '').(($item['is_free'] ?? false) ? ' Free' : '')),
                 'quantity' => $item['quantity'],
                 'subtotal' => Peso::format($item['line_total']),
             ], $prepared['items']),

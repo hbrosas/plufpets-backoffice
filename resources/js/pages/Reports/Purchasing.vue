@@ -20,10 +20,16 @@ defineProps({
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <p class="text-sm text-ink/55 dark:text-foam/50">
-            {{ filters.label }}. Spend is goods received. Fill rate is received quantity divided by ordered quantity.
-            Lead time is {{ purchasing.lead_time }}. Fill rate is {{ purchasing.fill_rate }}.
-        </p>
+        <div class="grid gap-4 sm:grid-cols-2">
+            <article class="flex flex-col gap-2 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
+                <p class="text-sm text-ink/60 dark:text-foam/60">Lead time</p>
+                <p class="text-3xl font-medium">{{ purchasing.lead_time }}</p>
+            </article>
+            <article class="flex flex-col gap-2 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
+                <p class="text-sm text-ink/60 dark:text-foam/60">Fill rate</p>
+                <p class="text-3xl font-medium">{{ purchasing.fill_rate }}</p>
+            </article>
+        </div>
         <ReportTable title="Spend by supplier" :columns="[{ key: 'name', label: 'Supplier' }, { key: 'total', label: 'Received' }]" :rows="purchasing.suppliers" />
         <ReportTable title="Price changes" :columns="[{ key: 'product', label: 'Product' }, { key: 'previous', label: 'Earlier cost' }, { key: 'latest', label: 'Latest cost' }]" :rows="purchasing.prices" empty="No purchase price has changed." />
     </div>

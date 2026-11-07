@@ -2,10 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CatalogItemType;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
+use App\Models\PaymentMethod;
+use App\Models\PosSale;
+use App\Models\PosShift;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
@@ -168,6 +172,69 @@ class InventoryControllerTest extends TestCase
             ->where('sales', [])
             ->where('history.0.type', 'Purchase')
             ->where('history.0.quantity', 8));
+    }
+
+    public function test_a_sale_and_refund_change_the_product_inventory_count(): void
+    {
+        $branch = Branch::factory()->create(['name' => 'Makati Branch']);
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['type' => CatalogItemType::Product, 'name' => 'Organic kibble']))
+            ->create(['name' => 'Default', 'price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+        $payment = PaymentMethod::factory()->cash()->create();
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [
+                    ['catalog_item_variant_id' => $variant->id, 'quantity' => 2],
+                ],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '200',
+                    'amount_tendered' => '200',
+                ]],
+            ])
+            ->assertRedirect(route('pos.index', $branch));
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/inventory/products/{$variant->id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('summary.on_hand', 3)
+                ->where('summary.sold', 2)
+                ->where('locations.0.quantity', 3)
+                ->where('sales.0.quantity', 2)
+                ->where('sales.0.refunded', false)
+                ->where('history', fn (mixed $history): bool => collect($history)->contains(
+                    fn (array $row): bool => $row['type'] === 'Sale' && $row['quantity'] === -2,
+                )));
+
+        $sale = PosSale::query()->firstOrFail();
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/sales/receipts/'.$sale->id)
+            ->post('/backoffice/sales/receipts/'.$sale->id.'/refund', [
+                'reason' => 'Customer returned the item',
+            ])
+            ->assertRedirect('/backoffice/sales/receipts/'.$sale->id);
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/inventory/products/{$variant->id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('summary.on_hand', 5)
+                ->where('summary.sold', 0)
+                ->where('locations.0.quantity', 5)
+                ->where('sales.0.refunded', true)
+                ->where('history', fn (mixed $history): bool => collect($history)->contains(
+                    fn (array $row): bool => $row['type'] === 'Refund' && $row['quantity'] === 2,
+                )));
     }
 
     public function test_labels_include_barcode_price_name_variant_and_repack_dates(): void

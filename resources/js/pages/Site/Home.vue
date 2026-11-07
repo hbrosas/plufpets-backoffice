@@ -570,8 +570,16 @@ function removeLine(productId) {
                             No photo
                         </div>
                         <span
+                            v-if="product.is_product && product.stock !== null"
+                            class="absolute top-2 left-2 rounded-full px-2 py-1 text-xs font-medium text-white"
+                            :class="product.stock > 0 ? 'bg-navy' : 'bg-black/70'"
+                        >
+                            {{ product.stock > 0 ? `${product.stock} left` : 'Out of stock' }}
+                        </span>
+                        <span
                             v-if="product.badge"
-                            class="absolute top-2 left-2 rounded-full bg-ember px-2 py-1 text-xs font-medium text-black"
+                            class="absolute top-2 rounded-full bg-ember px-2 py-1 text-xs font-medium text-black"
+                            :class="product.is_product && product.stock !== null ? 'right-2' : 'left-2'"
                         >
                             {{ product.badge }}
                         </span>

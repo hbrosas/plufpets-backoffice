@@ -6,6 +6,7 @@ use App\Http\Requests\StoreDeliveryMethodRequest;
 use App\Http\Requests\UpdateDeliveryMethodRequest;
 use App\Models\DeliveryMethod;
 use App\Support\BranchInstructions;
+use App\Support\InstructionImages;
 use Illuminate\Http\RedirectResponse;
 
 class DeliveryMethodController extends Controller
@@ -21,6 +22,7 @@ class DeliveryMethodController extends Controller
             'is_active',
         ]));
         BranchInstructions::sync($deliveryMethod, $request->validated('branch_instructions') ?? []);
+        InstructionImages::storeShared($deliveryMethod, $request->file('images'), $request->input('remove_images'));
 
         return redirect()
             ->route('shop.settings.index')
@@ -38,6 +40,7 @@ class DeliveryMethodController extends Controller
             'is_active',
         ]));
         BranchInstructions::sync($deliveryMethod, $request->validated('branch_instructions') ?? []);
+        InstructionImages::storeShared($deliveryMethod, $request->file('images'), $request->input('remove_images'));
 
         return redirect()
             ->route('shop.settings.index')
@@ -46,6 +49,7 @@ class DeliveryMethodController extends Controller
 
     public function destroy(DeliveryMethod $deliveryMethod): RedirectResponse
     {
+        InstructionImages::deleteStored($deliveryMethod);
         $deliveryMethod->delete();
 
         return redirect()

@@ -1,5 +1,5 @@
 <script setup>
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
@@ -21,6 +21,7 @@ const editingSupplier = ref(null);
 
 const form = useForm({
     name: '',
+    tin: '',
     code: '',
     contact_name: '',
     email: '',
@@ -41,6 +42,7 @@ function openCreate() {
 function openEdit(supplier) {
     editingSupplier.value = supplier;
     form.name = supplier.name;
+    form.tin = supplier.tin ?? '';
     form.code = supplier.code ?? '';
     form.contact_name = supplier.contact_name ?? '';
     form.email = supplier.email ?? '';
@@ -95,7 +97,8 @@ function deleteSupplier(supplier) {
             <table class="w-full min-w-[48rem] text-left text-sm">
                 <thead class="text-ink/50 dark:text-foam/50">
                     <tr class="border-b border-mist dark:border-white/10">
-                        <th class="px-4 py-3 font-medium">Name</th>
+                        <th class="px-4 py-3 font-medium">Business name</th>
+                        <th class="px-4 py-3 font-medium">TIN</th>
                         <th class="px-4 py-3 font-medium">Code</th>
                         <th class="px-4 py-3 font-medium">Contact</th>
                         <th class="px-4 py-3 font-medium">POs</th>
@@ -105,20 +108,28 @@ function deleteSupplier(supplier) {
                 </thead>
                 <tbody>
                     <tr v-if="props.suppliers.length === 0">
-                        <td class="px-4 py-10 text-ink/60 dark:text-foam/60" colspan="6">No suppliers yet.</td>
+                        <td class="px-4 py-10 text-ink/60 dark:text-foam/60" colspan="7">No suppliers yet.</td>
                     </tr>
                     <tr
                         v-for="supplier in props.suppliers"
                         :key="supplier.id"
                         class="border-b border-mist last:border-b-0 dark:border-white/10"
                     >
-                        <td class="px-4 py-3 font-medium">{{ supplier.name }}</td>
+                        <td class="px-4 py-3 font-medium">
+                            <Link class="text-pine dark:text-sand" :href="`/backoffice/inventory/suppliers/${supplier.id}`">
+                                {{ supplier.name }}
+                            </Link>
+                        </td>
+                        <td class="px-4 py-3">{{ supplier.tin || '—' }}</td>
                         <td class="px-4 py-3">{{ supplier.code || '—' }}</td>
                         <td class="px-4 py-3">{{ supplier.contact_name || supplier.email || '—' }}</td>
                         <td class="px-4 py-3">{{ supplier.purchase_order_count }}</td>
                         <td class="px-4 py-3">{{ supplier.is_active ? 'Active' : 'Inactive' }}</td>
                         <td class="px-4 py-3">
                             <div class="flex justify-end gap-3">
+                                <Link class="font-medium text-pine dark:text-sand" :href="`/backoffice/inventory/suppliers/${supplier.id}`">
+                                    View
+                                </Link>
                                 <button class="font-medium text-pine dark:text-sand" type="button" @click="openEdit(supplier)">
                                     Edit
                                 </button>
@@ -134,14 +145,14 @@ function deleteSupplier(supplier) {
     </div>
 
     <div v-if="modalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
-        <div class="flex w-full max-w-lg flex-col gap-4 rounded-2xl bg-foam p-6 dark:bg-ink">
+        <div class="flex max-h-[90vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-foam p-6 dark:bg-ink">
             <div class="flex items-start justify-between gap-4">
                 <h2 class="text-lg font-medium">{{ editingSupplier ? 'Edit supplier' : 'Add supplier' }}</h2>
                 <button class="text-sm font-medium" type="button" @click="modalOpen = false">Close</button>
             </div>
             <form class="flex flex-col gap-4" @submit.prevent="submit">
                 <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium" for="supplier-name">Name</label>
+                    <label class="text-sm font-medium" for="supplier-name">Business name</label>
                     <input
                         id="supplier-name"
                         v-model="form.name"
@@ -150,6 +161,16 @@ function deleteSupplier(supplier) {
                         type="text"
                     />
                     <p v-if="form.errors.name" class="text-sm text-danger">{{ form.errors.name }}</p>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label class="text-sm font-medium" for="supplier-tin">Business TIN</label>
+                    <input
+                        id="supplier-tin"
+                        v-model="form.tin"
+                        class="h-11 rounded-xl border border-mist bg-white px-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
+                        type="text"
+                    />
+                    <p v-if="form.errors.tin" class="text-sm text-danger">{{ form.errors.tin }}</p>
                 </div>
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div class="flex flex-col gap-2">

@@ -78,6 +78,13 @@ function updateStatus(status) {
                 <p>{{ order.delivery || 'No delivery method' }}</p>
                 <p v-if="order.delivery_fee_label" class="text-ink/70 dark:text-foam/70">Fee {{ order.delivery_fee_label }}</p>
                 <p v-if="order.delivery_instructions" class="text-ink/70 dark:text-foam/70">{{ order.delivery_instructions }}</p>
+                <img
+                    v-for="(image, index) in order.delivery_instruction_images"
+                    :key="image"
+                    :src="image"
+                    :alt="`Delivery instruction photo ${index + 1}`"
+                    class="w-full rounded-xl object-contain"
+                />
                 <p v-if="order.address">{{ order.address }}</p>
                 <p v-if="order.coordinates" class="text-ink/50 dark:text-foam/50">{{ order.coordinates }}</p>
                 <a v-if="mapUrl" class="font-medium text-pine dark:text-sand" :href="mapUrl" target="_blank" rel="noopener">Open in Google Maps</a>
@@ -87,6 +94,13 @@ function updateStatus(status) {
                 <p>{{ order.payment || 'No payment method' }}</p>
                 <p v-if="order.payment_fee_label" class="text-ink/70 dark:text-foam/70">Fee {{ order.payment_fee_label }}</p>
                 <p v-if="order.payment_instructions" class="text-ink/70 dark:text-foam/70">{{ order.payment_instructions }}</p>
+                <img
+                    v-for="(image, index) in order.payment_instruction_images"
+                    :key="image"
+                    :src="image"
+                    :alt="`Payment instruction photo ${index + 1}`"
+                    class="w-full rounded-xl object-contain"
+                />
             </article>
             <article class="flex flex-col gap-3 rounded-2xl border border-mist bg-white p-5 text-sm dark:border-white/10 dark:bg-white/5">
                 <h2 class="font-medium">Voucher</h2>

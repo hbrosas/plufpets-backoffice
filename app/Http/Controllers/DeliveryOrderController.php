@@ -93,15 +93,22 @@ class DeliveryOrderController extends Controller
                     'name' => $employee['name'],
                     'employee_number' => $employee['employee_number'],
                 ],
-                'items' => $purchaseOrder->items->map(fn ($item): array => [
-                    'id' => $item->id,
-                    'product' => $item->variant?->catalogItem?->name,
-                    'variant' => $item->variant?->name,
-                    'sku' => $item->variant?->sku,
-                    'quantity' => $item->quantity,
-                    'received_quantity' => $item->received_quantity,
-                    'remaining' => $item->remainingToReceive(),
-                ])->all(),
+                'items' => $purchaseOrder->items
+                    ->sortBy(fn ($item): array => [
+                        mb_strtolower($item->variant?->catalogItem?->name ?? ''),
+                        mb_strtolower($item->variant?->name ?? ''),
+                        $item->id,
+                    ])
+                    ->values()
+                    ->map(fn ($item): array => [
+                        'id' => $item->id,
+                        'product' => $item->variant?->catalogItem?->name,
+                        'variant' => $item->variant?->name,
+                        'sku' => $item->variant?->sku,
+                        'quantity' => $item->quantity,
+                        'received_quantity' => $item->received_quantity,
+                        'remaining' => $item->remainingToReceive(),
+                    ])->all(),
                 'receipts' => $purchaseOrder->receiptHistory(),
             ],
         ]);
@@ -119,6 +126,7 @@ class DeliveryOrderController extends Controller
         $receivePurchaseOrder->handle($purchaseOrder, $request->validated('items'), [
             'delivery_receipt_number' => $request->validated('delivery_receipt_number'),
             'sales_invoice_number' => $request->validated('sales_invoice_number'),
+            'notes' => $request->validated('notes'),
             'received_by_employee_number' => $employee['employee_number'],
             'received_by_name' => $employee['name'],
         ]);

@@ -242,12 +242,7 @@ watch(
                 <p v-if="form.errors.supplier_id" class="text-sm text-danger">{{ form.errors.supplier_id }}</p>
                 <div v-if="selectedSupplier" class="rounded-xl border border-mist px-4 py-3 text-sm dark:border-white/10">
                     <p class="font-medium">{{ selectedSupplier.name }}</p>
-                    <p v-if="selectedSupplier.code" class="text-ink/70 dark:text-foam/70">{{ selectedSupplier.code }}</p>
-                    <p v-if="selectedSupplier.contact_name" class="text-ink/70 dark:text-foam/70">
-                        {{ selectedSupplier.contact_name }}
-                    </p>
-                    <p v-if="selectedSupplier.email" class="text-ink/70 dark:text-foam/70">{{ selectedSupplier.email }}</p>
-                    <p v-if="selectedSupplier.phone" class="text-ink/70 dark:text-foam/70">{{ selectedSupplier.phone }}</p>
+                    <p v-if="selectedSupplier.tin" class="text-ink/70 dark:text-foam/70">TIN {{ selectedSupplier.tin }}</p>
                     <p v-if="selectedSupplier.address" class="text-ink/70 dark:text-foam/70">{{ selectedSupplier.address }}</p>
                 </div>
                 <p v-if="suppliers.length === 0" class="text-sm text-ink/60 dark:text-foam/60">
@@ -283,71 +278,79 @@ watch(
         <div class="flex flex-col gap-3">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <h2 class="text-lg font-medium">Products</h2>
-                <div class="flex flex-wrap gap-3">
-                    <button
-                        class="h-10 rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
-                        type="button"
-                        @click="openProduct"
+                <button
+                    class="h-10 rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
+                    type="button"
+                    @click="openProduct"
+                >
+                    New product
+                </button>
+            </div>
+            <p v-if="form.errors.items" class="text-sm text-danger">{{ form.errors.items }}</p>
+
+            <div class="flex flex-col gap-3">
+                    <div class="grid grid-cols-[minmax(0,1fr)_5rem_7rem_auto] gap-3 text-sm font-medium">
+                        <span>Product</span>
+                        <span>Qty</span>
+                        <span>Unit cost</span>
+                        <span class="sr-only">Actions</span>
+                    </div>
+                    <div
+                        v-for="(item, index) in form.items"
+                        :key="index"
+                        class="grid grid-cols-[minmax(0,1fr)_5rem_7rem_auto] items-start gap-3"
                     >
-                        New product
-                    </button>
+                        <div class="flex flex-col gap-2">
+                            <label class="sr-only" :for="`po-product-${index}`">Product</label>
+                            <SearchableSelect
+                                :id="`po-product-${index}`"
+                                v-model="item.catalog_item_variant_id"
+                                :options="variantOptions"
+                                placeholder="Type a product name"
+                            />
+                            <p v-if="form.errors[`items.${index}.catalog_item_variant_id`]" class="text-sm text-danger">
+                                {{ form.errors[`items.${index}.catalog_item_variant_id`] }}
+                            </p>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="sr-only" :for="`po-qty-${index}`">Qty</label>
+                            <input
+                                :id="`po-qty-${index}`"
+                                v-model="item.quantity"
+                                class="h-11 rounded-xl border border-mist bg-white px-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
+                                min="1"
+                                required
+                                type="number"
+                            />
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="sr-only" :for="`po-cost-${index}`">Unit cost</label>
+                            <input
+                                :id="`po-cost-${index}`"
+                                v-model="item.unit_cost"
+                                class="h-11 rounded-xl border border-mist bg-white px-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
+                                min="0"
+                                required
+                                step="0.01"
+                                type="number"
+                            />
+                        </div>
+                        <button
+                            class="h-11 rounded-xl border border-danger/30 bg-danger/10 px-4 text-sm font-medium text-danger disabled:opacity-40"
+                            type="button"
+                            :disabled="form.items.length === 1"
+                            @click="removeItem(index)"
+                        >
+                            Remove
+                        </button>
+                    </div>
                     <button
-                        class="h-10 rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
+                        class="h-10 w-fit rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
                         type="button"
                         @click="addItem"
                     >
                         Add line
                     </button>
-                </div>
-            </div>
-            <p v-if="form.errors.items" class="text-sm text-danger">{{ form.errors.items }}</p>
-
-            <div
-                v-for="(item, index) in form.items"
-                :key="index"
-                class="grid gap-3 rounded-2xl border border-mist p-4 md:grid-cols-[1fr_8rem_8rem_auto] dark:border-white/10"
-            >
-                <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium" :for="`po-product-${index}`">Product</label>
-                    <SearchableSelect
-                        :id="`po-product-${index}`"
-                        v-model="item.catalog_item_variant_id"
-                        :options="variantOptions"
-                        placeholder="Type a product name"
-                    />
-                    <p v-if="form.errors[`items.${index}.catalog_item_variant_id`]" class="text-sm text-danger">
-                        {{ form.errors[`items.${index}.catalog_item_variant_id`] }}
-                    </p>
-                </div>
-                <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium">Qty</label>
-                    <input
-                        v-model="item.quantity"
-                        class="h-11 rounded-xl border border-mist bg-white px-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
-                        min="1"
-                        required
-                        type="number"
-                    />
-                </div>
-                <div class="flex flex-col gap-2">
-                    <label class="text-sm font-medium">Unit cost</label>
-                    <input
-                        v-model="item.unit_cost"
-                        class="h-11 rounded-xl border border-mist bg-white px-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
-                        min="0"
-                        required
-                        step="0.01"
-                        type="number"
-                    />
-                </div>
-                <button
-                    class="h-11 self-end rounded-xl border border-danger/30 bg-danger/10 px-4 text-sm font-medium text-danger disabled:opacity-40"
-                    type="button"
-                    :disabled="form.items.length === 1"
-                    @click="removeItem(index)"
-                >
-                    Remove
-                </button>
             </div>
         </div>
 

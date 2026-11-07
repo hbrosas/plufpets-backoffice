@@ -7,6 +7,7 @@ use App\Models\DeliveryMethod;
 use App\Support\DeliveryMethodRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class UpdateDeliveryMethodRequest extends FormRequest
 {
@@ -35,6 +36,18 @@ class UpdateDeliveryMethodRequest extends FormRequest
         return DeliveryMethodRules::messages();
     }
 
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $deliveryMethod = $this->route('delivery_method');
+
+            $this->guardInstructionImageLimit(
+                $validator,
+                $deliveryMethod instanceof DeliveryMethod ? $deliveryMethod : null,
+            );
+        });
+    }
+
     protected function prepareForValidation(): void
     {
         $notes = $this->string('notes')->trim()->toString();
@@ -50,5 +63,6 @@ class UpdateDeliveryMethodRequest extends FormRequest
             'asks_for_address' => $this->boolean('asks_for_address'),
             'is_active' => $this->boolean('is_active'),
         ]);
+        $this->prepareInstructionImages();
     }
 }

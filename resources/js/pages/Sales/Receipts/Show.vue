@@ -1,12 +1,6 @@
 <script setup>
-import { Head } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import SalesRefundModal from '../../../components/SalesRefundModal.vue';
-import AdminLayout from '../../../layouts/AdminLayout.vue';
-
-defineOptions({
-    layout: AdminLayout,
-});
 
 defineProps({
     receipt: { type: Object, required: true },
@@ -16,20 +10,7 @@ const refundOpen = ref(false);
 </script>
 
 <template>
-    <Head :title="receipt.number" />
-
-    <div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
-        <div class="flex items-center justify-between gap-4">
-            <button
-                v-if="!receipt.is_refunded"
-                class="h-10 rounded-xl bg-danger px-4 text-sm font-medium text-foam"
-                type="button"
-                @click="refundOpen = true"
-            >
-                Refund
-            </button>
-        </div>
-
+    <div class="flex flex-col gap-6">
         <section class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div class="flex flex-col gap-1">
@@ -40,7 +21,17 @@ const refundOpen = ref(false);
                         <span v-if="receipt.refund_reason"> · {{ receipt.refund_reason }}</span>
                     </p>
                 </div>
-                <p class="text-2xl font-medium">{{ receipt.total }}</p>
+                <div class="flex flex-col items-end gap-2">
+                    <p class="text-2xl font-medium">{{ receipt.total }}</p>
+                    <button
+                        v-if="!receipt.is_refunded"
+                        class="h-10 rounded-xl bg-danger px-4 text-sm font-medium text-foam"
+                        type="button"
+                        @click="refundOpen = true"
+                    >
+                        Refund
+                    </button>
+                </div>
             </div>
             <dl class="grid gap-3 text-sm sm:grid-cols-2">
                 <div class="flex flex-col gap-0.5">

@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Branch;
 use App\Models\DeliveryMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class DeliveryMethodControllerTest extends TestCase
@@ -151,5 +153,23 @@ class DeliveryMethodControllerTest extends TestCase
         $this->assertFalse($method->instructions_for_all_branches);
         $this->assertSame('Rider will call the Greenheights line.', $method->instructionFor($greenheights->id));
         $this->assertSame('Meet the rider at San Pedro.', $method->instructionFor($sanPedro->id));
+    }
+
+    public function test_delivery_instruction_photos_are_saved(): void
+    {
+        Storage::fake('public');
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/settings')->post('/backoffice/shop/delivery-methods', [
+            'name' => 'Lalamove',
+            'fee' => '80',
+            'notes' => 'Show this photo to the rider.',
+            'is_active' => true,
+            'images' => [UploadedFile::fake()->image('rider.jpg')],
+        ]);
+
+        $response->assertRedirect(route('shop.settings.index'));
+        $method = DeliveryMethod::query()->where('name', 'Lalamove')->first();
+        $this->assertCount(1, $method->instructionImageUrls(null));
+        Storage::disk('public')->assertExists($method->instruction_images[0]);
     }
 }

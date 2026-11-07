@@ -32,9 +32,6 @@ defineProps({
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <p class="text-sm text-ink/55 dark:text-foam/50">
-            {{ scope === 'all' ? 'Commissions for every employee.' : 'Your commissions only.' }}
-        </p>
         <CommissionList :report="report" :scope="scope" />
     </div>
 </template>

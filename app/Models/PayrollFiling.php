@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\PayrollFilingStatus;
 use App\Enums\PayrollFilingType;
+use App\Support\Peso;
 use Database\Factories\PayrollFilingFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,7 +19,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'ends_on',
     'hours',
     'nights',
+    'amount',
     'reason',
+    'deducted_payroll_id',
     'reviewed_by_name',
     'reviewed_at',
     'review_note',
@@ -47,6 +50,7 @@ class PayrollFiling extends Model
             'ends_on' => 'date',
             'hours' => 'decimal:2',
             'nights' => 'integer',
+            'amount' => 'decimal:2',
             'reviewed_at' => 'datetime',
         ];
     }
@@ -59,6 +63,14 @@ class PayrollFiling extends Model
         return $this->belongsTo(Employee::class);
     }
 
+    /**
+     * @return BelongsTo<EmployeePayroll, $this>
+     */
+    public function deductedPayroll(): BelongsTo
+    {
+        return $this->belongsTo(EmployeePayroll::class, 'deducted_payroll_id');
+    }
+
     public function detail(): string
     {
         $start = $this->starts_on?->format('M j, Y') ?? '';
@@ -67,6 +79,7 @@ class PayrollFiling extends Model
             PayrollFilingType::Leave => $start.' – '.$this->ends_on?->format('M j, Y'),
             PayrollFilingType::Overtime => $start.' · '.$this->quantityLabel((float) $this->hours).' hours',
             PayrollFilingType::Overnight => $start.' · '.$this->nights.' '.((int) $this->nights === 1 ? 'night' : 'nights'),
+            PayrollFilingType::CashAdvance => $start.' · '.Peso::format($this->amount),
         };
     }
 

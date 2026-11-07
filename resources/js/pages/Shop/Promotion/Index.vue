@@ -31,13 +31,6 @@ function submit() {
     <Head title="Promotional Text" />
 
     <form class="mx-auto flex w-full max-w-3xl flex-col gap-6" @submit.prevent="submit">
-        <div class="flex flex-col gap-1">
-            <h1 class="text-2xl font-medium">Promotional Text</h1>
-            <p class="text-sm text-ink/70 dark:text-foam/70">
-                Shown across the very top of the public shop when it is visible.
-            </p>
-        </div>
-
         <div class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-4 sm:p-6 dark:border-white/10 dark:bg-white/5">
             <label class="flex items-center gap-2 text-sm font-medium" for="promo-visible">
                 <input id="promo-visible" v-model="form.visible" class="h-4 w-4 accent-pine" type="checkbox" />

@@ -86,10 +86,11 @@ function saveDeliveryTemplate(template) {
             {{ flash.status }}
         </p>
 
-        <div class="flex flex-wrap gap-2" role="tablist" aria-label="SMS templates">
+        <Teleport defer to="#admin-header-tabs">
+        <div class="flex w-max gap-2" role="tablist" aria-label="SMS templates">
             <button
                 id="sms-tab-pos"
-                class="h-10 rounded-xl px-4 text-sm font-medium"
+                class="h-10 shrink-0 rounded-xl px-4 text-sm font-medium whitespace-nowrap"
                 :class="tab === 'pos' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
                 type="button"
                 role="tab"
@@ -101,7 +102,7 @@ function saveDeliveryTemplate(template) {
             </button>
             <button
                 id="sms-tab-delivery"
-                class="h-10 rounded-xl px-4 text-sm font-medium"
+                class="h-10 shrink-0 rounded-xl px-4 text-sm font-medium whitespace-nowrap"
                 :class="tab === 'delivery' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
                 type="button"
                 role="tab"
@@ -112,12 +113,9 @@ function saveDeliveryTemplate(template) {
                 Delivery Templates
             </button>
         </div>
+        </Teleport>
 
         <section v-show="tab === 'pos'" id="sms-panel-pos" class="flex flex-col gap-4" role="tabpanel" aria-labelledby="sms-tab-pos">
-            <div>
-                <h2 class="text-lg font-medium">POS Templates</h2>
-                <p class="text-sm text-ink/60 dark:text-foam/60">Templates the register can insert when sending a text.</p>
-            </div>
             <form class="flex flex-col gap-3 rounded-2xl border border-mist bg-white p-4 dark:border-white/10 dark:bg-white/5" @submit.prevent="saveTemplate">
                 <div class="flex flex-col gap-2">
                     <label class="text-sm font-medium" for="template-name">Name</label>
@@ -167,12 +165,6 @@ function saveDeliveryTemplate(template) {
         </section>
 
         <section v-show="tab === 'delivery'" id="sms-panel-delivery" class="flex flex-col gap-4" role="tabpanel" aria-labelledby="sms-tab-delivery">
-            <div>
-                <h2 class="text-lg font-medium">Delivery Templates</h2>
-                <p class="text-sm text-ink/60 dark:text-foam/60">
-                    Texts sent when a shop order changes status. Use {name}, {order}, {total}, and {branch}.
-                </p>
-            </div>
             <form
                 v-for="template in deliveryTemplates"
                 :key="template.id"

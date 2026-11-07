@@ -39,6 +39,7 @@ class UpdateSupplierRequest extends FormRequest
 
         $this->merge([
             'name' => $this->string('name')->trim()->toString(),
+            'tin' => $this->filled('tin') ? $this->string('tin')->trim()->toString() : null,
             'code' => $code === '' ? null : $code,
             'contact_name' => $this->filled('contact_name') ? $this->string('contact_name')->trim()->toString() : null,
             'email' => $this->filled('email') ? $this->string('email')->trim()->toString() : null,

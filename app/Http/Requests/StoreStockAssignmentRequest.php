@@ -20,10 +20,10 @@ class StoreStockAssignmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'purchase_order_item_id' => ['required', 'integer', 'exists:purchase_order_items,id'],
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
-            'quantity' => ['required', 'integer', 'min:1', 'max:100000'],
-            'selling_price' => ['required', 'numeric', 'min:0', 'decimal:0,2', 'max:999999.99'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.purchase_order_item_id' => ['required', 'integer', 'distinct', 'exists:purchase_order_items,id'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
         ];
     }
 
@@ -33,10 +33,12 @@ class StoreStockAssignmentRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'purchase_order_item_id.required' => 'Choose a delivered product.',
             'branch_id.required' => 'Choose a branch.',
-            'quantity.required' => 'Enter a quantity.',
-            'selling_price.required' => 'Enter a selling price.',
+            'items.required' => 'Choose a product to assign.',
+            'items.min' => 'Choose a product to assign.',
+            'items.*.purchase_order_item_id.required' => 'Choose a delivered product.',
+            'items.*.purchase_order_item_id.distinct' => 'Choose each product once.',
+            'items.*.quantity.required' => 'Enter a quantity.',
         ];
     }
 
@@ -44,23 +46,30 @@ class StoreStockAssignmentRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
-                if ($validator->errors()->hasAny(['purchase_order_item_id', 'quantity'])) {
+                if ($validator->errors()->isNotEmpty()) {
                     return;
                 }
 
-                $item = PurchaseOrderItem::query()
+                $rows = $this->input('items', []);
+                $items = PurchaseOrderItem::query()
                     ->with('assignments')
-                    ->find($this->integer('purchase_order_item_id'));
+                    ->whereIn('id', collect($rows)->pluck('purchase_order_item_id'))
+                    ->get()
+                    ->keyBy('id');
 
-                if ($item === null) {
-                    return;
-                }
+                foreach ($rows as $index => $row) {
+                    $item = $items->get((int) ($row['purchase_order_item_id'] ?? 0));
 
-                if ($this->integer('quantity') > $item->remainingToAssign()) {
-                    $validator->errors()->add(
-                        'quantity',
-                        'Only '.$item->remainingToAssign().' units remain to assign.',
-                    );
+                    if ($item === null) {
+                        continue;
+                    }
+
+                    if ((int) $row['quantity'] > $item->remainingToAssign()) {
+                        $validator->errors()->add(
+                            'items.'.$index.'.quantity',
+                            'Only '.$item->remainingToAssign().' units remain to assign.',
+                        );
+                    }
                 }
             },
         ];

@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'purchase_order_id',
     'delivery_receipt_number',
     'sales_invoice_number',
+    'notes',
     'received_by_employee_number',
     'received_by_name',
     'received_at',

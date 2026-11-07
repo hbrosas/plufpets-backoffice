@@ -76,6 +76,7 @@ class PurchaseOrderRules
         return [
             'delivery_receipt_number' => ['nullable', 'string', 'max:64'],
             'sales_invoice_number' => ['nullable', 'string', 'max:64'],
+            'notes' => ['nullable', 'string', 'max:5000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.id' => ['required', 'integer', 'distinct', 'exists:purchase_order_items,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],

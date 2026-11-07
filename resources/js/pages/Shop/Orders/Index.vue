@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import CountBadge from '../../../components/CountBadge.vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
 defineOptions({
@@ -51,19 +52,16 @@ function updateStatus(order, status) {
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-4">
-        <div>
-            <h2 class="text-lg font-medium">Shop orders</h2>
-            <p class="text-sm text-ink/60 dark:text-foam/60">Changing the status sends the matching text to the customer.</p>
-        </div>
         <p v-if="flash.status" class="rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
             {{ flash.status }}
         </p>
-        <div class="flex flex-wrap gap-2" role="tablist" aria-label="Order status">
+        <Teleport defer to="#admin-header-tabs">
+        <div class="flex w-max gap-2" role="tablist" aria-label="Order status">
             <button
                 v-for="status in statuses"
                 :id="`orders-tab-${status.value}`"
                 :key="status.value"
-                class="h-10 rounded-xl px-4 text-sm font-medium"
+                class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-medium whitespace-nowrap"
                 :class="statusTab === status.value ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
                 type="button"
                 role="tab"
@@ -71,9 +69,10 @@ function updateStatus(order, status) {
                 @click="statusTab = status.value"
             >
                 {{ status.label }}
-                <span class="ml-1 tabular-nums">{{ ordersInStatus(status.value) }}</span>
+                <CountBadge :count="ordersInStatus(status.value)" />
             </button>
         </div>
+        </Teleport>
         <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5" role="tabpanel" :aria-labelledby="`orders-tab-${statusTab}`">
             <table class="w-full text-left text-sm">
                 <thead class="text-ink/50 dark:text-foam/50">

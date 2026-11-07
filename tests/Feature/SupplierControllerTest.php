@@ -44,6 +44,7 @@ class SupplierControllerTest extends TestCase
     {
         $response = $this->actingAsEmployee()->post('/backoffice/inventory/suppliers', [
             'name' => 'Acme Feeds',
+            'tin' => '123-456-789-00000',
             'code' => 'ACME',
             'is_active' => true,
         ]);
@@ -51,6 +52,7 @@ class SupplierControllerTest extends TestCase
         $response->assertRedirect(route('inventory.suppliers.index'));
         $this->assertDatabaseHas('suppliers', [
             'name' => 'Acme Feeds',
+            'tin' => '123-456-789-00000',
             'code' => 'ACME',
         ]);
     }
@@ -64,5 +66,42 @@ class SupplierControllerTest extends TestCase
 
         $response->assertRedirect(route('inventory.suppliers.index'));
         $this->assertDatabaseHas('suppliers', ['id' => $supplier->id]);
+    }
+
+    public function test_guest_is_redirected_from_a_supplier(): void
+    {
+        $supplier = Supplier::factory()->create();
+
+        $response = $this->get("/backoffice/inventory/suppliers/{$supplier->id}");
+
+        $response->assertRedirect(route('login'));
+    }
+
+    public function test_supplier_page_lists_details_and_purchase_order_history(): void
+    {
+        $supplier = Supplier::factory()->create([
+            'name' => 'Acme Feeds',
+            'tin' => '123-456-789-00000',
+            'address' => 'Pasig Boulevard',
+            'contact_name' => 'Jane Cruz',
+        ]);
+        $order = PurchaseOrder::factory()->for($supplier)->create(['number' => 'PO-0099']);
+        $other = Supplier::factory()->create();
+        PurchaseOrder::factory()->for($other)->create(['number' => 'PO-0100']);
+
+        $response = $this->actingAsEmployee()->get("/backoffice/inventory/suppliers/{$supplier->id}");
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('Inventory/Suppliers/Show')
+            ->where('supplier.name', 'Acme Feeds')
+            ->where('supplier.tin', '123-456-789-00000')
+            ->where('supplier.address', 'Pasig Boulevard')
+            ->where('supplier.contact_name', 'Jane Cruz')
+            ->has('supplier.purchase_orders', 1)
+            ->where('supplier.purchase_orders.0.id', $order->id)
+            ->where('supplier.purchase_orders.0.number', 'PO-0099')
+            ->where('supplier.purchase_orders.0.status_label', 'Draft')
+            ->where('supplier.purchase_orders.0.total', '₱0.00'));
     }
 }

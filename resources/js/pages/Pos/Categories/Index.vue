@@ -74,7 +74,6 @@ function remove(category) {
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <section class="flex flex-col gap-4">
-            <h2 class="text-lg font-medium">POS Categories</h2>
             <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
                 <table class="w-full text-left text-sm">
                     <thead class="text-ink/50 dark:text-foam/50">

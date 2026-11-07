@@ -15,7 +15,7 @@ defineProps({
 </script>
 
 <template>
-    <Head title="Employees Records" />
+    <Head title="Employees" />
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
@@ -33,7 +33,7 @@ defineProps({
                 <tbody>
                     <tr v-if="records.length === 0">
                         <td class="px-4 py-10 text-ink/60 dark:text-foam/60" colspan="6">
-                            No employee records yet. Generate one from Staff.
+                            No employee records yet. Generate one from Users.
                         </td>
                     </tr>
                     <tr

@@ -585,6 +585,133 @@ class CatalogItemControllerTest extends TestCase
         ]);
     }
 
+    public function test_guest_is_redirected_from_bulk_catalog_update(): void
+    {
+        $this->post('/backoffice/shop/catalog/bulk')->assertRedirect(route('login'));
+    }
+
+    public function test_selected_products_can_change_category(): void
+    {
+        $food = Category::factory()->create(['name' => 'Food']);
+        $treats = Category::factory()->create(['name' => 'Treats']);
+        $first = CatalogItem::factory()->create(['name' => 'Kibble', 'category_id' => $food->id]);
+        $second = CatalogItem::factory()->create(['name' => 'Cans', 'category_id' => $food->id]);
+        $untouched = CatalogItem::factory()->create(['name' => 'Shampoo', 'category_id' => $food->id]);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog')
+            ->post('/backoffice/shop/catalog/bulk', [
+                'ids' => [$first->id, $second->id],
+                'action' => 'category',
+                'category_name' => 'Treats',
+            ])
+            ->assertRedirect('/backoffice/shop/catalog')
+            ->assertSessionHas('status', 'Category updated.');
+
+        $this->assertSame($treats->id, $first->fresh()->category_id);
+        $this->assertSame($treats->id, $second->fresh()->category_id);
+        $this->assertSame($food->id, $untouched->fresh()->category_id);
+    }
+
+    public function test_selected_products_can_change_or_clear_brand(): void
+    {
+        $royal = Brand::factory()->create(['name' => 'Royal']);
+        $aozi = Brand::factory()->create(['name' => 'Aozi']);
+        $first = CatalogItem::factory()->create(['name' => 'Kibble', 'brand_id' => $royal->id]);
+        $second = CatalogItem::factory()->create(['name' => 'Cans', 'brand_id' => $royal->id]);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog')
+            ->post('/backoffice/shop/catalog/bulk', [
+                'ids' => [$first->id],
+                'action' => 'brand',
+                'brand_name' => 'Aozi',
+            ])
+            ->assertSessionHas('status', 'Brand updated.');
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog')
+            ->post('/backoffice/shop/catalog/bulk', [
+                'ids' => [$second->id],
+                'action' => 'brand',
+                'brand_name' => '',
+            ]);
+
+        $this->assertSame($aozi->id, $first->fresh()->brand_id);
+        $this->assertNull($second->fresh()->brand_id);
+    }
+
+    public function test_selected_products_can_change_status_and_preorder(): void
+    {
+        $first = CatalogItem::factory()->create(['name' => 'Kibble', 'is_active' => true, 'allows_preorder' => true]);
+        $second = CatalogItem::factory()->create(['name' => 'Cans', 'is_active' => true, 'allows_preorder' => true]);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog')
+            ->post('/backoffice/shop/catalog/bulk', [
+                'ids' => [$first->id, $second->id],
+                'action' => 'status',
+                'is_active' => false,
+            ])
+            ->assertSessionHas('status', 'Status updated.');
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog')
+            ->post('/backoffice/shop/catalog/bulk', [
+                'ids' => [$first->id],
+                'action' => 'preorder',
+                'allows_preorder' => false,
+            ])
+            ->assertSessionHas('status', 'Preorder updated.');
+
+        $this->assertFalse($first->fresh()->is_active);
+        $this->assertFalse($second->fresh()->is_active);
+        $this->assertFalse($first->fresh()->allows_preorder);
+        $this->assertTrue($second->fresh()->allows_preorder);
+    }
+
+    public function test_selected_products_can_be_deleted(): void
+    {
+        $first = CatalogItem::factory()->create(['name' => 'Kibble']);
+        $second = CatalogItem::factory()->create(['name' => 'Cans']);
+        $untouched = CatalogItem::factory()->create(['name' => 'Shampoo']);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog')
+            ->post('/backoffice/shop/catalog/bulk', [
+                'ids' => [$first->id, $second->id],
+                'action' => 'delete',
+            ])
+            ->assertRedirect('/backoffice/shop/catalog')
+            ->assertSessionHas('status', 'Selected products deleted.');
+
+        $this->assertDatabaseMissing('catalog_items', ['id' => $first->id]);
+        $this->assertDatabaseMissing('catalog_items', ['id' => $second->id]);
+        $this->assertDatabaseHas('catalog_items', ['id' => $untouched->id]);
+    }
+
+    public function test_bulk_delete_keeps_products_used_on_a_purchase_order(): void
+    {
+        $blocked = CatalogItem::factory()->create(['name' => 'Kibble']);
+        $variant = CatalogItemVariant::factory()->for($blocked)->create();
+        $other = CatalogItem::factory()->create(['name' => 'Cans']);
+        PurchaseOrderItem::factory()->create([
+            'catalog_item_variant_id' => $variant->id,
+        ]);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog')
+            ->post('/backoffice/shop/catalog/bulk', [
+                'ids' => [$blocked->id, $other->id],
+                'action' => 'delete',
+            ])
+            ->assertRedirect('/backoffice/shop/catalog')
+            ->assertSessionHasErrors(['ids']);
+
+        $this->assertDatabaseHas('catalog_items', ['id' => $blocked->id]);
+        $this->assertDatabaseHas('catalog_items', ['id' => $other->id]);
+    }
+
     public function test_catalog_item_can_be_deleted(): void
     {
         $item = CatalogItem::factory()->create(['name' => 'Organic kibble']);
