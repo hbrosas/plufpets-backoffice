@@ -493,11 +493,56 @@ async function openDrawer(prompt = false) {
     }
 }
 
-function openShift() {
-    openForm.post(`${registerPath.value}/shifts`, {
-        preserveScroll: true,
-        showProgress: false,
-    });
+async function openCashDrawer({ record = false } = {}) {
+    if (openingDrawer.value) {
+        return;
+    }
+
+    openingDrawer.value = true;
+
+    try {
+        await openAssignedDrawer(receiptPrinter.value, true);
+
+        showToast(
+            receiptPrinter.value?.device_name
+                ? `Opened drawer on ${receiptPrinter.value.device_name}.`
+                : 'Opened the cash drawer.',
+        );
+
+        if (record && props.shift && canOpenDrawer.value) {
+            await recordDrawerOpen();
+        }
+    } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.');
+    } finally {
+        openingDrawer.value = false;
+    }
+}
+
+let openingShift = false;
+
+async function openShift() {
+    if (openForm.processing || openingShift) {
+        return;
+    }
+
+    openingShift = true;
+
+    try {
+        await openCashDrawer();
+
+        openForm.post(`${registerPath.value}/shifts`, {
+            preserveScroll: true,
+            showProgress: false,
+        });
+    } finally {
+        openingShift = false;
+    }
+}
+
+function beginCloseShift() {
+    closeOpen.value = true;
+    openCashDrawer();
 }
 
 function hasModifiers(variant) {
@@ -1349,6 +1394,8 @@ async function submitClose() {
     closeForm.clearErrors();
     closeForm.processing = true;
 
+    await openCashDrawer();
+
     try {
         const closed = await jsonRequest(`${registerPath.value}/shifts/${props.shift.id}/close`, {
             method: 'POST',
@@ -1364,7 +1411,7 @@ async function submitClose() {
                 const report = await jsonRequest(closed.z_report_url);
 
                 await printReceipt(printer, report.receipt, {
-                    openDrawer: Boolean(closed.open_drawer),
+                    openDrawer: false,
                     allowPrompt: false,
                 });
             } catch (error) {
@@ -1766,10 +1813,22 @@ onUnmounted(() => {
         </button>
         <template v-if="!shift">
             <button
+                class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap disabled:opacity-70 dark:border-white/15"
+                type="button"
+                :disabled="openingDrawer"
+                @click="openCashDrawer()"
+            >
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M3 6.5h14v7.2a1.3 1.3 0 0 1-1.3 1.3H4.3A1.3 1.3 0 0 1 3 13.7V6.5Z" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M3 6.5 4.4 4h11.2L17 6.5M8 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
+                {{ openingDrawer ? 'Opening…' : 'Open Drawer' }}
+            </button>
+            <button
                 class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
                 form="open-shift-form"
                 type="submit"
-                :disabled="openForm.processing"
+                :disabled="openForm.processing || openingDrawer"
             >
                 <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path d="M4 10h12M10 4v12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
@@ -1778,6 +1837,18 @@ onUnmounted(() => {
             </button>
         </template>
         <template v-else-if="shift && closeOpen">
+            <button
+                class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap disabled:opacity-70 dark:border-white/15"
+                type="button"
+                :disabled="openingDrawer || closeForm.processing"
+                @click="openCashDrawer({ record: true })"
+            >
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M3 6.5h14v7.2a1.3 1.3 0 0 1-1.3 1.3H4.3A1.3 1.3 0 0 1 3 13.7V6.5Z" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M3 6.5 4.4 4h11.2L17 6.5M8 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
+                {{ openingDrawer ? 'Opening…' : 'Open Drawer' }}
+            </button>
             <button
                 class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-pine px-3 text-sm font-medium whitespace-nowrap text-foam disabled:opacity-70"
                 form="close-shift-form"
@@ -1840,7 +1911,7 @@ onUnmounted(() => {
             <button
                 class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
                 type="button"
-                @click="closeOpen = true"
+                @click="beginCloseShift"
             >
                 <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <rect x="3.5" y="4" width="13" height="12" rx="1.5" stroke="currentColor" stroke-width="1.5" />

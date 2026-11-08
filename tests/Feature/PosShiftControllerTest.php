@@ -50,7 +50,7 @@ class PosShiftControllerTest extends TestCase
 
         $response->assertRedirect(route('pos.index', $branch));
         $response->assertSessionHas('status', 'Shift opened.');
-        $response->assertSessionHas('open_drawer', true);
+        $response->assertSessionMissing('open_drawer');
         $this->assertDatabaseHas('pos_shifts', [
             'branch_id' => $branch->id,
             'starting_cash' => '2000.00',
@@ -149,7 +149,7 @@ class PosShiftControllerTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('status', 'Shift closed.');
-        $response->assertJsonPath('open_drawer', true);
+        $response->assertJsonPath('open_drawer', false);
         $this->assertStringContainsString('/z-report', (string) $response->json('z_report_url'));
         $this->assertStringContainsString('closed=1', (string) $response->json('z_report_url'));
         $this->assertStringNotContainsString('print=1', (string) $response->json('z_report_url'));

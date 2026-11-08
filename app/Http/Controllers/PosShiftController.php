@@ -28,8 +28,7 @@ class PosShiftController extends Controller
 
         return redirect()
             ->route('pos.index', $branch)
-            ->with('status', 'Shift opened.')
-            ->with('open_drawer', true);
+            ->with('status', 'Shift opened.');
     }
 
     public function close(ClosePosShiftRequest $request, Branch $branch, PosShift $posShift, ClosePosShift $closePosShift): JsonResponse|RedirectResponse
@@ -49,7 +48,7 @@ class PosShiftController extends Controller
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
             return response()->json([
                 'status' => 'Shift closed.',
-                'open_drawer' => true,
+                'open_drawer' => false,
                 'z_report_url' => route('pos.shifts.z-report', [
                     'branch' => $branch,
                     'pos_shift' => $shift,
@@ -64,7 +63,6 @@ class PosShiftController extends Controller
                 'pos_shift' => $shift,
                 'print' => 1,
             ])
-            ->with('status', 'Shift closed.')
-            ->with('open_drawer', true);
+            ->with('status', 'Shift closed.');
     }
 }
