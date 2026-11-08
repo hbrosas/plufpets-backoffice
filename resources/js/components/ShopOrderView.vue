@@ -1,6 +1,7 @@
 <script setup>
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import PreferredSlotButtons from './PreferredSlotButtons.vue';
 
 const props = defineProps({
     order: {
@@ -18,35 +19,8 @@ const props = defineProps({
 });
 
 const page = usePage();
-const scheduleError = computed(() => page.props.errors?.delivery_schedule_id ?? null);
-const activeSchedules = computed(() => props.schedules.filter((schedule) => schedule.is_assignable && schedule.branch_id === props.order.branch_id));
-const scheduleChoices = computed(() => {
-    const choices = [...activeSchedules.value];
-    const currentId = props.order.delivery_schedule_id;
-
-    if (currentId && !choices.some((schedule) => schedule.id === currentId)) {
-        const current = props.schedules.find((schedule) => schedule.id === currentId);
-
-        choices.unshift(current ?? {
-            id: currentId,
-            label: props.order.schedule || 'Assigned schedule',
-            is_assignable: false,
-        });
-    }
-
-    return choices;
-});
-const mapUrl = computed(() => {
-    if (props.order.coordinates) {
-        return `https://www.google.com/maps?q=${encodeURIComponent(props.order.coordinates)}`;
-    }
-
-    if (props.order.address) {
-        return `https://www.google.com/maps?q=${encodeURIComponent(props.order.address)}`;
-    }
-
-    return null;
-});
+const scheduleError = computed(() => page.props.errors?.delivery_schedule_id ?? page.props.errors?.preferred_on ?? null);
+const slots = computed(() => props.order.slots ?? []);
 
 function updateStatus(status) {
     router.put(`/backoffice/shop/orders/${props.order.id}`, { status }, {
@@ -55,9 +29,10 @@ function updateStatus(status) {
     });
 }
 
-function assignSchedule(scheduleId) {
+function assignSchedule(slot) {
     router.put(`/backoffice/shop/orders/${props.order.id}/delivery-schedule`, {
-        delivery_schedule_id: scheduleId === '' ? null : Number(scheduleId),
+        delivery_schedule_id: slot?.id ?? null,
+        preferred_on: slot?.on ?? null,
     }, {
         preserveScroll: true,
         preserveState: true,
@@ -88,29 +63,29 @@ function assignSchedule(scheduleId) {
                         <option v-for="status in statuses" :key="status.value" :value="status.value">{{ status.label }}</option>
                     </select>
                 </label>
-                <label class="flex w-full max-w-xs flex-col gap-1 text-sm" for="order-delivery-schedule">
-                    <span class="text-ink/60 dark:text-foam/60">Assign Delivery Schedule</span>
-                    <span v-if="order.preferred_on">Preferred {{ order.preferred_on }}</span>
-                    <select
-                        id="order-delivery-schedule"
-                        class="h-10 rounded-xl border border-mist bg-white pr-8 pl-3 text-sm outline-none focus:border-pine disabled:opacity-60 dark:border-white/10 dark:bg-white/5"
-                        :value="order.delivery_schedule_id ?? ''"
-                        :disabled="scheduleChoices.length === 0"
-                        @change="assignSchedule($event.target.value)"
-                    >
-                        <option value="">No delivery schedule</option>
-                        <option
-                            v-for="schedule in scheduleChoices"
-                            :key="schedule.id"
-                            :value="schedule.id"
-                            :disabled="!schedule.is_assignable"
+                <div class="flex min-w-72 flex-1 flex-col gap-2 text-sm">
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="text-ink/60 dark:text-foam/60">Assign Delivery Schedule</span>
+                        <button
+                            v-if="order.delivery_schedule_id"
+                            class="font-medium text-pine dark:text-sand"
+                            type="button"
+                            @click="assignSchedule(null)"
                         >
-                            {{ schedule.label }}
-                        </option>
-                    </select>
-                    <span v-if="activeSchedules.length === 0" class="text-ink/60 dark:text-foam/60">No active delivery schedule.</span>
+                            Clear
+                        </button>
+                    </div>
+                    <PreferredSlotButtons
+                        v-if="slots.length > 0"
+                        :slots="slots"
+                        :schedule-id="order.delivery_schedule_id ?? ''"
+                        :preferred-on="order.preferred_on_date ?? ''"
+                        tone="pos"
+                        @select="assignSchedule"
+                    />
+                    <span v-else class="text-ink/60 dark:text-foam/60">No open time slots.</span>
                     <span v-if="scheduleError" class="text-danger">{{ scheduleError }}</span>
-                </label>
+                </div>
             </div>
         </section>
 
@@ -133,13 +108,13 @@ function assignSchedule(scheduleId) {
                     class="w-full rounded-xl object-contain"
                 />
                 <p v-if="order.address">{{ order.address }}</p>
-                <p v-if="order.coordinates" class="text-ink/50 dark:text-foam/50">{{ order.coordinates }}</p>
-                <a v-if="mapUrl" class="font-medium text-pine dark:text-sand" :href="mapUrl" target="_blank" rel="noopener">Open in Google Maps</a>
             </article>
             <article class="flex flex-col gap-3 rounded-2xl border border-mist bg-white p-5 text-sm dark:border-white/10 dark:bg-white/5">
                 <h3 class="font-medium">Payment</h3>
                 <p>{{ order.payment || 'No payment method' }}</p>
                 <p v-if="order.payment_fee_label" class="text-ink/70 dark:text-foam/70">Fee {{ order.payment_fee_label }}</p>
+                <p v-if="order.change_for_label" class="text-ink/70 dark:text-foam/70">Change for {{ order.change_for_label }}</p>
+                <p v-if="order.change_due_label" class="text-ink/70 dark:text-foam/70">Change {{ order.change_due_label }}</p>
                 <p v-if="order.payment_instructions" class="text-ink/70 dark:text-foam/70">{{ order.payment_instructions }}</p>
                 <img
                     v-for="(image, index) in order.payment_instruction_images"

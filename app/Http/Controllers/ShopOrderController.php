@@ -25,6 +25,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ShopOrderController extends Controller
 {
+    /**
+     * @var array<int, list<array{id: int, on: string, date: string, time: string, day: string}>>
+     */
+    private array $slotsByBranch = [];
+
     public function index(): Response
     {
         $orders = PosOpenOrder::query()
@@ -106,6 +111,7 @@ class ShopOrderController extends Controller
         $scheduleId = $request->validated('delivery_schedule_id');
         $posOpenOrder->update([
             'delivery_schedule_id' => $scheduleId,
+            'preferred_on' => $scheduleId === null ? null : $request->validated('preferred_on'),
         ]);
 
         return back()->with('status', $scheduleId === null ? 'Delivery schedule removed.' : 'Delivery schedule assigned.');
@@ -134,6 +140,42 @@ class ShopOrderController extends Controller
         }
 
         return back()->with('status', $message);
+    }
+
+    /**
+     * @return list<array{id: int, on: string, date: string, time: string, day: string}>
+     */
+    private function slotsFor(PosOpenOrder $order): array
+    {
+        $branchId = $order->branch_id;
+
+        if ($branchId === null) {
+            return [];
+        }
+
+        $slots = $this->slotsByBranch[$branchId] ??= DeliverySchedule::preferredSlots($branchId);
+        $preferredOn = $order->preferred_on?->toDateString();
+        $schedule = $order->deliverySchedule;
+
+        if ($preferredOn === null || ! $schedule instanceof DeliverySchedule) {
+            return $slots;
+        }
+
+        $alreadyListed = collect($slots)->contains(
+            fn (array $slot): bool => $slot['id'] === $schedule->id && $slot['on'] === $preferredOn,
+        );
+
+        if ($alreadyListed) {
+            return $slots;
+        }
+
+        return [[
+            'id' => $schedule->id,
+            'on' => $preferredOn,
+            'date' => $order->preferred_on->format('M j, Y'),
+            'time' => $schedule->timeLabel(),
+            'day' => $order->preferred_on->format('l'),
+        ], ...$slots];
     }
 
     private function ensureShopOrder(PosOpenOrder $order): void
@@ -286,14 +328,17 @@ class ShopOrderController extends Controller
             'delivery_fee_label' => isset($checkout['delivery']['fee']) ? Peso::format($checkout['delivery']['fee']) : null,
             'payment' => $checkout['payment']['name'] ?? null,
             'payment_fee_label' => isset($checkout['payment']['fee']) ? Peso::format($checkout['payment']['fee']) : null,
+            'change_for_label' => isset($checkout['payment']['change_for']) ? Peso::format($checkout['payment']['change_for']) : null,
+            'change_due_label' => isset($checkout['payment']['change_due']) ? Peso::format($checkout['payment']['change_due']) : null,
             'voucher' => $checkout['voucher']['code'] ?? null,
             'address' => $this->addressLabel($address),
-            'coordinates' => $this->coordinates($address),
             'items' => collect($order->items)->map(fn (mixed $item): string => $this->itemLabel($item))->filter()->values()->all(),
             'sale_number' => $order->sale?->number,
             'placed_at' => $order->created_at?->timezone('Asia/Manila')->format('M j, Y g:i A'),
             'delivery_schedule_id' => $order->delivery_schedule_id,
             'preferred_on' => $order->preferred_on?->format('M j, Y'),
+            'preferred_on_date' => $order->preferred_on?->toDateString(),
+            'slots' => $this->slotsFor($order),
             'schedule' => $order->deliverySchedule?->label(),
         ];
     }
@@ -424,18 +469,6 @@ class ShopOrderController extends Controller
         ])->filter(fn (mixed $part): bool => is_string($part) && $part !== '')->implode(', ');
 
         return $label !== '' ? $label : null;
-    }
-
-    /**
-     * @param  array<string, mixed>|null  $address
-     */
-    private function coordinates(?array $address): ?string
-    {
-        if (! isset($address['latitude'], $address['longitude']) || ! $address['latitude'] || ! $address['longitude']) {
-            return null;
-        }
-
-        return $address['latitude'].', '.$address['longitude'];
     }
 
     private function itemLabel(mixed $item): string

@@ -50,8 +50,7 @@ const form = useForm({
     address_line_2: '',
     city: '',
     province: '',
-    latitude: '',
-    longitude: '',
+    change_for: '',
     items: [],
 });
 
@@ -59,10 +58,15 @@ const selectedDelivery = computed(() => props.deliveryMethods.find((method) => m
 const selectedPayment = computed(() => props.paymentMethods.find((method) => method.id === Number(form.payment_method_id)) ?? null);
 const asksForAddress = computed(() => Boolean(selectedDelivery.value?.asks_for_address));
 const usesDeliverySchedule = computed(() => Boolean(selectedDelivery.value?.uses_delivery_schedule));
+const asksForChange = computed(() => Boolean(selectedPayment.value?.asks_for_change));
 
 watch(() => form.delivery_method_id, () => {
     form.delivery_schedule_id = '';
     form.preferred_on = '';
+});
+
+watch(() => form.payment_method_id, () => {
+    form.change_for = '';
 });
 
 function chooseSlot(slot) {
@@ -93,18 +97,6 @@ const summary = computed(() => {
         total_label: peso(total),
     };
 });
-const mapsHref = computed(() => {
-    if (form.latitude && form.longitude) {
-        return `https://www.google.com/maps?q=${encodeURIComponent(`${form.latitude},${form.longitude}`)}`;
-    }
-
-    const query = [form.address_line_1, form.address_line_2, form.city, form.province].filter(Boolean).join(', ');
-
-    return query === ''
-        ? 'https://www.google.com/maps'
-        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-});
-
 function storageKey() {
     return `shop-cart-${props.branch?.id ?? 'none'}`;
 }
@@ -181,21 +173,6 @@ async function refreshQuote() {
         subtotal: Number(payload.subtotal),
         discount: Number(payload.discount),
     };
-}
-
-function useMyLocation() {
-    if (!navigator.geolocation) {
-        quoteError.value = 'Location is not available in this browser.';
-
-        return;
-    }
-
-    navigator.geolocation.getCurrentPosition((position) => {
-        form.latitude = position.coords.latitude.toFixed(6);
-        form.longitude = position.coords.longitude.toFixed(6);
-    }, () => {
-        quoteError.value = 'Allow location access to fill the map coordinates.';
-    });
 }
 
 async function applyVoucher() {
@@ -402,15 +379,6 @@ watch(
                             <p v-if="form.errors.province" class="mt-1 text-sm text-danger">{{ form.errors.province }}</p>
                         </div>
                     </div>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <button class="h-10 rounded-xl border border-black/15 px-3 text-sm font-medium" type="button" @click="useMyLocation">
-                            Use my location
-                        </button>
-                        <a class="text-sm font-medium text-navy" :href="mapsHref" target="_blank" rel="noopener">Open in Google Maps</a>
-                    </div>
-                    <p v-if="form.latitude && form.longitude" class="text-xs text-black/60">
-                        Coordinates {{ form.latitude }}, {{ form.longitude }}
-                    </p>
                 </div>
 
                 <fieldset class="flex flex-col gap-2">
@@ -438,6 +406,11 @@ watch(
                         />
                     </div>
                     <p v-if="form.errors.payment_method_id" class="text-sm text-danger">{{ form.errors.payment_method_id }}</p>
+                    <div v-if="asksForChange">
+                        <label class="mb-1 block text-sm" for="checkout-change-for">Change for</label>
+                        <input id="checkout-change-for" v-model="form.change_for" class="h-11 w-full rounded-xl border border-black/15 bg-white px-3 text-sm" min="0.01" step="0.01" required type="number" />
+                        <p v-if="form.errors.change_for" class="mt-1 text-sm text-danger">{{ form.errors.change_for }}</p>
+                    </div>
                 </fieldset>
 
                 <div>

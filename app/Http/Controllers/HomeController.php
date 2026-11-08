@@ -69,6 +69,7 @@ class HomeController extends Controller
                     'fee_label' => Peso::format($method->fee ?? 0),
                     'instructions' => $method->instructionFor($branch?->id),
                     'instruction_images' => $method->instructionImageUrls($branch?->id),
+                    'asks_for_change' => $method->asks_for_change,
                 ]),
         ]);
     }

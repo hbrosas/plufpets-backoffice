@@ -44,13 +44,12 @@ class StoreShopOrderRequest extends FormRequest
                 'integer',
                 Rule::exists(PaymentMethod::class, 'id')->where('is_active', true),
             ],
+            'change_for' => ['nullable', 'numeric', 'min:0.01', 'decimal:0,2', 'max:9999999.99'],
             'voucher_code' => ['nullable', 'string', 'max:40'],
             'address_line_1' => ['nullable', 'string', 'max:160', Rule::requiredIf(fn (): bool => $this->asksForAddress())],
             'address_line_2' => ['nullable', 'string', 'max:160'],
             'city' => ['nullable', 'string', 'max:80', Rule::requiredIf(fn (): bool => $this->asksForAddress())],
             'province' => ['nullable', 'string', 'max:80', Rule::requiredIf(fn (): bool => $this->asksForAddress())],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'items' => ['required', 'array', 'min:1', 'max:50'],
             'items.*.catalog_item_variant_id' => ['required', 'integer', 'distinct', 'exists:catalog_item_variants,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
@@ -74,6 +73,9 @@ class StoreShopOrderRequest extends FormRequest
             'preferred_on.date_format' => 'Choose a preferred slot.',
             'payment_method_id.required' => 'Choose a payment method.',
             'payment_method_id.exists' => 'Choose a payment method.',
+            'change_for.numeric' => 'Enter the amount to change for.',
+            'change_for.min' => 'Enter the amount to change for.',
+            'change_for.decimal' => 'Enter the amount to change for.',
             'address_line_1.required' => 'Enter the delivery address.',
             'city.required' => 'Enter the city.',
             'province.required' => 'Enter the province.',
@@ -97,8 +99,7 @@ class StoreShopOrderRequest extends FormRequest
             'address_line_2' => $this->nullableString('address_line_2'),
             'city' => $this->nullableString('city'),
             'province' => $this->nullableString('province'),
-            'latitude' => $this->nullableString('latitude'),
-            'longitude' => $this->nullableString('longitude'),
+            'change_for' => $this->filled('change_for') ? $this->input('change_for') : null,
             'delivery_schedule_id' => $this->filled('delivery_schedule_id') ? $this->input('delivery_schedule_id') : null,
             'preferred_on' => $this->filled('preferred_on') ? $this->input('preferred_on') : null,
         ]);
@@ -125,6 +126,19 @@ class StoreShopOrderRequest extends FormRequest
                     $validator->errors()->add('delivery_schedule_id', 'Choose a preferred slot.');
                 }
             },
+            function (Validator $validator): void {
+                if ($validator->errors()->isNotEmpty()) {
+                    return;
+                }
+
+                $payment = PaymentMethod::query()->find($this->integer('payment_method_id'));
+
+                if (! $payment instanceof PaymentMethod || ! $payment->asks_for_change || $this->filled('change_for')) {
+                    return;
+                }
+
+                $validator->errors()->add('change_for', 'Enter the amount to change for.');
+            },
         ];
     }
 
@@ -140,13 +154,12 @@ class StoreShopOrderRequest extends FormRequest
             'delivery_schedule_id',
             'preferred_on',
             'payment_method_id',
+            'change_for',
             'voucher_code',
             'address_line_1',
             'address_line_2',
             'city',
             'province',
-            'latitude',
-            'longitude',
         ]);
     }
 

@@ -19,6 +19,7 @@ class PaymentMethodController extends Controller
             'instructions_for_all_branches',
             'fee',
             'is_cash',
+            'asks_for_change',
             'is_active',
         ]));
         BranchInstructions::sync($paymentMethod, $request->validated('branch_instructions') ?? []);
@@ -37,6 +38,7 @@ class PaymentMethodController extends Controller
             'instructions_for_all_branches',
             'fee',
             'is_cash',
+            'asks_for_change',
             'is_active',
         ]));
         BranchInstructions::sync($paymentMethod, $request->validated('branch_instructions') ?? []);

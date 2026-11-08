@@ -99,6 +99,7 @@ class PosController extends Controller
                     'instructions' => $method->instructionFor($branch->id) ?? '',
                     'instruction_images' => $method->instructionImageUrls($branch->id),
                     'is_cash' => $method->is_cash,
+                    'asks_for_change' => $method->asks_for_change,
                 ]);
         }
 

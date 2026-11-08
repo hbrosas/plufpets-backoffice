@@ -4,11 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Enums\DeliveryScheduleFrequency;
 use App\Enums\DeliveryScheduleKind;
+use App\Enums\ShopOrderStatus;
 use App\Http\Requests\StoreDeliveryScheduleRequest;
 use App\Http\Requests\UpdateDeliveryScheduleRequest;
 use App\Models\DeliverySchedule;
+use App\Models\PosOpenOrder;
+use App\Support\Peso;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
 
 class DeliveryScheduleController extends Controller
 {
@@ -48,5 +54,82 @@ class DeliveryScheduleController extends Controller
         ]);
 
         return back()->with('status', $isActive ? 'Delivery schedule reopened.' : 'Delivery schedule closed.');
+    }
+
+    public function export(DeliverySchedule $deliverySchedule): Response
+    {
+        $sheet = $this->sheet($deliverySchedule);
+
+        return Pdf::loadView('shop.delivery-schedules.export', $sheet)
+            ->setPaper('a4', 'landscape')
+            ->download($sheet['filename']);
+    }
+
+    /**
+     * @return array{filename: string, label: string, branch: string|null, orders: list<array{number: string, customer: string, phone: string, preferred_on: string, address: string, items: string, status: string, total: string}>}
+     */
+    protected function sheet(DeliverySchedule $deliverySchedule): array
+    {
+        $deliverySchedule->loadMissing('branch:id,name');
+
+        $orders = $deliverySchedule->orders()
+            ->whereNotNull('status')
+            ->where('status', '!=', '')
+            ->orderBy('preferred_on')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (PosOpenOrder $order): array => [
+                'number' => $order->number,
+                'customer' => (string) $order->saved_by_name,
+                'phone' => (string) ($order->phone ?? ''),
+                'preferred_on' => $order->preferred_on?->format('M j, Y') ?? '',
+                'address' => $this->addressLabel($order),
+                'items' => $this->itemLabels($order),
+                'status' => ShopOrderStatus::tryFrom((string) $order->status)?->label() ?? (string) $order->status,
+                'total' => Peso::format($order->total ?? $order->subtotal),
+            ])
+            ->all();
+
+        $label = $deliverySchedule->label();
+        $slug = Str::slug($label);
+
+        return [
+            'filename' => ($slug !== '' ? $slug : 'delivery-schedule').'.pdf',
+            'label' => $label,
+            'branch' => $deliverySchedule->branch?->name,
+            'orders' => $orders,
+        ];
+    }
+
+    private function addressLabel(PosOpenOrder $order): string
+    {
+        $checkout = is_array($order->checkout) ? $order->checkout : [];
+        $address = is_array($checkout['address'] ?? null) ? $checkout['address'] : [];
+
+        return collect([
+            $address['line_1'] ?? null,
+            $address['line_2'] ?? null,
+            $address['city'] ?? null,
+            $address['province'] ?? null,
+        ])->filter(fn (mixed $part): bool => is_string($part) && $part !== '')->implode(', ');
+    }
+
+    private function itemLabels(PosOpenOrder $order): string
+    {
+        return collect($order->items ?? [])
+            ->map(function (mixed $item): string {
+                if (! is_array($item)) {
+                    return '';
+                }
+
+                $name = trim((string) ($item['product_name'] ?? 'Item'));
+                $variant = trim((string) ($item['variant_name'] ?? ''));
+                $quantity = (int) ($item['quantity'] ?? 0);
+                $label = $variant !== '' ? $name.' '.$variant : $name;
+
+                return $quantity > 0 ? $label.' × '.$quantity : $label;
+            })
+            ->filter(fn (string $label): bool => $label !== '')
+            ->implode('; ');
     }
 }

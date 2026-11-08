@@ -122,9 +122,9 @@ class PosControllerTest extends TestCase
             ->where('branches.0.name', 'Greenheights')
             ->where('branches.0.status', 'Open')
             ->where('branches.0.user', 'Sample Employee')
-            ->where('branches.0.href', route('pos.index', $openBranch))
+            ->where('branches.0.href', route('pos.index', $openBranch, false))
             ->where('branches.1.name', 'San Pedro')
-            ->where('branches.1.status', 'Close')
+            ->where('branches.1.status', 'Closed')
             ->where('branches.1.user', 'Night Cashier'));
     }
 

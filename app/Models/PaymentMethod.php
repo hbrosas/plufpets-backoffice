@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'instructions', 'instructions_for_all_branches', 'instruction_images', 'fee', 'is_cash', 'is_active'])]
+#[Fillable(['name', 'instructions', 'instructions_for_all_branches', 'instruction_images', 'fee', 'is_cash', 'asks_for_change', 'is_active'])]
 class PaymentMethod extends Model
 {
     /** @use HasFactory<PaymentMethodFactory> */
@@ -21,6 +21,7 @@ class PaymentMethod extends Model
     protected $attributes = [
         'instructions_for_all_branches' => true,
         'is_cash' => false,
+        'asks_for_change' => false,
         'is_active' => true,
     ];
 
@@ -34,6 +35,7 @@ class PaymentMethod extends Model
             'instruction_images' => 'array',
             'fee' => 'decimal:2',
             'is_cash' => 'boolean',
+            'asks_for_change' => 'boolean',
             'is_active' => 'boolean',
         ];
     }

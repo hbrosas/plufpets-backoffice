@@ -19,6 +19,7 @@ class PaymentMethodFactory extends Factory
             'name' => fake()->unique()->words(2, true),
             'instructions' => fake()->optional()->sentence(),
             'is_cash' => false,
+            'asks_for_change' => false,
             'is_active' => true,
         ];
     }
@@ -28,6 +29,13 @@ class PaymentMethodFactory extends Factory
         return $this->state(fn (array $attributes): array => [
             'name' => 'Cash',
             'is_cash' => true,
+        ]);
+    }
+
+    public function asksForChange(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'asks_for_change' => true,
         ]);
     }
 

@@ -492,6 +492,62 @@ class PosSaleControllerTest extends TestCase
         ]);
     }
 
+    public function test_a_charge_payment_can_ask_for_change(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItem::factory()->service()->create(['name' => 'Grooming'])
+            ->variants()->create([
+                'name' => 'Standard',
+                'price' => 350,
+                'is_active' => true,
+            ]);
+        $payment = PaymentMethod::factory()->asksForChange()->create(['name' => 'GCash', 'is_cash' => false]);
+
+        $short = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '350',
+                    'amount_tendered' => '100',
+                    'reference_number' => 'GC-1001',
+                ]],
+            ]);
+
+        $short->assertRedirect("/backoffice/pos/register/{$branch->id}");
+        $short->assertSessionHasErrors('payments.0.amount_tendered');
+        $this->assertDatabaseCount('pos_sales', 0);
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '350',
+                    'amount_tendered' => '500',
+                    'reference_number' => 'GC-1001',
+                ]],
+            ]);
+
+        $response->assertRedirect(route('pos.index', $branch));
+        $response->assertSessionHas('open_drawer', false);
+        $this->assertDatabaseHas('pos_sales', [
+            'total' => '350.00',
+            'amount_tendered' => '500.00',
+            'change_due' => '150.00',
+            'is_cash' => false,
+        ]);
+        $this->assertDatabaseHas('pos_sale_payments', [
+            'reference_number' => 'GC-1001',
+            'amount_tendered' => '500.00',
+            'change_due' => '150.00',
+            'is_cash' => false,
+        ]);
+    }
+
     public function test_sale_includes_selected_modifier_price_and_notes(): void
     {
         $branch = Branch::factory()->create();

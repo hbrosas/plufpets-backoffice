@@ -291,6 +291,7 @@ Route::prefix('backoffice')->group(function () {
                 Route::get('orders', [ShopOrderController::class, 'index'])->name('orders.index');
                 Route::get('orders/preorders/export', [ShopOrderController::class, 'exportPreorders'])->name('orders.preorders.export');
                 Route::post('delivery-schedules', [DeliveryScheduleController::class, 'store'])->name('delivery-schedules.store');
+                Route::get('delivery-schedules/{delivery_schedule}/export', [DeliveryScheduleController::class, 'export'])->name('delivery-schedules.export');
                 Route::put('delivery-schedules/{delivery_schedule}', [DeliveryScheduleController::class, 'update'])->name('delivery-schedules.update');
                 Route::put('orders/{pos_open_order}/delivery-schedule', [ShopOrderController::class, 'updateDeliverySchedule'])->name('orders.delivery-schedule.update');
                 Route::get('orders/{pos_open_order}', [ShopOrderController::class, 'show'])->name('orders.show');

@@ -196,6 +196,7 @@ class PlaceShopOrder
         $discount = $voucher instanceof Voucher ? $voucher->discountFor($subtotal) : 0.0;
         $total = max(0, round($subtotal + $deliveryFee + $paymentFee - $discount, 2));
         $slot = $this->preferredSlot($branch, $customer, $delivery, $lock);
+        $changeFor = $this->changeFor($customer, $payment, $total, $lock);
 
         return [
             'lines' => $lines,
@@ -224,6 +225,8 @@ class PlaceShopOrder
                     'fee' => number_format($paymentFee, 2, '.', ''),
                     'instructions' => $payment->instructionFor($branch->id),
                     'instruction_images' => $payment->instructionImageUrls($branch->id),
+                    'change_for' => $changeFor['amount'],
+                    'change_due' => $changeFor['change'],
                 ],
                 'address' => $address,
                 'voucher' => $voucher instanceof Voucher ? [
@@ -284,8 +287,36 @@ class PlaceShopOrder
             'line_2' => $this->blank($customer['address_line_2'] ?? null),
             'city' => $city,
             'province' => $province,
-            'latitude' => $this->blank($customer['latitude'] ?? null),
-            'longitude' => $this->blank($customer['longitude'] ?? null),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $customer
+     * @return array{amount: string|null, change: string|null}
+     */
+    private function changeFor(array $customer, PaymentMethod $payment, float $total, bool $required): array
+    {
+        if (! $payment->asks_for_change || ! $required) {
+            return ['amount' => null, 'change' => null];
+        }
+
+        $amount = $customer['change_for'] ?? null;
+
+        if (! is_numeric($amount)) {
+            throw ValidationException::withMessages([
+                'change_for' => 'Enter the amount to change for.',
+            ]);
+        }
+
+        if ((float) $amount + 0.005 < $total) {
+            throw ValidationException::withMessages([
+                'change_for' => 'Change for must cover the total.',
+            ]);
+        }
+
+        return [
+            'amount' => number_format((float) $amount, 2, '.', ''),
+            'change' => number_format(round((float) $amount - $total, 2), 2, '.', ''),
         ];
     }
 

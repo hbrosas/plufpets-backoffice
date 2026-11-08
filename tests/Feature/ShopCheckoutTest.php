@@ -535,6 +535,68 @@ class ShopCheckoutTest extends TestCase
         $this->assertDatabaseCount('pos_open_orders', 0);
     }
 
+    public function test_checkout_asks_for_change_when_the_payment_method_requires_it(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItem::factory()->service()->create()
+            ->variants()->create([
+                'name' => 'Standard',
+                'price' => 80,
+                'is_active' => true,
+            ]);
+        $delivery = DeliveryMethod::factory()->create(['fee' => 20, 'asks_for_address' => false]);
+        $payment = PaymentMethod::factory()->asksForChange()->create(['name' => 'Cash', 'fee' => 0, 'is_cash' => true]);
+
+        $missing = $this->from('/checkout')->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'delivery_method_id' => $delivery->id,
+            'payment_method_id' => $payment->id,
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ]);
+
+        $missing->assertRedirect('/checkout');
+        $missing->assertSessionHasErrors(['change_for' => 'Enter the amount to change for.']);
+        $this->assertDatabaseCount('pos_open_orders', 0);
+
+        $short = $this->from('/checkout')->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'delivery_method_id' => $delivery->id,
+            'payment_method_id' => $payment->id,
+            'change_for' => '50.00',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ]);
+
+        $short->assertRedirect('/checkout');
+        $short->assertSessionHasErrors(['change_for' => 'Change for must cover the total.']);
+
+        $response = $this->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'delivery_method_id' => $delivery->id,
+            'payment_method_id' => $payment->id,
+            'change_for' => '150.00',
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ]);
+
+        $response->assertRedirect();
+        $order = PosOpenOrder::query()->first();
+        $this->assertNotNull($order);
+        $this->assertSame('100.00', $order->total);
+        $this->assertSame('150.00', $order->checkout['payment']['change_for']);
+        $this->assertSame('50.00', $order->checkout['payment']['change_due']);
+    }
+
     public function test_checkout_adds_fees_and_a_voucher_then_texts_the_customer(): void
     {
         Http::preventStrayRequests();
@@ -598,6 +660,8 @@ class ShopCheckoutTest extends TestCase
         $this->assertSame('20.00', $order->discount);
         $this->assertSame('240.00', $order->total);
         $this->assertSame('12 Mabini', $order->checkout['address']['line_1']);
+        $this->assertArrayNotHasKey('latitude', $order->checkout['address']);
+        $this->assertArrayNotHasKey('longitude', $order->checkout['address']);
         $this->assertSame('SAVE10', $order->checkout['voucher']['code']);
         $this->assertDatabaseHas('sms_messages', [
             'branch_id' => $branch->id,

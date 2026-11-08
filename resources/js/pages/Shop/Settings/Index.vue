@@ -59,6 +59,7 @@ const paymentForm = useForm({
     remove_images: [],
     fee: '',
     is_cash: false,
+    asks_for_change: false,
     is_active: true,
 });
 const paymentExisting = ref([]);
@@ -251,6 +252,7 @@ function openCreatePaymentMethod() {
     paymentForm.instructions_for_all_branches = true;
     paymentForm.branch_instructions = instructionRows();
     paymentForm.is_cash = false;
+    paymentForm.asks_for_change = false;
     paymentForm.is_active = true;
     resetPaymentPhotos();
     paymentForm.clearErrors();
@@ -265,6 +267,7 @@ function openEditPaymentMethod(paymentMethod) {
     paymentForm.branch_instructions = instructionRows(paymentMethod.branch_instructions ?? []);
     paymentForm.fee = paymentMethod.fee ?? '';
     paymentForm.is_cash = paymentMethod.is_cash;
+    paymentForm.asks_for_change = paymentMethod.asks_for_change;
     paymentForm.is_active = paymentMethod.is_active;
     resetPaymentPhotos(paymentMethod);
     paymentForm.clearErrors();
@@ -616,6 +619,7 @@ function deleteDeliveryMethod(deliveryMethod) {
                                     <p class="text-xs text-ink/50 dark:text-foam/50">
                                         {{ paymentMethod.is_active ? 'Active' : 'Inactive' }}
                                         · {{ paymentMethod.is_cash ? 'Cash' : 'Charge' }}
+                                        <span v-if="paymentMethod.asks_for_change"> · Change for</span>
                                         · {{ paymentMethod.fee_label }}
                                         <span v-if="paymentMethod.instructions_for_all_branches && paymentMethod.instructions"> · {{ paymentMethod.instructions }}</span>
                                         <span v-else-if="!paymentMethod.instructions_for_all_branches"> · Instructions vary by branch</span>
@@ -911,6 +915,10 @@ function deleteDeliveryMethod(deliveryMethod) {
                     </div>
                     <p v-if="paymentForm.errors.is_cash" class="text-sm text-danger">{{ paymentForm.errors.is_cash }}</p>
                 </fieldset>
+                <label class="flex items-center gap-2 text-sm font-medium">
+                    <input v-model="paymentForm.asks_for_change" class="h-4 w-4 accent-pine" type="checkbox" />
+                    Change for
+                </label>
                 <label class="flex items-center gap-2 text-sm font-medium">
                     <input v-model="paymentForm.is_active" class="h-4 w-4 accent-pine" type="checkbox" />
                     Active

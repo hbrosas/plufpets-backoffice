@@ -374,8 +374,8 @@ function openAssignedOrder(assigned) {
             <div class="grid min-h-0 content-start gap-3 overflow-auto sm:grid-cols-2 xl:grid-cols-3">
                 <p v-if="schedules.length === 0" class="text-sm text-ink/60 sm:col-span-2 xl:col-span-3 dark:text-foam/60">No delivery schedules yet.</p>
                 <article v-for="schedule in schedules" :key="schedule.id" class="flex flex-col gap-3 rounded-2xl border border-mist bg-white p-4 dark:border-white/10 dark:bg-white/5">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div class="flex flex-col gap-1">
+                    <div class="flex items-start gap-3">
+                        <div class="flex min-w-0 flex-1 flex-col gap-1">
                             <h3 class="font-medium">{{ schedule.label }}</h3>
                             <p v-if="schedule.branch" class="text-xs text-ink/60 dark:text-foam/60">{{ schedule.branch }}</p>
                             <p v-if="schedule.has_ended" class="text-xs text-ink/50 dark:text-foam/50">Ended</p>
@@ -384,7 +384,7 @@ function openAssignedOrder(assigned) {
                         </div>
                         <button
                             v-if="!schedule.has_ended && schedule.is_active"
-                            class="inline-flex h-10 items-center rounded-xl border border-mist px-3 text-sm font-medium dark:border-white/15"
+                            class="inline-flex h-8 shrink-0 items-center rounded-xl border border-mist px-3 text-sm font-medium dark:border-white/15"
                             type="button"
                             @click="setScheduleActive(schedule, false)"
                         >
@@ -392,7 +392,7 @@ function openAssignedOrder(assigned) {
                         </button>
                         <button
                             v-else-if="!schedule.has_ended"
-                            class="inline-flex h-10 items-center rounded-xl border border-mist px-3 text-sm font-medium dark:border-white/15"
+                            class="inline-flex h-8 shrink-0 items-center rounded-xl border border-mist px-3 text-sm font-medium dark:border-white/15"
                             type="button"
                             @click="setScheduleActive(schedule, true)"
                         >
@@ -400,7 +400,15 @@ function openAssignedOrder(assigned) {
                         </button>
                     </div>
                     <div class="flex flex-col gap-2">
-                        <h4 class="text-sm font-medium">Assigned orders</h4>
+                        <div class="flex items-center justify-between gap-3">
+                            <h4 class="text-sm font-medium">Assigned orders</h4>
+                            <a
+                                class="shrink-0 text-sm font-medium text-pine dark:text-sand"
+                                :href="`/backoffice/shop/delivery-schedules/${schedule.id}/export`"
+                            >
+                                Export
+                            </a>
+                        </div>
                         <p v-if="schedule.orders.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No orders assigned.</p>
                         <ul v-else class="flex flex-col gap-2">
                             <li v-for="assigned in schedule.orders" :key="assigned.id">

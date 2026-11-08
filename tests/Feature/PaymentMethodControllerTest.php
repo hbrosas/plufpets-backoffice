@@ -90,6 +90,24 @@ class PaymentMethodControllerTest extends TestCase
             'instructions' => 'Pay the rider.',
             'is_cash' => true,
             'is_active' => false,
+            'asks_for_change' => false,
+        ]);
+    }
+
+    public function test_payment_method_can_ask_for_change(): void
+    {
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/settings')->post('/backoffice/shop/payment-methods', [
+            'name' => 'Cash on delivery',
+            'is_cash' => true,
+            'asks_for_change' => true,
+            'is_active' => true,
+        ]);
+
+        $response->assertRedirect(route('shop.settings.index'));
+        $this->assertDatabaseHas('payment_methods', [
+            'name' => 'Cash on delivery',
+            'is_cash' => true,
+            'asks_for_change' => true,
         ]);
     }
 

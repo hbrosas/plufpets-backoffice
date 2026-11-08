@@ -9,7 +9,6 @@ import { jsonRequest } from '../../http';
 import PosLayout from '../../layouts/PosLayout.vue';
 import { hidePosChrome, hideSendText } from '../../posChrome';
 import {
-    ensurePrinterConnection,
     openAssignedDrawer,
     printBluetoothTest,
     printReceipt,
@@ -994,46 +993,50 @@ function addCheckoutPayment() {
         return false;
     }
 
-    if (method.is_cash) {
-        const tendered = Number(draftTendered.value);
+    let tendered = amount;
+    let changeDue = 0;
+
+    if (method.is_cash || method.asks_for_change) {
+        tendered = Number(draftTendered.value);
 
         if (!tendered) {
-            checkoutError.value = 'Enter the amount tendered.';
+            checkoutError.value = method.asks_for_change
+                ? 'Enter the amount to change for.'
+                : 'Enter the amount tendered.';
             return false;
         }
 
         if (tendered + 0.005 < amount) {
-            checkoutError.value = 'Amount tendered is less than the payment.';
+            checkoutError.value = method.asks_for_change
+                ? 'Change for must cover the payment.'
+                : 'Amount tendered is less than the payment.';
             return false;
         }
 
-        checkoutPayments.value.push({
-            payment_method_id: method.id,
-            name: method.name,
-            is_cash: true,
-            amount: amount.toFixed(2),
-            amount_tendered: tendered.toFixed(2),
-            change_due: (Math.round((tendered - amount) * 100) / 100).toFixed(2),
-            reference_number: null,
-        });
-    } else {
-        const reference = draftReference.value.trim();
+        changeDue = Math.round((tendered - amount) * 100) / 100;
+    }
+
+    let reference = null;
+
+    if (!method.is_cash) {
+        reference = draftReference.value.trim();
 
         if (!reference) {
             checkoutError.value = 'Enter the reference number.';
             return false;
         }
-
-        checkoutPayments.value.push({
-            payment_method_id: method.id,
-            name: method.name,
-            is_cash: false,
-            amount: amount.toFixed(2),
-            amount_tendered: amount.toFixed(2),
-            change_due: '0.00',
-            reference_number: reference,
-        });
     }
+
+    checkoutPayments.value.push({
+        payment_method_id: method.id,
+        name: method.name,
+        is_cash: method.is_cash,
+        asks_for_change: Boolean(method.asks_for_change),
+        amount: amount.toFixed(2),
+        amount_tendered: tendered.toFixed(2),
+        change_due: changeDue.toFixed(2),
+        reference_number: reference,
+    });
 
     resetDraftPayment();
 
@@ -1056,7 +1059,9 @@ function payWithDenomination(value) {
     }
 
     if (value + 0.005 < remaining) {
-        checkoutError.value = 'Amount tendered is less than the payment.';
+        checkoutError.value = draftPaymentMethod.value?.asks_for_change
+            ? 'Change for must cover the payment.'
+            : 'Amount tendered is less than the payment.';
         return;
     }
 
@@ -1118,7 +1123,7 @@ async function charge() {
         payments: checkoutPayments.value.map((payment) => ({
             payment_method_id: payment.payment_method_id,
             amount: payment.amount,
-            amount_tendered: payment.is_cash ? payment.amount_tendered : null,
+            amount_tendered: payment.is_cash || payment.asks_for_change ? payment.amount_tendered : null,
             reference_number: payment.reference_number,
         })),
         delivery_method_id: saleForm.delivery_method_id,
@@ -1345,10 +1350,6 @@ async function submitClose() {
     closeForm.processing = true;
 
     try {
-        if (printer) {
-            await ensurePrinterConnection(printer);
-        }
-
         const closed = await jsonRequest(`${registerPath.value}/shifts/${props.shift.id}/close`, {
             method: 'POST',
             body: {
@@ -1357,18 +1358,22 @@ async function submitClose() {
                 confirm_variance: closeForm.confirm_variance,
             },
         });
-        const report = await jsonRequest(closed.z_report_url);
 
-        try {
-            await printReceipt(printer ?? report.printer, report.receipt, {
-                openDrawer: Boolean(closed.open_drawer),
-                allowPrompt: false,
-            });
-        } catch (error) {
-            if (!(error instanceof PrinterUnavailableError)) {
-                showToast(error instanceof Error ? error.message : 'Could not print the Z-Report.');
-            } else {
-                showToast('No printer is connected.', { tone: 'warning' });
+        if (printer) {
+            try {
+                const report = await jsonRequest(closed.z_report_url);
+
+                await printReceipt(printer, report.receipt, {
+                    openDrawer: Boolean(closed.open_drawer),
+                    allowPrompt: false,
+                });
+            } catch (error) {
+                showToast(
+                    error instanceof PrinterUnavailableError
+                        ? 'No printer is connected.'
+                        : (error instanceof Error ? error.message : 'Could not print the Z-Report.'),
+                    { tone: 'warning' },
+                );
             }
         }
 
@@ -2476,7 +2481,11 @@ onUnmounted(() => {
                         >
                             <div class="min-w-0">
                                 <p class="font-medium">{{ payment.name }} · {{ formatPeso(payment.amount) }}</p>
-                                <p v-if="payment.is_cash" class="text-xs text-ink/50">
+                                <p v-if="payment.asks_for_change" class="text-xs text-ink/50">
+                                    Change for {{ formatPeso(payment.amount_tendered) }} · Change {{ formatPeso(payment.change_due) }}
+                                    <template v-if="payment.reference_number"> · Ref {{ payment.reference_number }}</template>
+                                </p>
+                                <p v-else-if="payment.is_cash" class="text-xs text-ink/50">
                                     Cash given {{ formatPeso(payment.amount_tendered) }} · Change {{ formatPeso(payment.change_due) }}
                                 </p>
                                 <p v-else class="text-xs text-ink/50">Ref {{ payment.reference_number }}</p>
@@ -2523,7 +2532,7 @@ onUnmounted(() => {
                             />
                         </div>
                         <div v-if="draftPaymentMethod?.is_cash" class="flex flex-col gap-2">
-                            <label class="text-sm font-medium" for="pos-tendered">Cash given</label>
+                            <label class="text-sm font-medium" for="pos-tendered">{{ draftPaymentMethod.asks_for_change ? 'Change for' : 'Cash given' }}</label>
                             <div class="flex gap-2">
                                 <input
                                     id="pos-tendered"
@@ -2532,7 +2541,7 @@ onUnmounted(() => {
                                     min="0"
                                     step="0.01"
                                     type="number"
-                                    placeholder="Cash given"
+                                    :placeholder="draftPaymentMethod.asks_for_change ? 'Change for' : 'Cash given'"
                                 />
                                 <button
                                     class="h-11 shrink-0 rounded-xl bg-pine px-5 text-sm font-medium text-foam disabled:opacity-70"
@@ -2557,6 +2566,18 @@ onUnmounted(() => {
                             </div>
                         </div>
                         <div v-else class="flex flex-col gap-2">
+                            <div v-if="draftPaymentMethod?.asks_for_change" class="flex flex-col gap-2">
+                                <label class="text-sm font-medium" for="pos-change-for">Change for</label>
+                                <input
+                                    id="pos-change-for"
+                                    v-model="draftTendered"
+                                    class="h-11 rounded-xl border border-mist bg-white px-4 text-sm"
+                                    min="0"
+                                    step="0.01"
+                                    type="number"
+                                    placeholder="Change for"
+                                />
+                            </div>
                             <label class="text-sm font-medium" for="pos-reference">Reference number</label>
                             <div class="flex gap-2">
                                 <input

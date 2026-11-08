@@ -43,6 +43,6 @@ class PosLaunchControllerTest extends TestCase
             ->component('Pos/Launch')
             ->has('branches', 1)
             ->where('branches.0.name', 'Greenheights')
-            ->where('branches.0.href', route('pos.index', $openBranch)));
+            ->where('branches.0.href', route('pos.index', $openBranch, false)));
     }
 }

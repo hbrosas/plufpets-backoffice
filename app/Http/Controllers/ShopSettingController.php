@@ -57,6 +57,7 @@ class ShopSettingController extends Controller
                     'fee' => $paymentMethod->fee,
                     'fee_label' => $paymentMethod->fee === null ? 'No fee' : Peso::format($paymentMethod->fee),
                     'is_cash' => $paymentMethod->is_cash,
+                    'asks_for_change' => $paymentMethod->asks_for_change,
                     'is_active' => $paymentMethod->is_active,
                 ]),
             'deliveryMethods' => DeliveryMethod::query()

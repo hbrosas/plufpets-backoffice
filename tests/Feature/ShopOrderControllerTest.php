@@ -269,7 +269,6 @@ class ShopOrderControllerTest extends TestCase
             ->where('order.delivery', 'Lalamove')
             ->where('order.delivery_instructions', 'Rider will call.')
             ->where('order.address', '12 Mabini, Unit 4, San Pedro, Laguna')
-            ->where('order.coordinates', '14.3595, 121.0473')
             ->where('order.payment', 'GCash')
             ->where('order.payment_instructions', 'Scan the QR at the counter.')
             ->where('order.voucher', 'WELCOME')
@@ -522,11 +521,49 @@ class ShopOrderControllerTest extends TestCase
             ->from(route('shop.orders.show', $order))
             ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
                 'delivery_schedule_id' => $schedule->id,
+                'preferred_on' => '2026-11-09',
             ]);
 
         $response->assertRedirect(route('shop.orders.show', $order));
         $response->assertSessionHas('status', 'Delivery schedule assigned.');
-        $this->assertSame($schedule->id, $order->fresh()->delivery_schedule_id);
+        $order->refresh();
+        $this->assertSame($schedule->id, $order->delivery_schedule_id);
+        $this->assertSame('2026-11-09', $order->preferred_on?->toDateString());
+    }
+
+    public function test_assigning_a_delivery_schedule_requires_an_open_time_slot(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $order = PosOpenOrder::factory()->create(['status' => 'placed']);
+        $schedule = DeliverySchedule::factory()->weekly([1])->create([
+            'branch_id' => $order->branch_id,
+            'starts_at' => '10:00:00',
+        ]);
+
+        $wrong = $this->actingAsEmployee()
+            ->from(route('shop.orders.show', $order))
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => $schedule->id,
+                'preferred_on' => '2026-11-10',
+            ]);
+
+        $wrong->assertRedirect(route('shop.orders.show', $order));
+        $wrong->assertSessionHasErrors([
+            'delivery_schedule_id' => 'Choose a time slot.',
+        ]);
+        $this->assertNull($order->fresh()->delivery_schedule_id);
+
+        $response = $this->actingAsEmployee()
+            ->from(route('shop.orders.show', $order))
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => $schedule->id,
+                'preferred_on' => '2026-11-09',
+            ]);
+
+        $response->assertRedirect(route('shop.orders.show', $order));
+        $order->refresh();
+        $this->assertSame($schedule->id, $order->delivery_schedule_id);
+        $this->assertSame('2026-11-09', $order->preferred_on?->toDateString());
     }
 
     public function test_an_assigned_delivery_schedule_can_be_cleared(): void
@@ -536,6 +573,7 @@ class ShopOrderControllerTest extends TestCase
         $order = PosOpenOrder::factory()->create([
             'status' => 'placed',
             'delivery_schedule_id' => $schedule->id,
+            'preferred_on' => '2026-11-09',
         ]);
 
         $response = $this->actingAsEmployee()
@@ -546,7 +584,9 @@ class ShopOrderControllerTest extends TestCase
 
         $response->assertRedirect(route('shop.orders.show', $order));
         $response->assertSessionHas('status', 'Delivery schedule removed.');
-        $this->assertNull($order->fresh()->delivery_schedule_id);
+        $order->refresh();
+        $this->assertNull($order->delivery_schedule_id);
+        $this->assertNull($order->preferred_on);
     }
 
     public function test_a_closed_delivery_schedule_cannot_be_assigned(): void

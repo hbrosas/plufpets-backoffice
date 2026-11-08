@@ -52,8 +52,8 @@ class PosLaunchPads
                 return [
                     'id' => $branch->id,
                     'name' => $branch->name,
-                    'href' => route('pos.index', $branch),
-                    'status' => $isOpen ? 'Open' : 'Close',
+                    'href' => route('pos.index', $branch, false),
+                    'status' => $isOpen ? 'Open' : 'Closed',
                     'is_open' => $isOpen,
                     'date' => $occurredAt?->timezone($timezone)->format('M j, Y g:i A'),
                     'user' => $isOpen ? $shift?->opened_by_name : $shift?->closed_by_name,

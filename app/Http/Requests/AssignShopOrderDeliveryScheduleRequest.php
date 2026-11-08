@@ -17,11 +17,10 @@ class AssignShopOrderDeliveryScheduleRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        if ($this->input('delivery_schedule_id') === '' || $this->input('delivery_schedule_id') === null) {
-            $this->merge([
-                'delivery_schedule_id' => null,
-            ]);
-        }
+        $this->merge([
+            'delivery_schedule_id' => $this->filled('delivery_schedule_id') ? $this->input('delivery_schedule_id') : null,
+            'preferred_on' => $this->filled('preferred_on') ? $this->input('preferred_on') : null,
+        ]);
     }
 
     /**
@@ -50,9 +49,18 @@ class AssignShopOrderDeliveryScheduleRequest extends FormRequest
 
                     if (! $order instanceof PosOpenOrder || $schedule->branch_id !== $order->branch_id) {
                         $fail('Choose an active delivery schedule for this branch.');
+
+                        return;
+                    }
+
+                    $preferredOn = $this->input('preferred_on');
+
+                    if (! is_string($preferredOn) || ! $schedule->includesDate($preferredOn)) {
+                        $fail('Choose a time slot.');
                     }
                 },
             ],
+            'preferred_on' => ['nullable', 'date_format:Y-m-d'],
         ];
     }
 
@@ -63,6 +71,7 @@ class AssignShopOrderDeliveryScheduleRequest extends FormRequest
     {
         return [
             'delivery_schedule_id.integer' => 'Choose an active delivery schedule.',
+            'preferred_on.date_format' => 'Choose a time slot.',
         ];
     }
 }

@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Enums\DeliveryScheduleFrequency;
 use App\Enums\DeliveryScheduleKind;
+use App\Http\Controllers\DeliveryScheduleController;
 use App\Models\Branch;
 use App\Models\DeliverySchedule;
 use App\Models\Employee;
+use App\Models\PosOpenOrder;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -324,6 +326,98 @@ class DeliveryScheduleControllerTest extends TestCase
             'is_active' => 'That delivery schedule has ended.',
         ]);
         $this->assertFalse($schedule->fresh()->is_active);
+    }
+
+    public function test_guest_cannot_export_a_delivery_schedule(): void
+    {
+        $schedule = DeliverySchedule::factory()->create();
+
+        $this->get('/backoffice/shop/delivery-schedules/'.$schedule->id.'/export')
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_employee_without_permission_cannot_export_a_delivery_schedule(): void
+    {
+        $schedule = DeliverySchedule::factory()->create();
+
+        $this->actingAsEmployee(Employee::factory()->create())
+            ->get('/backoffice/shop/delivery-schedules/'.$schedule->id.'/export')
+            ->assertForbidden();
+    }
+
+    public function test_delivery_schedule_export_downloads_its_orders(): void
+    {
+        $this->freezeMorning();
+        $branch = Branch::factory()->create(['name' => 'Greenheights']);
+        $schedule = DeliverySchedule::factory()->create([
+            'branch_id' => $branch->id,
+            'scheduled_on' => '2026-11-09',
+            'starts_at' => '09:00:00',
+        ]);
+        PosOpenOrder::factory()->create([
+            'branch_id' => $branch->id,
+            'delivery_schedule_id' => $schedule->id,
+            'status' => null,
+            'saved_by_name' => 'Parked Ticket',
+        ]);
+        PosOpenOrder::factory()->create([
+            'branch_id' => $branch->id,
+            'delivery_schedule_id' => $schedule->id,
+            'number' => 'OPEN-SLOT',
+            'status' => 'placed',
+            'saved_by_name' => "Ada <script>alert('xss')</script>",
+            'phone' => '09171234567',
+            'preferred_on' => '2026-11-16',
+            'total' => '150.00',
+            'items' => [[
+                'product_name' => 'Aozi Dog',
+                'variant_name' => 'Beef',
+                'quantity' => 2,
+            ]],
+            'checkout' => [
+                'address' => [
+                    'line_1' => '12 Mabini',
+                    'line_2' => 'Unit 4',
+                    'city' => 'San Pedro',
+                    'province' => 'Laguna',
+                ],
+            ],
+        ]);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/shop/delivery-schedules/'.$schedule->id.'/export');
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+        $this->assertStringContainsString(
+            'nov-9-2026-900-am.pdf',
+            (string) $response->headers->get('content-disposition'),
+        );
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+
+        $sheet = new class extends DeliveryScheduleController
+        {
+            /**
+             * @return array<string, mixed>
+             */
+            public function sheetFor(DeliverySchedule $schedule): array
+            {
+                return $this->sheet($schedule);
+            }
+        };
+        $html = view('shop.delivery-schedules.export', $sheet->sheetFor($schedule->fresh()))->render();
+
+        $this->assertStringContainsString('Nov 9, 2026 · 9:00 AM', $html);
+        $this->assertStringContainsString('Greenheights', $html);
+        $this->assertStringContainsString('OPEN-SLOT', $html);
+        $this->assertStringContainsString('09171234567', $html);
+        $this->assertStringContainsString('12 Mabini, Unit 4, San Pedro, Laguna', $html);
+        $this->assertStringContainsString('Aozi Dog Beef × 2', $html);
+        $this->assertStringContainsString('Order Placed', $html);
+        $this->assertStringContainsString('₱150.00', $html);
+        $this->assertStringContainsString('Nov 16, 2026', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringNotContainsString("<script>alert('xss')</script>", $html);
+        $this->assertStringNotContainsString('Parked Ticket', $html);
     }
 
     private function freezeMorning(): void

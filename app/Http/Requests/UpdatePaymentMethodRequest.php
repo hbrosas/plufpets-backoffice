@@ -60,6 +60,7 @@ class UpdatePaymentMethodRequest extends FormRequest
             'branch_instructions' => $this->branchInstructions(),
             'fee' => ($fee === '' || $fee === null) ? null : $fee,
             'is_cash' => $this->boolean('is_cash'),
+            'asks_for_change' => $this->boolean('asks_for_change'),
             'is_active' => $this->boolean('is_active'),
         ]);
         $this->prepareInstructionImages();

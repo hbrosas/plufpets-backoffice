@@ -207,28 +207,39 @@ class RecordPosSale
             $reference = isset($payment['reference_number']) ? trim((string) $payment['reference_number']) : '';
             $changeDue = 0.0;
 
-            if ($method->is_cash) {
+            if ($method->is_cash || $method->asks_for_change) {
+                $tenderedMessage = $method->asks_for_change
+                    ? 'Enter the amount to change for.'
+                    : 'Enter the amount tendered.';
+                $shortMessage = $method->asks_for_change
+                    ? 'Change for must cover the payment.'
+                    : 'Amount tendered is less than the payment.';
+
                 if ($tendered === null || $tendered === '') {
                     throw ValidationException::withMessages([
-                        "payments.{$index}.amount_tendered" => 'Enter the amount tendered.',
+                        "payments.{$index}.amount_tendered" => $tenderedMessage,
                     ]);
                 }
 
                 if ((float) $tendered + 0.005 < $amount) {
                     throw ValidationException::withMessages([
-                        "payments.{$index}.amount_tendered" => 'Amount tendered is less than the payment.',
+                        "payments.{$index}.amount_tendered" => $shortMessage,
                     ]);
                 }
 
                 $changeDue = round((float) $tendered - $amount, 2);
-            } else {
+            }
+
+            if (! $method->is_cash) {
                 if ($reference === '') {
                     throw ValidationException::withMessages([
                         "payments.{$index}.reference_number" => 'Enter the reference number.',
                     ]);
                 }
 
-                $tendered = $amount;
+                if (! $method->asks_for_change) {
+                    $tendered = $amount;
+                }
             }
 
             $applied += $amount;

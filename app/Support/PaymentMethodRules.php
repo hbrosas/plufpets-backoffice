@@ -34,6 +34,7 @@ class PaymentMethodRules
             'branch_instructions.*.remove_images.*' => ['string', 'max:255'],
             'fee' => ['nullable', 'numeric', 'min:0', 'decimal:0,2', 'max:999999.99'],
             'is_cash' => ['required', 'boolean'],
+            'asks_for_change' => ['required', 'boolean'],
             'is_active' => ['required', 'boolean'],
         ];
     }
