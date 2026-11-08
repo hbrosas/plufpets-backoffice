@@ -9,6 +9,7 @@ use App\Enums\PrinterRole;
 use App\Enums\ShopOrderStatus;
 use App\Http\Requests\StorePosSaleRequest;
 use App\Models\Branch;
+use App\Models\DeliverySchedule;
 use App\Models\PosOpenOrder;
 use App\Models\PosSale;
 use App\Models\PosSaleItem;
@@ -35,6 +36,8 @@ class PosSaleController extends Controller
                 'items',
                 'payments',
                 'delivery_method_id',
+                'delivery_schedule_id',
+                'preferred_on',
                 'delivery_fee',
                 'tax_fee_ids',
             ]),
@@ -77,6 +80,8 @@ class PosSaleController extends Controller
                     'items',
                     'payments',
                     'delivery_method_id',
+                    'delivery_schedule_id',
+                    'preferred_on',
                     'delivery_fee',
                     'tax_fee_ids',
                     'number',
@@ -137,7 +142,7 @@ class PosSaleController extends Controller
 
     private function receiptText(PosSale $sale, Branch $branch): string
     {
-        $sale->loadMissing(['items', 'payments', 'taxes']);
+        $sale->loadMissing(['items', 'payments', 'taxes', 'deliverySchedule']);
         $printer = Printer::defaultFor(PrinterRole::Receipt, $branch);
         $width = $printer !== null && $printer->paper_width_mm <= 58 ? 32 : 48;
         $soldAt = $sale->sold_at?->timezone((string) config('app.timezone'))->format('M j, Y g:i A') ?? '';
@@ -161,6 +166,11 @@ class PosSaleController extends Controller
             'total' => Peso::format($sale->total),
             'tendered' => Peso::format($sale->amount_tendered),
             'change' => Peso::format($sale->change_due),
+            'delivery' => $sale->deliverySchedule instanceof DeliverySchedule
+                ? 'Slot '.($sale->preferred_on !== null
+                    ? $sale->preferred_on->format('M j, Y').' · '.$sale->deliverySchedule->timeLabel()
+                    : $sale->deliverySchedule->label())
+                : null,
             'payments' => $sale->payments
                 ->map(fn (PosSalePayment $payment): array => [
                     'name' => $payment->payment_method_name,

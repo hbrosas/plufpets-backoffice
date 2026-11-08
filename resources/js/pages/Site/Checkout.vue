@@ -2,6 +2,7 @@
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import InstructionPhoto from '../../components/InstructionPhoto.vue';
+import PreferredSlotButtons from '../../components/PreferredSlotButtons.vue';
 import SiteLayout from '../../layouts/SiteLayout.vue';
 
 defineOptions({
@@ -21,6 +22,10 @@ const props = defineProps({
         type: Array,
         required: true,
     },
+    deliverySchedules: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const cart = ref([]);
@@ -37,6 +42,8 @@ const form = useForm({
     name: '',
     phone: '',
     delivery_method_id: null,
+    delivery_schedule_id: '',
+    preferred_on: '',
     payment_method_id: null,
     voucher_code: '',
     address_line_1: '',
@@ -51,6 +58,18 @@ const form = useForm({
 const selectedDelivery = computed(() => props.deliveryMethods.find((method) => method.id === Number(form.delivery_method_id)) ?? null);
 const selectedPayment = computed(() => props.paymentMethods.find((method) => method.id === Number(form.payment_method_id)) ?? null);
 const asksForAddress = computed(() => Boolean(selectedDelivery.value?.asks_for_address));
+const usesDeliverySchedule = computed(() => Boolean(selectedDelivery.value?.uses_delivery_schedule));
+
+watch(() => form.delivery_method_id, () => {
+    form.delivery_schedule_id = '';
+    form.preferred_on = '';
+});
+
+function chooseSlot(slot) {
+    form.delivery_schedule_id = slot.id;
+    form.preferred_on = slot.on;
+    form.clearErrors('delivery_schedule_id');
+}
 
 function peso(amount) {
     const value = Number.isFinite(Number(amount)) ? Number(amount) : 0;
@@ -347,6 +366,17 @@ watch(
                         />
                     </div>
                     <p v-if="form.errors.delivery_method_id" class="text-sm text-danger">{{ form.errors.delivery_method_id }}</p>
+                    <div v-if="usesDeliverySchedule" class="flex flex-col gap-2">
+                        <p class="text-sm">Preferred slot</p>
+                        <PreferredSlotButtons
+                            :slots="deliverySchedules"
+                            :schedule-id="form.delivery_schedule_id"
+                            :preferred-on="form.preferred_on"
+                            @select="chooseSlot"
+                        />
+                        <p v-if="deliverySchedules.length === 0" class="text-sm text-black/60">No open delivery slots for this branch.</p>
+                        <p v-if="form.errors.delivery_schedule_id" class="text-sm text-danger">{{ form.errors.delivery_schedule_id }}</p>
+                    </div>
                 </fieldset>
 
                 <div v-if="asksForAddress" class="flex flex-col gap-3 rounded-2xl border border-black/10 bg-white p-4">

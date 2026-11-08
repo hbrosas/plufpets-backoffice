@@ -34,6 +34,7 @@ class DeliveryMethodRules
             'branch_instructions.*.remove_images' => ['nullable', 'array'],
             'branch_instructions.*.remove_images.*' => ['string', 'max:255'],
             'asks_for_address' => ['required', 'boolean'],
+            'uses_delivery_schedule' => ['required', 'boolean'],
             'is_active' => ['required', 'boolean'],
         ];
     }

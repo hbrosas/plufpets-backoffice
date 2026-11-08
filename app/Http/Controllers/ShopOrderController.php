@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use App\Actions\SendShopOrderText;
 use App\Actions\ShopOrderStock;
 use App\Enums\ShopOrderStatus;
+use App\Http\Requests\AssignShopOrderDeliveryScheduleRequest;
 use App\Http\Requests\UpdateShopOrderRequest;
+use App\Models\Branch;
 use App\Models\CatalogItemVariant;
+use App\Models\DeliverySchedule;
 use App\Models\Employee;
 use App\Models\PosOpenOrder;
 use App\Models\PosSale;
@@ -25,17 +28,36 @@ class ShopOrderController extends Controller
     public function index(): Response
     {
         $orders = PosOpenOrder::query()
-            ->with(['branch:id,name', 'sale:id,number'])
+            ->with([
+                'branch:id,name',
+                'deliverySchedule',
+                'sale.branch:id,name',
+                'sale.items.commissions',
+                'sale.payments',
+                'sale.taxes',
+            ])
             ->whereNotNull('status')
             ->latest('id')
             ->limit(100)
-            ->get()
-            ->map(fn (PosOpenOrder $order): array => $this->payload($order));
+            ->get();
+        $employees = $this->employeesForOrders($orders);
 
         return Inertia::render('Shop/Orders/Index', [
-            'orders' => $orders,
+            'orders' => $orders
+                ->map(fn (PosOpenOrder $order): array => $this->detail($order, $employees))
+                ->all(),
             'preorders' => $this->preorders(),
             'statuses' => ShopOrderStatus::options(),
+            'schedules' => $this->schedules(),
+            'branches' => Branch::query()
+                ->orderBy('name')
+                ->orderBy('id')
+                ->get(['id', 'name'])
+                ->map(fn (Branch $branch): array => [
+                    'id' => $branch->id,
+                    'name' => $branch->name,
+                ])
+                ->all(),
         ]);
     }
 
@@ -70,18 +92,23 @@ class ShopOrderController extends Controller
     public function show(PosOpenOrder $posOpenOrder): Response
     {
         $this->ensureShopOrder($posOpenOrder);
-        $posOpenOrder->load([
-            'branch:id,name',
-            'sale.branch:id,name',
-            'sale.items.commissions',
-            'sale.payments',
-            'sale.taxes',
-        ]);
 
         return Inertia::render('Shop/Orders/Show', [
-            'order' => $this->detail($posOpenOrder),
+            'order' => $this->detail($this->loadOrderDetail($posOpenOrder)),
             'statuses' => ShopOrderStatus::options(),
+            'schedules' => $this->schedules(),
         ]);
+    }
+
+    public function updateDeliverySchedule(AssignShopOrderDeliveryScheduleRequest $request, PosOpenOrder $posOpenOrder): RedirectResponse
+    {
+        $this->ensureShopOrder($posOpenOrder);
+        $scheduleId = $request->validated('delivery_schedule_id');
+        $posOpenOrder->update([
+            'delivery_schedule_id' => $scheduleId,
+        ]);
+
+        return back()->with('status', $scheduleId === null ? 'Delivery schedule removed.' : 'Delivery schedule assigned.');
     }
 
     public function update(UpdateShopOrderRequest $request, PosOpenOrder $posOpenOrder, SendShopOrderText $sendShopOrderText, ShopOrderStock $shopOrderStock): RedirectResponse
@@ -112,6 +139,65 @@ class ShopOrderController extends Controller
     private function ensureShopOrder(PosOpenOrder $order): void
     {
         abort_unless(is_string($order->status) && $order->status !== '', 404);
+    }
+
+    private function loadOrderDetail(PosOpenOrder $order): PosOpenOrder
+    {
+        $order->load([
+            'branch:id,name',
+            'deliverySchedule',
+            'sale.branch:id,name',
+            'sale.items.commissions',
+            'sale.payments',
+            'sale.taxes',
+        ]);
+
+        return $order;
+    }
+
+    /**
+     * @return list<array{id: int, branch_id: int|null, branch: string|null, label: string, is_active: bool, has_ended: bool, is_assignable: bool, orders: list<array{id: int, number: string, customer: string|null, branch: string|null, status: string, status_label: string}>}>
+     */
+    private function schedules(): array
+    {
+        return DeliverySchedule::query()
+            ->with([
+                'branch:id,name',
+                'orders' => function ($query): void {
+                    $query->select(['id', 'delivery_schedule_id', 'branch_id', 'number', 'saved_by_name', 'status'])
+                        ->with('branch:id,name')
+                        ->whereNotNull('status')
+                        ->where('status', '!=', '')
+                        ->latest('id');
+                },
+            ])
+            ->orderByDesc('scheduled_on')
+            ->orderByDesc('starts_at')
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get()
+            ->map(fn (DeliverySchedule $schedule): array => [
+                'id' => $schedule->id,
+                'branch_id' => $schedule->branch_id,
+                'branch' => $schedule->branch?->name,
+                'label' => $schedule->label(),
+                'is_active' => $schedule->is_active,
+                'has_ended' => $schedule->hasEnded(),
+                'is_assignable' => $schedule->isAssignable(),
+                'orders' => $schedule->orders->map(function (PosOpenOrder $order): array {
+                    $status = ShopOrderStatus::tryFrom((string) $order->status);
+
+                    return [
+                        'id' => $order->id,
+                        'number' => $order->number,
+                        'customer' => $order->saved_by_name,
+                        'branch' => $order->branch?->name,
+                        'status' => $status?->value ?? (string) $order->status,
+                        'status_label' => $status?->label() ?? (string) $order->status,
+                    ];
+                })->all(),
+            ])
+            ->all();
     }
 
     /**
@@ -189,6 +275,7 @@ class ShopOrderController extends Controller
             'number' => $order->number,
             'customer' => $order->saved_by_name,
             'phone' => $order->phone,
+            'branch_id' => $order->branch_id,
             'branch' => $order->branch?->name,
             'status' => $status?->value ?? $order->status,
             'status_label' => $status?->label() ?? $order->status,
@@ -205,20 +292,24 @@ class ShopOrderController extends Controller
             'items' => collect($order->items)->map(fn (mixed $item): string => $this->itemLabel($item))->filter()->values()->all(),
             'sale_number' => $order->sale?->number,
             'placed_at' => $order->created_at?->timezone('Asia/Manila')->format('M j, Y g:i A'),
+            'delivery_schedule_id' => $order->delivery_schedule_id,
+            'preferred_on' => $order->preferred_on?->format('M j, Y'),
+            'schedule' => $order->deliverySchedule?->label(),
         ];
     }
 
     /**
+     * @param  Collection<int, Employee>|null  $employees
      * @return array<string, mixed>
      */
-    private function detail(PosOpenOrder $order): array
+    private function detail(PosOpenOrder $order, ?Collection $employees = null): array
     {
         $checkout = is_array($order->checkout) ? $order->checkout : [];
         $delivery = is_array($checkout['delivery'] ?? null) ? $checkout['delivery'] : [];
         $payment = is_array($checkout['payment'] ?? null) ? $checkout['payment'] : [];
         $address = is_array($checkout['address'] ?? null) ? $checkout['address'] : null;
         $status = ShopOrderStatus::tryFrom((string) $order->status);
-        $employees = $this->employeesFor($order);
+        $employees ??= $this->employeesFor($order);
 
         return [
             ...$this->payload($order),
@@ -403,11 +494,43 @@ class ShopOrderController extends Controller
     }
 
     /**
+     * @param  Collection<int, PosOpenOrder>  $orders
+     * @return Collection<int, Employee>
+     */
+    private function employeesForOrders(Collection $orders): Collection
+    {
+        $ids = $orders
+            ->flatMap(fn (PosOpenOrder $order): array => $this->employeeIds($order))
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        return Employee::query()->whereIn('id', $ids)->get()->keyBy('id');
+    }
+
+    /**
      * @return Collection<int, Employee>
      */
     private function employeesFor(PosOpenOrder $order): Collection
     {
-        $ids = collect($order->items)
+        $ids = $this->employeeIds($order);
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        return Employee::query()->whereIn('id', $ids)->get()->keyBy('id');
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function employeeIds(PosOpenOrder $order): array
+    {
+        return collect($order->items)
             ->flatMap(function (mixed $item): array {
                 if (! is_array($item)) {
                     return [];
@@ -419,13 +542,8 @@ class ShopOrderController extends Controller
                 ];
             })
             ->unique()
-            ->values();
-
-        if ($ids->isEmpty()) {
-            return collect();
-        }
-
-        return Employee::query()->whereIn('id', $ids)->get()->keyBy('id');
+            ->values()
+            ->all();
     }
 
     /**

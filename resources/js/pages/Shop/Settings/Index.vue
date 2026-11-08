@@ -77,6 +77,7 @@ const deliveryForm = useForm({
     images: [],
     remove_images: [],
     asks_for_address: false,
+    uses_delivery_schedule: false,
     is_active: true,
 });
 const deliveryExisting = ref([]);
@@ -388,6 +389,7 @@ function openEditDeliveryMethod(deliveryMethod) {
     deliveryForm.instructions_for_all_branches = deliveryMethod.instructions_for_all_branches;
     deliveryForm.branch_instructions = instructionRows(deliveryMethod.branch_instructions ?? []);
     deliveryForm.asks_for_address = deliveryMethod.asks_for_address;
+    deliveryForm.uses_delivery_schedule = deliveryMethod.uses_delivery_schedule;
     deliveryForm.is_active = deliveryMethod.is_active;
     resetDeliveryPhotos(deliveryMethod);
     deliveryForm.clearErrors();
@@ -673,6 +675,7 @@ function deleteDeliveryMethod(deliveryMethod) {
                                     <p class="text-xs text-ink/50 dark:text-foam/50">
                                         {{ deliveryMethod.is_active ? 'Active' : 'Inactive' }}
                                         <span v-if="deliveryMethod.asks_for_address"> · Asks for address</span>
+                                        <span v-if="deliveryMethod.uses_delivery_schedule"> · Use Delivery Schedule</span>
                                         <span v-if="deliveryMethod.instructions_for_all_branches && deliveryMethod.notes"> · {{ deliveryMethod.notes }}</span>
                                         <span v-else-if="!deliveryMethod.instructions_for_all_branches"> · Instructions vary by branch</span>
                                     </p>
@@ -1013,6 +1016,10 @@ function deleteDeliveryMethod(deliveryMethod) {
                 <label class="flex items-center gap-2 text-sm font-medium">
                     <input v-model="deliveryForm.asks_for_address" class="h-4 w-4 accent-pine" type="checkbox" />
                     Ask for a delivery address
+                </label>
+                <label class="flex items-center gap-2 text-sm font-medium">
+                    <input v-model="deliveryForm.uses_delivery_schedule" class="h-4 w-4 accent-pine" type="checkbox" />
+                    Use Delivery Schedule
                 </label>
                 <label class="flex items-center gap-2 text-sm font-medium">
                     <input v-model="deliveryForm.is_active" class="h-4 w-4 accent-pine" type="checkbox" />

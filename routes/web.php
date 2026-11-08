@@ -11,6 +11,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeliveryMethodController;
 use App\Http\Controllers\DeliveryOrderController;
+use App\Http\Controllers\DeliveryScheduleController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\EmployeePayrollController;
 use App\Http\Controllers\EmployeeProfileController;
@@ -289,6 +290,9 @@ Route::prefix('backoffice')->group(function () {
             Route::middleware('employee.permission:shop.orders')->group(function () {
                 Route::get('orders', [ShopOrderController::class, 'index'])->name('orders.index');
                 Route::get('orders/preorders/export', [ShopOrderController::class, 'exportPreorders'])->name('orders.preorders.export');
+                Route::post('delivery-schedules', [DeliveryScheduleController::class, 'store'])->name('delivery-schedules.store');
+                Route::put('delivery-schedules/{delivery_schedule}', [DeliveryScheduleController::class, 'update'])->name('delivery-schedules.update');
+                Route::put('orders/{pos_open_order}/delivery-schedule', [ShopOrderController::class, 'updateDeliverySchedule'])->name('orders.delivery-schedule.update');
                 Route::get('orders/{pos_open_order}', [ShopOrderController::class, 'show'])->name('orders.show');
                 Route::put('orders/{pos_open_order}', [ShopOrderController::class, 'update'])->name('orders.update');
             });

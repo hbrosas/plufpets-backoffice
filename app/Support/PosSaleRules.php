@@ -30,6 +30,8 @@ class PosSaleRules
             'payments.*.amount_tendered' => ['nullable', 'numeric', 'min:0', 'decimal:0,2', 'max:9999999.99'],
             'payments.*.reference_number' => ['nullable', 'string', 'max:255'],
             'delivery_method_id' => ['nullable', 'integer', 'exists:delivery_methods,id'],
+            'delivery_schedule_id' => ['nullable', 'integer'],
+            'preferred_on' => ['nullable', 'date_format:Y-m-d'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0', 'decimal:0,2', 'max:999999.99'],
             'tax_fee_ids' => ['nullable', 'array'],
             'tax_fee_ids.*' => ['integer', 'distinct', Rule::exists('tax_fees', 'id')->where('is_active', true)],
@@ -53,6 +55,8 @@ class PosSaleRules
             'payments.min' => 'Add at least one payment.',
             'tax_fee_ids.*.exists' => 'Choose an active tax.',
             'tax_fee_ids.*.distinct' => 'Choose each tax once.',
+            'delivery_schedule_id.integer' => 'Choose a preferred slot.',
+            'preferred_on.date_format' => 'Choose a preferred slot.',
         ];
     }
 }

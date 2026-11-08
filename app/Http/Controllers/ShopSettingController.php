@@ -82,6 +82,7 @@ class ShopSettingController extends Controller
                         ])
                         ->values(),
                     'asks_for_address' => $deliveryMethod->asks_for_address,
+                    'uses_delivery_schedule' => $deliveryMethod->uses_delivery_schedule,
                     'is_active' => $deliveryMethod->is_active,
                 ]),
             'vouchers' => Voucher::query()

@@ -172,4 +172,18 @@ class DeliveryMethodControllerTest extends TestCase
         $this->assertCount(1, $method->instructionImageUrls(null));
         Storage::disk('public')->assertExists($method->instruction_images[0]);
     }
+
+    public function test_a_delivery_method_can_use_a_delivery_schedule(): void
+    {
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/settings')->post('/backoffice/shop/delivery-methods', [
+            'name' => 'Rider',
+            'fee' => '0',
+            'uses_delivery_schedule' => true,
+            'is_active' => true,
+        ]);
+
+        $response->assertRedirect(route('shop.settings.index'));
+        $method = DeliveryMethod::query()->where('name', 'Rider')->first();
+        $this->assertTrue($method->uses_delivery_schedule);
+    }
 }

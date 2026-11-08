@@ -9,6 +9,8 @@ use App\Models\BranchInventory;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemModifierOptionPrice;
 use App\Models\CatalogItemVariant;
+use App\Models\DeliveryMethod;
+use App\Models\DeliverySchedule;
 use App\Models\Employee;
 use App\Models\EmployeeServiceCommission;
 use App\Models\Modifier;
@@ -111,6 +113,68 @@ class PosSaleControllerTest extends TestCase
             'catalog_item_variant_id' => $variant->id,
             'quantity' => 3,
         ]);
+    }
+
+    public function test_a_sale_requires_a_preferred_slot_when_the_delivery_method_uses_one(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()->create([
+            'catalog_item_id' => CatalogItem::factory()->service()->create()->id,
+            'price' => 100,
+        ]);
+        $payment = PaymentMethod::factory()->cash()->create();
+        $delivery = DeliveryMethod::factory()->usesSchedule()->create(['fee' => 0]);
+        $schedule = DeliverySchedule::factory()->create([
+            'branch_id' => $branch->id,
+            'scheduled_on' => now('Asia/Manila')->addDay()->toDateString(),
+            'starts_at' => '09:00:00',
+        ]);
+        $order = PosOpenOrder::factory()->create([
+            'branch_id' => $branch->id,
+            'status' => 'placed',
+        ]);
+
+        $missing = $this->actingAsEmployee()
+            ->postJson("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '100',
+                    'amount_tendered' => '100',
+                ]],
+                'delivery_method_id' => $delivery->id,
+                'delivery_fee' => '0',
+            ]);
+
+        $missing->assertUnprocessable();
+        $missing->assertJsonValidationErrors([
+            'delivery_schedule_id' => 'Choose a preferred slot.',
+        ]);
+        $this->assertDatabaseCount('pos_sales', 0);
+
+        $saved = $this->actingAsEmployee()
+            ->postJson("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => $variant->id, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '100',
+                    'amount_tendered' => '100',
+                ]],
+                'delivery_method_id' => $delivery->id,
+                'delivery_schedule_id' => $schedule->id,
+                'preferred_on' => $schedule->scheduled_on->toDateString(),
+                'delivery_fee' => '0',
+                'pos_open_order_id' => $order->id,
+            ]);
+
+        $saved->assertOk();
+        $sale = PosSale::query()->sole();
+        $this->assertSame($schedule->id, $sale->delivery_schedule_id);
+        $this->assertSame($schedule->scheduled_on->toDateString(), $sale->preferred_on?->toDateString());
+        $this->assertSame($schedule->id, $order->fresh()->delivery_schedule_id);
+        $this->assertSame($schedule->scheduled_on->toDateString(), $order->fresh()->preferred_on?->toDateString());
+        $this->assertStringContainsString('9:00 AM', $saved->json('receipt'));
     }
 
     public function test_tax_is_left_off_unless_the_cashier_selects_it(): void

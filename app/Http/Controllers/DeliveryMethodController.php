@@ -19,6 +19,7 @@ class DeliveryMethodController extends Controller
             'notes',
             'instructions_for_all_branches',
             'asks_for_address',
+            'uses_delivery_schedule',
             'is_active',
         ]));
         BranchInstructions::sync($deliveryMethod, $request->validated('branch_instructions') ?? []);
@@ -37,6 +38,7 @@ class DeliveryMethodController extends Controller
             'notes',
             'instructions_for_all_branches',
             'asks_for_address',
+            'uses_delivery_schedule',
             'is_active',
         ]));
         BranchInstructions::sync($deliveryMethod, $request->validated('branch_instructions') ?? []);

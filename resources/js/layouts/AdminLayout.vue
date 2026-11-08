@@ -30,7 +30,7 @@ function can(permission) {
 const menu = [
     { key: 'pos-launch', type: 'link', name: 'Open POS', href: '/backoffice/pos', permission: 'pos.access', emphasis: true },
     { key: 'dashboard', type: 'link', name: 'Dashboard', href: '/backoffice/dashboard', match: '/backoffice/dashboard', permission: 'dashboard.view' },
-    { key: 'orders', type: 'link', name: 'Orders', href: '/backoffice/shop/orders', match: '/backoffice/shop/orders', permission: 'shop.orders' },
+    { key: 'orders', type: 'link', name: 'Manage Orders', href: '/backoffice/shop/orders', match: '/backoffice/shop/orders', permission: 'shop.orders' },
     { key: 'my-commissions', type: 'link', name: 'My Commissions', href: '/backoffice/me/commissions', match: '/backoffice/me/commissions' },
     { key: 'my-payroll', type: 'link', name: 'My Payroll', href: '/backoffice/me/payroll', match: '/backoffice/me/payroll' },
     { key: 'my-employee-201', type: 'link', name: 'My Employee 201', href: '/backoffice/me/employee-201', match: '/backoffice/me/employee-201' },
@@ -215,7 +215,7 @@ const backLink = computed(() => {
         [/^\/backoffice\/inventory\/purchase-orders\/.+/, '/backoffice/inventory/purchase-orders', 'Back to purchase orders'],
         [/^\/backoffice\/inventory\/suppliers\/.+/, '/backoffice/inventory/suppliers', 'Back to suppliers'],
         [/^\/backoffice\/inventory\/delivery-orders\/.+/, '/backoffice/inventory/delivery-orders', 'Back to delivery orders'],
-        [/^\/backoffice\/shop\/orders\/.+/, '/backoffice/shop/orders', 'Back to orders'],
+        [/^\/backoffice\/shop\/orders\/.+/, '/backoffice/shop/orders', 'Back to manage orders'],
         [/^\/backoffice\/staff\/\d+\/record$/, '/backoffice/staff/records', 'Back to employees'],
     ];
     const match = links.find(([pattern]) => pattern.test(path));
@@ -264,7 +264,7 @@ const pageTitle = computed(() => {
         ['/backoffice/inventory/stock-assignments', 'Stock Assignment'],
         ['/backoffice/inventory/suppliers', 'Suppliers'],
         ['/backoffice/inventory', 'Inventory'],
-        ['/backoffice/shop/orders', 'Orders'],
+        ['/backoffice/shop/orders', 'Manage Orders'],
         ['/backoffice/shop/promotion', 'Promotional Text'],
         ['/backoffice/shop/banner', 'Banner'],
         ['/backoffice/shop/settings', 'Settings'],
@@ -534,8 +534,8 @@ watch(
             </div>
         </aside>
 
-        <div class="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-clip">
-            <header class="sticky top-0 z-30 border-b border-black/10 bg-white">
+        <div class="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden">
+            <header class="sticky top-0 z-30 shrink-0 border-b border-black/10 bg-white">
                 <div class="flex min-w-0 flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-8">
                     <div class="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
                         <button
@@ -579,9 +579,10 @@ watch(
 
                     <div id="admin-header-actions" class="flex w-full min-w-0 flex-wrap items-center gap-2 empty:hidden lg:w-auto lg:justify-end lg:gap-3" />
                 </div>
+                <div id="admin-header-subnav" class="empty:hidden overflow-x-auto border-t border-black/10 px-4 py-2 [scrollbar-width:none] lg:px-8 [&::-webkit-scrollbar]:hidden" />
             </header>
 
-            <main class="flex-1 px-4 py-6 lg:px-8 lg:py-8">
+            <main class="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-4 lg:px-6 lg:py-4">
                 <slot />
             </main>
         </div>

@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'saved_by_name',
     'phone',
     'status',
+    'delivery_schedule_id',
+    'preferred_on',
     'inventory_hold',
     'discount',
     'total',
@@ -42,6 +44,7 @@ class PosOpenOrder extends Model
             'discount' => 'decimal:2',
             'total' => 'decimal:2',
             'checkout' => 'array',
+            'preferred_on' => 'date',
         ];
     }
 
@@ -59,6 +62,14 @@ class PosOpenOrder extends Model
     public function sale(): BelongsTo
     {
         return $this->belongsTo(PosSale::class, 'pos_sale_id');
+    }
+
+    /**
+     * @return BelongsTo<DeliverySchedule, $this>
+     */
+    public function deliverySchedule(): BelongsTo
+    {
+        return $this->belongsTo(DeliverySchedule::class);
     }
 
     public function hasPreorder(): bool

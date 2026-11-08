@@ -22,6 +22,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'delivery_method_id',
     'delivery_method_name',
     'delivery_fee',
+    'delivery_schedule_id',
+    'preferred_on',
     'subtotal',
     'tax_total',
     'total',
@@ -53,6 +55,7 @@ class PosSale extends Model
             'total' => 'decimal:2',
             'amount_tendered' => 'decimal:2',
             'change_due' => 'decimal:2',
+            'preferred_on' => 'date',
             'sold_at' => 'datetime',
             'refunded_at' => 'datetime',
         ];
@@ -72,6 +75,14 @@ class PosSale extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * @return BelongsTo<DeliverySchedule, $this>
+     */
+    public function deliverySchedule(): BelongsTo
+    {
+        return $this->belongsTo(DeliverySchedule::class);
     }
 
     /**

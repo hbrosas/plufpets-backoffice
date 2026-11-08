@@ -10,10 +10,12 @@ use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
 use App\Models\Category;
 use App\Models\DeliveryMethod;
+use App\Models\DeliverySchedule;
 use App\Models\PaymentMethod;
 use App\Models\PosOpenOrder;
 use App\Models\Voucher;
 use App\Support\SmsDisclaimer;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -809,6 +811,188 @@ class ShopCheckoutTest extends TestCase
                 ->where('paymentMethods.0.instruction_images.0', $payment->instructionImageUrls($branch->id)[0])
                 ->where('deliveryMethods.0.instructions', 'Show this to the rider.')
                 ->where('deliveryMethods.0.instruction_images.0', $delivery->instructionImageUrls($branch->id)[0]));
+    }
+
+    public function test_checkout_lists_open_slots_for_the_branch(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $open = DeliverySchedule::factory()->create([
+            'branch_id' => $branch->id,
+            'scheduled_on' => '2026-11-09',
+            'starts_at' => '09:00:00',
+        ]);
+        DeliverySchedule::factory()->ended()->create(['branch_id' => $branch->id]);
+        DeliverySchedule::factory()->create();
+
+        $this->get('/checkout?branch='.$branch->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('deliverySchedules', [
+                    [
+                        'id' => $open->id,
+                        'on' => '2026-11-09',
+                        'date' => 'Nov 9, 2026',
+                        'time' => '9:00 AM',
+                        'day' => 'Monday',
+                    ],
+                ]));
+    }
+
+    public function test_checkout_lists_the_next_six_dates_for_a_weekly_slot(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $monday = DeliverySchedule::factory()->weekly([1])->create([
+            'branch_id' => $branch->id,
+            'starts_at' => '10:00:00',
+        ]);
+
+        $this->get('/checkout?branch='.$branch->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('deliverySchedules', [
+                    ['id' => $monday->id, 'on' => '2026-11-09', 'date' => 'Nov 9, 2026', 'time' => '10:00 AM', 'day' => 'Monday'],
+                    ['id' => $monday->id, 'on' => '2026-11-16', 'date' => 'Nov 16, 2026', 'time' => '10:00 AM', 'day' => 'Monday'],
+                    ['id' => $monday->id, 'on' => '2026-11-23', 'date' => 'Nov 23, 2026', 'time' => '10:00 AM', 'day' => 'Monday'],
+                    ['id' => $monday->id, 'on' => '2026-11-30', 'date' => 'Nov 30, 2026', 'time' => '10:00 AM', 'day' => 'Monday'],
+                    ['id' => $monday->id, 'on' => '2026-12-07', 'date' => 'Dec 7, 2026', 'time' => '10:00 AM', 'day' => 'Monday'],
+                    ['id' => $monday->id, 'on' => '2026-12-14', 'date' => 'Dec 14, 2026', 'time' => '10:00 AM', 'day' => 'Monday'],
+                ]));
+    }
+
+    public function test_checkout_lists_only_the_next_six_slots(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $today = DeliverySchedule::factory()->daily()->create([
+            'branch_id' => $branch->id,
+            'starts_at' => '15:00:00',
+        ]);
+        $tomorrowMorning = DeliverySchedule::factory()->daily()->create([
+            'branch_id' => $branch->id,
+            'starts_at' => '08:00:00',
+        ]);
+        $tomorrow = DeliverySchedule::factory()->create([
+            'branch_id' => $branch->id,
+            'scheduled_on' => '2026-11-09',
+            'starts_at' => '09:00:00',
+        ]);
+        $wednesday = DeliverySchedule::factory()->weekly([3])->create([
+            'branch_id' => $branch->id,
+            'starts_at' => '16:00:00',
+        ]);
+        $thursday = DeliverySchedule::factory()->create([
+            'branch_id' => $branch->id,
+            'scheduled_on' => '2026-11-12',
+            'starts_at' => '09:00:00',
+        ]);
+        $friday = DeliverySchedule::factory()->create([
+            'branch_id' => $branch->id,
+            'scheduled_on' => '2026-11-13',
+            'starts_at' => '09:00:00',
+        ]);
+        DeliverySchedule::factory()->create([
+            'branch_id' => $branch->id,
+            'scheduled_on' => '2026-11-14',
+            'starts_at' => '09:00:00',
+        ]);
+
+        $this->get('/checkout?branch='.$branch->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('deliverySchedules', [
+                    ['id' => $today->id, 'on' => '2026-11-08', 'date' => 'Nov 8, 2026', 'time' => '3:00 PM', 'day' => 'Sunday'],
+                    ['id' => $tomorrowMorning->id, 'on' => '2026-11-09', 'date' => 'Nov 9, 2026', 'time' => '8:00 AM', 'day' => 'Monday'],
+                    ['id' => $tomorrow->id, 'on' => '2026-11-09', 'date' => 'Nov 9, 2026', 'time' => '9:00 AM', 'day' => 'Monday'],
+                    ['id' => $today->id, 'on' => '2026-11-09', 'date' => 'Nov 9, 2026', 'time' => '3:00 PM', 'day' => 'Monday'],
+                    ['id' => $tomorrowMorning->id, 'on' => '2026-11-10', 'date' => 'Nov 10, 2026', 'time' => '8:00 AM', 'day' => 'Tuesday'],
+                    ['id' => $today->id, 'on' => '2026-11-10', 'date' => 'Nov 10, 2026', 'time' => '3:00 PM', 'day' => 'Tuesday'],
+                ]));
+    }
+
+    public function test_a_preferred_slot_is_required_when_the_method_uses_a_delivery_schedule(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItemVariant::factory()->create([
+            'catalog_item_id' => CatalogItem::factory()->service()->create()->id,
+            'price' => 50,
+        ]);
+        $delivery = DeliveryMethod::factory()->usesSchedule()->create(['fee' => 0]);
+        $payment = PaymentMethod::factory()->create(['fee' => 0, 'is_cash' => true]);
+        $other = DeliverySchedule::factory()->create([
+            'scheduled_on' => now('Asia/Manila')->addDay()->toDateString(),
+        ]);
+
+        $missing = $this->from('/checkout')->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'delivery_method_id' => $delivery->id,
+            'payment_method_id' => $payment->id,
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ]);
+
+        $missing->assertRedirect('/checkout');
+        $missing->assertSessionHasErrors([
+            'delivery_schedule_id' => 'Choose a preferred slot.',
+        ]);
+
+        $wrongBranch = $this->from('/checkout')->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'delivery_method_id' => $delivery->id,
+            'delivery_schedule_id' => $other->id,
+            'payment_method_id' => $payment->id,
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ]);
+
+        $wrongBranch->assertRedirect('/checkout');
+        $wrongBranch->assertSessionHasErrors([
+            'delivery_schedule_id' => 'Choose a preferred slot.',
+        ]);
+        $this->assertDatabaseCount('pos_open_orders', 0);
+    }
+
+    public function test_checkout_saves_the_preferred_slot(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $variant = CatalogItemVariant::factory()->create([
+            'catalog_item_id' => CatalogItem::factory()->service()->create()->id,
+            'price' => 50,
+        ]);
+        $delivery = DeliveryMethod::factory()->usesSchedule()->create(['fee' => 0]);
+        $payment = PaymentMethod::factory()->create(['fee' => 0, 'is_cash' => true]);
+        $schedule = DeliverySchedule::factory()->create([
+            'branch_id' => $branch->id,
+            'scheduled_on' => now('Asia/Manila')->addDay()->toDateString(),
+            'starts_at' => '09:00:00',
+        ]);
+
+        $response = $this->from('/checkout')->post('/checkout', [
+            'branch_id' => $branch->id,
+            'name' => 'Ada Reyes',
+            'phone' => '09171234567',
+            'delivery_method_id' => $delivery->id,
+            'delivery_schedule_id' => $schedule->id,
+            'preferred_on' => $schedule->scheduled_on->toDateString(),
+            'payment_method_id' => $payment->id,
+            'items' => [
+                ['catalog_item_variant_id' => $variant->id, 'quantity' => 1],
+            ],
+        ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('pos_open_orders', [
+            'branch_id' => $branch->id,
+            'delivery_schedule_id' => $schedule->id,
+            'phone' => '09171234567',
+        ]);
     }
 
     /**

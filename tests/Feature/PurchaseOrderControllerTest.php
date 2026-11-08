@@ -107,7 +107,9 @@ class PurchaseOrderControllerTest extends TestCase
             'unit_cost' => 20,
         ]);
 
-        $response = $this->actingAsEmployee()->post("/backoffice/inventory/purchase-orders/{$order->id}/confirm");
+        $response = $this->actingAsEmployee()
+            ->from(route('inventory.purchase-orders.show', $order))
+            ->post("/backoffice/inventory/purchase-orders/{$order->id}/confirm");
 
         $response->assertRedirect(route('inventory.purchase-orders.show', $order));
         $this->assertSame(PurchaseOrderStatus::Confirmed, $order->fresh()->status);
@@ -301,16 +303,22 @@ class PurchaseOrderControllerTest extends TestCase
             ->where('tabs.0.value', 'draft')
             ->where('tabs.1.value', 'confirmed')
             ->where('tabs.2.value', 'closed')
-            ->has('purchaseOrders.data', 1)
-            ->where('purchaseOrders.data.0.number', 'PO-0042'));
+            ->has('purchaseOrders', 2)
+            ->where('purchaseOrders.0.number', 'PO-0099')
+            ->where('purchaseOrders.0.status', 'confirmed')
+            ->where('purchaseOrders.0.items', [])
+            ->where('purchaseOrders.1.number', 'PO-0042')
+            ->where('purchaseOrders.1.status', 'draft')
+            ->where('purchaseOrders.1.items', []));
 
         $this->actingAsEmployee()
             ->get('/backoffice/inventory/purchase-orders?tab=confirmed')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('filters.tab', 'confirmed')
-                ->has('purchaseOrders.data', 1)
-                ->where('purchaseOrders.data.0.number', 'PO-0099'));
+                ->has('purchaseOrders', 2)
+                ->where('purchaseOrders.0.number', 'PO-0099')
+                ->where('purchaseOrders.1.number', 'PO-0042'));
     }
 
     public function test_guest_cannot_close_a_purchase_order(): void
@@ -326,6 +334,7 @@ class PurchaseOrderControllerTest extends TestCase
         $order = PurchaseOrder::factory()->confirmed()->create(['number' => 'PO-0077']);
 
         $this->actingAsEmployee()
+            ->from(route('inventory.purchase-orders.show', $order))
             ->post("/backoffice/inventory/purchase-orders/{$order->id}/close", [
                 'reason' => '  Supplier cancelled the remaining items.  ',
             ])
@@ -342,7 +351,8 @@ class PurchaseOrderControllerTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('filters.tab', 'closed')
-                ->where('purchaseOrders.data.0.number', 'PO-0077'));
+                ->where('purchaseOrders.0.number', 'PO-0077')
+                ->where('purchaseOrders.0.closed_reason', 'Supplier cancelled the remaining items.'));
 
         $this->actingAsEmployee()
             ->get("/backoffice/inventory/purchase-orders/{$order->id}/print")

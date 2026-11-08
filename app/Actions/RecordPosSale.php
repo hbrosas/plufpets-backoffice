@@ -11,6 +11,7 @@ use App\Models\CatalogItem;
 use App\Models\CatalogItemModifierOptionPrice;
 use App\Models\CatalogItemVariant;
 use App\Models\DeliveryMethod;
+use App\Models\DeliverySchedule;
 use App\Models\Employee;
 use App\Models\EmployeeServiceCommission;
 use App\Models\Modifier;
@@ -56,10 +57,12 @@ class RecordPosSale
             $shopOrder = $this->lockedShopOrder($shopOrder);
             $prepared = $this->prepare($shift, $attributes, true, $this->shopOrderStock->coveredQuantities($shopOrder));
             $deliveryMethod = $prepared['delivery_method'];
+            $deliverySchedule = $prepared['delivery_schedule'];
             $preparedItems = $prepared['items'];
             $taxRows = $prepared['tax_rows'];
             $preparedPayments = $prepared['payments'];
             $primaryPayment = $prepared['primary_payment'];
+            $preferredOn = $prepared['preferred_on'];
 
             $sale = PosSale::query()->create([
                 'pos_shift_id' => $shift->id,
@@ -71,6 +74,8 @@ class RecordPosSale
                 'delivery_method_id' => $deliveryMethod?->id,
                 'delivery_method_name' => $deliveryMethod?->name,
                 'delivery_fee' => number_format($prepared['delivery_fee'], 2, '.', ''),
+                'delivery_schedule_id' => $deliverySchedule?->id,
+                'preferred_on' => $preferredOn,
                 'subtotal' => number_format($prepared['subtotal'], 2, '.', ''),
                 'tax_total' => number_format($prepared['tax_total'], 2, '.', ''),
                 'total' => number_format($prepared['total'], 2, '.', ''),
@@ -136,6 +141,12 @@ class RecordPosSale
             }
 
             if ($shopOrder instanceof PosOpenOrder) {
+                if ($deliverySchedule instanceof DeliverySchedule) {
+                    $shopOrder->delivery_schedule_id = $deliverySchedule->id;
+                    $shopOrder->preferred_on = $preferredOn;
+                    $shopOrder->save();
+                }
+
                 $this->shopOrderStock->commit($shopOrder);
             }
 
@@ -469,6 +480,8 @@ class RecordPosSale
     private function prepare(PosShift $shift, array $attributes, bool $lock, array $held = []): array
     {
         $deliveryMethod = null;
+        $deliverySchedule = null;
+        $preferredOn = null;
         $deliveryFee = 0.0;
 
         if (! empty($attributes['delivery_method_id'])) {
@@ -483,6 +496,17 @@ class RecordPosSale
             $deliveryFee = array_key_exists('delivery_fee', $attributes) && $attributes['delivery_fee'] !== null
                 ? (float) $attributes['delivery_fee']
                 : (float) ($deliveryMethod->fee ?? 0);
+
+            if ($deliveryMethod->uses_delivery_schedule) {
+                $deliverySchedule = DeliverySchedule::query()->find($attributes['delivery_schedule_id'] ?? 0);
+                $preferredOn = is_string($attributes['preferred_on'] ?? null) ? $attributes['preferred_on'] : '';
+
+                if (! $deliverySchedule instanceof DeliverySchedule || ! $deliverySchedule->isPreferredSlotFor($shift->branch_id) || ! $deliverySchedule->includesDate($preferredOn)) {
+                    throw ValidationException::withMessages([
+                        'delivery_schedule_id' => 'Choose a preferred slot.',
+                    ]);
+                }
+            }
         }
 
         $subtotal = 0.0;
@@ -589,6 +613,8 @@ class RecordPosSale
 
         return [
             'delivery_method' => $deliveryMethod,
+            'delivery_schedule' => $deliverySchedule,
+            'preferred_on' => $preferredOn,
             'delivery_fee' => $deliveryFee,
             'subtotal' => $subtotal,
             'tax_rows' => $taxRows,

@@ -13,6 +13,7 @@ class SaleReceipt
      *     total: string,
      *     tendered: string,
      *     change: string,
+     *     delivery?: string|null,
      *     payments: list<array{name: string, reference?: string|null}>
      * }  $sale
      */
@@ -39,6 +40,13 @@ class SaleReceipt
         $lines[] = self::pair('Total', self::ascii($sale['total']), $width);
         $lines[] = self::pair('Tendered Amount', self::ascii($sale['tendered']), $width);
         $lines[] = self::pair('Change', self::ascii($sale['change']), $width);
+
+        $delivery = trim((string) ($sale['delivery'] ?? ''));
+
+        if ($delivery !== '') {
+            $lines[] = self::wrap($delivery, $width);
+        }
+
         $lines[] = $line;
 
         foreach ($sale['payments'] as $payment) {

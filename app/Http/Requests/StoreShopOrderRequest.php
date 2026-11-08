@@ -4,9 +4,11 @@ namespace App\Http\Requests;
 
 use App\Models\Branch;
 use App\Models\DeliveryMethod;
+use App\Models\DeliverySchedule;
 use App\Models\PaymentMethod;
 use App\Support\MobileNumber;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -35,6 +37,8 @@ class StoreShopOrderRequest extends FormRequest
                 'integer',
                 Rule::exists(DeliveryMethod::class, 'id')->where('is_active', true),
             ],
+            'delivery_schedule_id' => ['nullable', 'integer'],
+            'preferred_on' => ['nullable', 'date_format:Y-m-d'],
             'payment_method_id' => [
                 'required',
                 'integer',
@@ -66,6 +70,8 @@ class StoreShopOrderRequest extends FormRequest
             'phone.regex' => 'Enter a mobile number like 09171234567.',
             'delivery_method_id.required' => 'Choose a delivery method.',
             'delivery_method_id.exists' => 'Choose a delivery method.',
+            'delivery_schedule_id.integer' => 'Choose a preferred slot.',
+            'preferred_on.date_format' => 'Choose a preferred slot.',
             'payment_method_id.required' => 'Choose a payment method.',
             'payment_method_id.exists' => 'Choose a payment method.',
             'address_line_1.required' => 'Enter the delivery address.',
@@ -93,7 +99,33 @@ class StoreShopOrderRequest extends FormRequest
             'province' => $this->nullableString('province'),
             'latitude' => $this->nullableString('latitude'),
             'longitude' => $this->nullableString('longitude'),
+            'delivery_schedule_id' => $this->filled('delivery_schedule_id') ? $this->input('delivery_schedule_id') : null,
+            'preferred_on' => $this->filled('preferred_on') ? $this->input('preferred_on') : null,
         ]);
+    }
+
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                if ($validator->errors()->isNotEmpty()) {
+                    return;
+                }
+
+                $delivery = DeliveryMethod::query()->find($this->integer('delivery_method_id'));
+
+                if (! $delivery instanceof DeliveryMethod || ! $delivery->uses_delivery_schedule) {
+                    return;
+                }
+
+                $schedule = DeliverySchedule::query()->find($this->input('delivery_schedule_id'));
+                $preferredOn = $this->input('preferred_on');
+
+                if (! $schedule instanceof DeliverySchedule || ! $schedule->isPreferredSlotFor($this->integer('branch_id')) || ! is_string($preferredOn) || ! $schedule->includesDate($preferredOn)) {
+                    $validator->errors()->add('delivery_schedule_id', 'Choose a preferred slot.');
+                }
+            },
+        ];
     }
 
     /**
@@ -105,6 +137,8 @@ class StoreShopOrderRequest extends FormRequest
             'name',
             'phone',
             'delivery_method_id',
+            'delivery_schedule_id',
+            'preferred_on',
             'payment_method_id',
             'voucher_code',
             'address_line_1',

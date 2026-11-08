@@ -10,6 +10,7 @@ use App\Http\Requests\QuoteShopOrderRequest;
 use App\Http\Requests\StoreShopOrderRequest;
 use App\Models\Branch;
 use App\Models\DeliveryMethod;
+use App\Models\DeliverySchedule;
 use App\Models\PaymentMethod;
 use App\Models\PosOpenOrder;
 use App\Support\Peso;
@@ -52,7 +53,9 @@ class HomeController extends Controller
                     'instructions' => $method->instructionFor($branch?->id),
                     'instruction_images' => $method->instructionImageUrls($branch?->id),
                     'asks_for_address' => $method->asks_for_address,
+                    'uses_delivery_schedule' => $method->uses_delivery_schedule,
                 ]),
+            'deliverySchedules' => $branch instanceof Branch ? DeliverySchedule::preferredSlots($branch->id) : [],
             'paymentMethods' => PaymentMethod::query()
                 ->where('is_active', true)
                 ->with('branchInstructions')

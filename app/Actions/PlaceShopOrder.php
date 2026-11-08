@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\CatalogItemVariant;
 use App\Models\DeliveryMethod;
+use App\Models\DeliverySchedule;
 use App\Models\PaymentMethod;
 use App\Models\PosOpenOrder;
 use App\Models\Voucher;
@@ -194,6 +195,7 @@ class PlaceShopOrder
         $voucher = $this->voucher(isset($customer['voucher_code']) ? (string) $customer['voucher_code'] : null);
         $discount = $voucher instanceof Voucher ? $voucher->discountFor($subtotal) : 0.0;
         $total = max(0, round($subtotal + $deliveryFee + $paymentFee - $discount, 2));
+        $slot = $this->preferredSlot($branch, $customer, $delivery, $lock);
 
         return [
             'lines' => $lines,
@@ -203,6 +205,8 @@ class PlaceShopOrder
             'payment_fee' => number_format($paymentFee, 2, '.', ''),
             'total' => number_format($total, 2, '.', ''),
             'asks_for_address' => $delivery->asks_for_address,
+            'delivery_schedule_id' => $slot['id'],
+            'preferred_on' => $slot['on'],
             'delivery_instructions' => $delivery->instructionFor($branch->id),
             'payment_instructions' => $payment->instructionFor($branch->id),
             'checkout' => [
@@ -227,6 +231,31 @@ class PlaceShopOrder
                     'discount' => number_format($discount, 2, '.', ''),
                 ] : null,
             ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $customer
+     * @return array{id: int|null, on: string|null}
+     */
+    private function preferredSlot(Branch $branch, array $customer, DeliveryMethod $delivery, bool $required): array
+    {
+        if (! $delivery->uses_delivery_schedule || ! $required) {
+            return ['id' => null, 'on' => null];
+        }
+
+        $schedule = DeliverySchedule::query()->find($customer['delivery_schedule_id'] ?? 0);
+        $preferredOn = is_string($customer['preferred_on'] ?? null) ? $customer['preferred_on'] : '';
+
+        if (! $schedule instanceof DeliverySchedule || ! $schedule->isPreferredSlotFor($branch->id) || ! $schedule->includesDate($preferredOn)) {
+            throw ValidationException::withMessages([
+                'delivery_schedule_id' => 'Choose a preferred slot.',
+            ]);
+        }
+
+        return [
+            'id' => $schedule->id,
+            'on' => $preferredOn,
         ];
     }
 
@@ -326,6 +355,8 @@ class PlaceShopOrder
                         'name' => $customer['name'].' · '.$customer['phone'],
                         'phone' => $customer['phone'],
                         'status' => ShopOrderStatus::Placed->value,
+                        'delivery_schedule_id' => $priced['delivery_schedule_id'],
+                        'preferred_on' => $priced['preferred_on'],
                         'items' => $priced['lines'],
                         'subtotal' => $priced['subtotal'],
                         'discount' => $priced['discount'],

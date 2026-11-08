@@ -31,6 +31,10 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class PurchaseOrderController extends Controller
 {
+    private ?Business $currentBusiness = null;
+
+    private bool $currentBusinessResolved = false;
+
     public function index(Request $request): Response
     {
         $tab = $request->string('tab')->toString() ?: PurchaseOrderStatus::Draft->value;
@@ -45,12 +49,17 @@ class PurchaseOrderController extends Controller
 
         return Inertia::render('Inventory/PurchaseOrders/Index', [
             'purchaseOrders' => PurchaseOrder::query()
-                ->with(['supplier:id,name', 'items'])
-                ->where('status', $status)
+                ->with([
+                    'supplier',
+                    'branch',
+                    'items.variant.catalogItem',
+                    'receipts.items.purchaseOrderItem.variant.catalogItem',
+                ])
                 ->latest('id')
-                ->paginate(15)
-                ->withQueryString()
-                ->through(fn (PurchaseOrder $order): array => $this->summary($order)),
+                ->limit(100)
+                ->get()
+                ->map(fn (PurchaseOrder $order): array => $this->detail($order))
+                ->all(),
             'filters' => [
                 'tab' => $status->value,
             ],
@@ -139,9 +148,7 @@ class PurchaseOrderController extends Controller
     {
         $confirmPurchaseOrder->handle($purchaseOrder);
 
-        return redirect()
-            ->route('inventory.purchase-orders.show', $purchaseOrder)
-            ->with('status', 'Purchase order confirmed.');
+        return back()->with('status', 'Purchase order confirmed.');
     }
 
     public function close(
@@ -151,9 +158,7 @@ class PurchaseOrderController extends Controller
     ): RedirectResponse {
         $closePurchaseOrder->handle($purchaseOrder, $request->validated('reason'));
 
-        return redirect()
-            ->route('inventory.purchase-orders.show', $purchaseOrder)
-            ->with('status', 'Purchase order closed.');
+        return back()->with('status', 'Purchase order closed.');
     }
 
     public function print(Request $request, PurchaseOrder $purchaseOrder): View|SymfonyResponse
@@ -257,12 +262,22 @@ class PurchaseOrderController extends Controller
         ];
     }
 
+    private function currentBusiness(): ?Business
+    {
+        if (! $this->currentBusinessResolved) {
+            $this->currentBusiness = Business::query()->first();
+            $this->currentBusinessResolved = true;
+        }
+
+        return $this->currentBusiness;
+    }
+
     /**
      * @return array{registered_business_name: ?string, address: ?string, phone: ?string, email: ?string, tin: ?string, logo_url: ?string}
      */
     private function businessInformation(?Branch $branch): array
     {
-        $profile = Business::current();
+        $profile = $this->currentBusiness();
 
         if ($profile instanceof Business && filled($profile->name)) {
             return [

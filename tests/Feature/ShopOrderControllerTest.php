@@ -10,6 +10,7 @@ use App\Models\Brand;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
 use App\Models\Category;
+use App\Models\DeliverySchedule;
 use App\Models\Employee;
 use App\Models\PosOpenOrder;
 use App\Models\PosSale;
@@ -18,6 +19,7 @@ use App\Models\PosSaleItemCommission;
 use App\Models\PosSalePayment;
 use App\Models\PosSaleTax;
 use App\Support\SmsDisclaimer;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -360,5 +362,264 @@ class ShopOrderControllerTest extends TestCase
     public function test_guest_cannot_export_preorders(): void
     {
         $this->get('/backoffice/shop/orders/preorders/export')->assertRedirect(route('login'));
+    }
+
+    public function test_orders_page_lists_each_schedules_assigned_orders(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $branch = Branch::factory()->create(['name' => 'Greenheights']);
+        $schedule = DeliverySchedule::factory()->create([
+            'scheduled_on' => '2026-11-09',
+            'starts_at' => '09:00:00',
+        ]);
+        $ended = DeliverySchedule::factory()->ended()->create();
+        PosOpenOrder::factory()->create([
+            'delivery_schedule_id' => $schedule->id,
+            'status' => null,
+            'saved_by_name' => 'Parked Ticket',
+        ]);
+        PosOpenOrder::factory()->create([
+            'branch_id' => $branch->id,
+            'delivery_schedule_id' => $ended->id,
+            'number' => 'OPEN-OLD',
+            'status' => 'placed',
+            'saved_by_name' => 'Old Order',
+        ]);
+        $daily = DeliverySchedule::factory()->daily()->create([
+            'branch_id' => $branch->id,
+            'starts_at' => '14:00:00',
+        ]);
+        PosOpenOrder::factory()->create([
+            'branch_id' => $branch->id,
+            'delivery_schedule_id' => $schedule->id,
+            'number' => 'OPEN-SLOT',
+            'status' => 'placed',
+            'saved_by_name' => 'Ada Reyes',
+        ]);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/shop/orders');
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('Shop/Orders/Index')
+            ->where('orders.0.number', 'OPEN-SLOT')
+            ->where('orders.0.branch_id', $branch->id)
+            ->where('orders.0.schedule', 'Nov 9, 2026 · 9:00 AM')
+            ->where('orders.0.delivery_schedule_id', $schedule->id)
+            ->has('schedules', 3)
+            ->where('schedules.0.label', 'Nov 9, 2026 · 9:00 AM')
+            ->where('schedules.0.branch_id', $schedule->branch_id)
+            ->where('schedules.0.is_active', true)
+            ->where('schedules.0.has_ended', false)
+            ->where('schedules.0.is_assignable', true)
+            ->has('schedules.0.orders', 1)
+            ->where('schedules.0.orders.0.number', 'OPEN-SLOT')
+            ->where('schedules.0.orders.0.customer', 'Ada Reyes')
+            ->where('schedules.0.orders.0.branch', 'Greenheights')
+            ->where('schedules.0.orders.0.status_label', 'Order Placed')
+            ->where('schedules.1.is_assignable', false)
+            ->where('schedules.1.has_ended', true)
+            ->where('schedules.1.orders.0.number', 'OPEN-OLD')
+            ->where('schedules.2.id', $daily->id)
+            ->where('schedules.2.branch_id', $branch->id)
+            ->where('schedules.2.branch', 'Greenheights')
+            ->where('schedules.2.label', 'Daily · 2:00 PM')
+            ->where('schedules.2.is_assignable', true)
+            ->has('branches'));
+    }
+
+    public function test_orders_page_includes_the_full_detail_for_every_order(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $schedule = DeliverySchedule::factory()->create([
+            'scheduled_on' => '2026-11-09',
+            'starts_at' => '09:00:00',
+        ]);
+        PosOpenOrder::factory()->create(['status' => null]);
+        PosOpenOrder::factory()->create([
+            'number' => 'OPEN-SLOT',
+            'status' => 'placed',
+            'saved_by_name' => 'Ada Reyes',
+            'delivery_schedule_id' => $schedule->id,
+            'items' => [[
+                'product_name' => 'Aozi Dog',
+                'variant_name' => 'Beef',
+                'price' => '75.00',
+                'quantity' => 2,
+                'notes' => null,
+                'modifiers' => [],
+            ]],
+        ]);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/shop/orders');
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('Shop/Orders/Index')
+            ->missing('order')
+            ->has('orders', 1)
+            ->where('orders.0.number', 'OPEN-SLOT')
+            ->where('orders.0.customer', 'Ada Reyes')
+            ->where('orders.0.delivery_schedule_id', $schedule->id)
+            ->where('orders.0.schedule', 'Nov 9, 2026 · 9:00 AM')
+            ->where('orders.0.lines.0.name', 'Aozi Dog')
+            ->where('orders.0.lines.0.variant', 'Beef')
+            ->where('orders.0.lines.0.quantity', 2)
+            ->where('orders.0.lines.0.line_total_label', '₱150.00'));
+    }
+
+    public function test_guest_cannot_assign_a_delivery_schedule(): void
+    {
+        $order = PosOpenOrder::factory()->create(['status' => 'placed']);
+        $schedule = DeliverySchedule::factory()->create();
+
+        $this->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+            'delivery_schedule_id' => $schedule->id,
+        ])->assertRedirect(route('login'));
+
+        $this->assertNull($order->fresh()->delivery_schedule_id);
+    }
+
+    public function test_employee_without_permission_cannot_assign_a_delivery_schedule(): void
+    {
+        $order = PosOpenOrder::factory()->create(['status' => 'placed']);
+        $schedule = DeliverySchedule::factory()->create();
+
+        $this->actingAsEmployee(Employee::factory()->create())
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => $schedule->id,
+            ])
+            ->assertForbidden();
+
+        $this->assertNull($order->fresh()->delivery_schedule_id);
+    }
+
+    public function test_a_parked_ticket_cannot_be_assigned_a_delivery_schedule(): void
+    {
+        $order = PosOpenOrder::factory()->create(['status' => null]);
+        $schedule = DeliverySchedule::factory()->create([
+            'branch_id' => $order->branch_id,
+        ]);
+
+        $this->actingAsEmployee()
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => $schedule->id,
+            ])
+            ->assertNotFound();
+
+        $this->assertNull($order->fresh()->delivery_schedule_id);
+    }
+
+    public function test_an_active_delivery_schedule_can_be_assigned(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $order = PosOpenOrder::factory()->create(['status' => 'placed']);
+        $schedule = DeliverySchedule::factory()->create([
+            'branch_id' => $order->branch_id,
+        ]);
+
+        $response = $this->actingAsEmployee()
+            ->from(route('shop.orders.show', $order))
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => $schedule->id,
+            ]);
+
+        $response->assertRedirect(route('shop.orders.show', $order));
+        $response->assertSessionHas('status', 'Delivery schedule assigned.');
+        $this->assertSame($schedule->id, $order->fresh()->delivery_schedule_id);
+    }
+
+    public function test_an_assigned_delivery_schedule_can_be_cleared(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $schedule = DeliverySchedule::factory()->create();
+        $order = PosOpenOrder::factory()->create([
+            'status' => 'placed',
+            'delivery_schedule_id' => $schedule->id,
+        ]);
+
+        $response = $this->actingAsEmployee()
+            ->from(route('shop.orders.show', $order))
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => null,
+            ]);
+
+        $response->assertRedirect(route('shop.orders.show', $order));
+        $response->assertSessionHas('status', 'Delivery schedule removed.');
+        $this->assertNull($order->fresh()->delivery_schedule_id);
+    }
+
+    public function test_a_closed_delivery_schedule_cannot_be_assigned(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $schedule = DeliverySchedule::factory()->inactive()->create();
+        $order = PosOpenOrder::factory()->create(['status' => 'placed']);
+
+        $response = $this->actingAsEmployee()
+            ->from(route('shop.orders.show', $order))
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => $schedule->id,
+            ]);
+
+        $response->assertRedirect(route('shop.orders.show', $order));
+        $response->assertSessionHasErrors([
+            'delivery_schedule_id' => 'Choose an active delivery schedule.',
+        ]);
+        $this->assertNull($order->fresh()->delivery_schedule_id);
+    }
+
+    public function test_an_ended_delivery_schedule_cannot_be_assigned(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $schedule = DeliverySchedule::factory()->ended()->create();
+        $order = PosOpenOrder::factory()->create(['status' => 'placed']);
+
+        $response = $this->actingAsEmployee()
+            ->from(route('shop.orders.show', $order))
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => $schedule->id,
+            ]);
+
+        $response->assertRedirect(route('shop.orders.show', $order));
+        $response->assertSessionHasErrors([
+            'delivery_schedule_id' => 'Choose an active delivery schedule.',
+        ]);
+        $this->assertNull($order->fresh()->delivery_schedule_id);
+    }
+
+    public function test_a_missing_delivery_schedule_cannot_be_assigned(): void
+    {
+        $order = PosOpenOrder::factory()->create(['status' => 'placed']);
+
+        $response = $this->actingAsEmployee()
+            ->from(route('shop.orders.show', $order))
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => 999999,
+            ]);
+
+        $response->assertRedirect(route('shop.orders.show', $order));
+        $response->assertSessionHasErrors([
+            'delivery_schedule_id' => 'Choose an active delivery schedule.',
+        ]);
+        $this->assertNull($order->fresh()->delivery_schedule_id);
+    }
+
+    public function test_a_delivery_schedule_for_another_branch_cannot_be_assigned(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 02:00:00', 'UTC'));
+        $order = PosOpenOrder::factory()->create(['status' => 'placed']);
+        $schedule = DeliverySchedule::factory()->create();
+
+        $response = $this->actingAsEmployee()
+            ->from(route('shop.orders.show', $order))
+            ->put('/backoffice/shop/orders/'.$order->id.'/delivery-schedule', [
+                'delivery_schedule_id' => $schedule->id,
+            ]);
+
+        $response->assertRedirect(route('shop.orders.show', $order));
+        $response->assertSessionHasErrors([
+            'delivery_schedule_id' => 'Choose an active delivery schedule for this branch.',
+        ]);
+        $this->assertNull($order->fresh()->delivery_schedule_id);
     }
 }

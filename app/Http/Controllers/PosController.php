@@ -14,6 +14,7 @@ use App\Models\CatalogItem;
 use App\Models\CatalogItemModifierOptionPrice;
 use App\Models\CatalogItemVariant;
 use App\Models\DeliveryMethod;
+use App\Models\DeliverySchedule;
 use App\Models\Employee;
 use App\Models\Modifier;
 use App\Models\PaymentMethod;
@@ -115,7 +116,9 @@ class PosController extends Controller
                     'fee_label' => $method->fee === null ? 'Set in cart' : Peso::format($method->fee),
                     'instructions' => $method->instructionFor($branch->id) ?? '',
                     'instruction_images' => $method->instructionImageUrls($branch->id),
+                    'uses_delivery_schedule' => $method->uses_delivery_schedule,
                 ]);
+            $props['deliverySchedules'] = DeliverySchedule::preferredSlots($branch->id);
         }
 
         if ($wants('taxFees')) {

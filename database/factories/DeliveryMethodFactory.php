@@ -30,6 +30,13 @@ class DeliveryMethodFactory extends Factory
         ]);
     }
 
+    public function usesSchedule(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'uses_delivery_schedule' => true,
+        ]);
+    }
+
     public function pricedInCart(): static
     {
         return $this->state(fn (array $attributes): array => [

@@ -53,6 +53,7 @@ class StoreDeliveryMethodRequest extends FormRequest
             'instructions_for_all_branches' => $this->sharedInstructionFlag(),
             'branch_instructions' => $this->branchInstructions(),
             'asks_for_address' => $this->boolean('asks_for_address'),
+            'uses_delivery_schedule' => $this->boolean('uses_delivery_schedule'),
             'is_active' => $this->boolean('is_active'),
         ]);
         $this->prepareInstructionImages();

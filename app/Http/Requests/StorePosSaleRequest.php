@@ -4,6 +4,8 @@ namespace App\Http\Requests;
 
 use App\Enums\ShopOrderStatus;
 use App\Models\Branch;
+use App\Models\DeliveryMethod;
+use App\Models\DeliverySchedule;
 use App\Models\PosOpenOrder;
 use App\Support\PosSaleRules;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -70,6 +72,25 @@ class StorePosSaleRequest extends FormRequest
                     $validator->errors()->add('pos_open_order_id', 'Create a sale from an order that is still open.');
                 }
             },
+            function (Validator $validator): void {
+                if ($validator->errors()->isNotEmpty() || ! $this->filled('delivery_method_id')) {
+                    return;
+                }
+
+                $delivery = DeliveryMethod::query()->find($this->integer('delivery_method_id'));
+                $branch = $this->route('branch');
+
+                if (! $delivery instanceof DeliveryMethod || ! $delivery->uses_delivery_schedule || ! $branch instanceof Branch) {
+                    return;
+                }
+
+                $schedule = DeliverySchedule::query()->find($this->input('delivery_schedule_id'));
+                $preferredOn = $this->input('preferred_on');
+
+                if (! $schedule instanceof DeliverySchedule || ! $schedule->isPreferredSlotFor($branch->id) || ! is_string($preferredOn) || ! $schedule->includesDate($preferredOn)) {
+                    $validator->errors()->add('delivery_schedule_id', 'Choose a preferred slot.');
+                }
+            },
         ];
     }
 
@@ -79,6 +100,8 @@ class StorePosSaleRequest extends FormRequest
 
         $this->merge([
             'delivery_method_id' => $this->filled('delivery_method_id') ? $this->input('delivery_method_id') : null,
+            'delivery_schedule_id' => $this->filled('delivery_schedule_id') ? $this->input('delivery_schedule_id') : null,
+            'preferred_on' => $this->filled('preferred_on') ? $this->input('preferred_on') : null,
             'delivery_fee' => ($fee === '' || $fee === null) ? null : $fee,
             'pos_open_order_id' => $this->filled('pos_open_order_id') ? $this->input('pos_open_order_id') : null,
         ]);

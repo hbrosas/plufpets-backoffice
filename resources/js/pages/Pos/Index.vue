@@ -2,6 +2,7 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import BarcodeInput from '../../components/BarcodeInput.vue';
+import PreferredSlotButtons from '../../components/PreferredSlotButtons.vue';
 import CountBadge from '../../components/CountBadge.vue';
 import { formatPeso } from '../../formatPeso';
 import { jsonRequest } from '../../http';
@@ -31,6 +32,7 @@ const props = defineProps({
     variants: { type: Array, required: true },
     paymentMethods: { type: Array, required: true },
     deliveryMethods: { type: Array, required: true },
+    deliverySchedules: { type: Array, default: () => [] },
     taxFees: { type: Array, required: true },
     todayTransactions: { type: Array, required: true },
     todayTransactionsTotal: { type: String, required: true },
@@ -124,6 +126,8 @@ const saleForm = useForm({
     items: [],
     payments: [],
     delivery_method_id: '',
+    delivery_schedule_id: '',
+    preferred_on: '',
     delivery_fee: '',
     pos_open_order_id: null,
 });
@@ -165,6 +169,7 @@ const draftPaymentMethod = computed(() =>
 const selectedDelivery = computed(() =>
     props.deliveryMethods.find((method) => String(method.id) === String(saleForm.delivery_method_id)),
 );
+const usesDeliverySchedule = computed(() => Boolean(selectedDelivery.value?.uses_delivery_schedule));
 
 const productCategories = computed(() => {
     const names = new Set();
@@ -1086,6 +1091,13 @@ async function charge() {
         return;
     }
 
+    if (usesDeliverySchedule.value && (saleForm.delivery_schedule_id === '' || saleForm.preferred_on === '')) {
+        saleForm.setError('delivery_schedule_id', 'Choose a preferred slot.');
+        checkoutError.value = 'Choose a preferred slot.';
+
+        return;
+    }
+
     if (remainingTotal.value > 0.005) {
         if (!splitCheckout.value) {
             draftAmount.value = remainingTotal.value.toFixed(2);
@@ -1110,6 +1122,8 @@ async function charge() {
             reference_number: payment.reference_number,
         })),
         delivery_method_id: saleForm.delivery_method_id,
+        delivery_schedule_id: usesDeliverySchedule.value ? saleForm.delivery_schedule_id : null,
+        preferred_on: usesDeliverySchedule.value ? saleForm.preferred_on : null,
         delivery_fee: saleForm.delivery_fee,
         tax_fee_ids: selectedTaxIds.value,
         pos_open_order_id: activeOpenOrderId.value,
@@ -1400,11 +1414,20 @@ watch(
     { immediate: true },
 );
 
+function chooseSlot(slot) {
+    saleForm.delivery_schedule_id = slot.id;
+    saleForm.preferred_on = slot.on;
+    saleForm.clearErrors('delivery_schedule_id');
+}
+
 watch(
     () => saleForm.delivery_method_id,
     (value) => {
         const method = props.deliveryMethods.find((item) => String(item.id) === String(value));
         saleForm.delivery_fee = method?.fee ?? '';
+        saleForm.delivery_schedule_id = '';
+        saleForm.preferred_on = '';
+        saleForm.clearErrors('delivery_schedule_id');
     },
 );
 
@@ -2378,6 +2401,18 @@ onUnmounted(() => {
                             :alt="`Delivery instruction photo ${index + 1}`"
                             class="max-h-48 w-full rounded-xl object-contain"
                         />
+                        <div v-if="usesDeliverySchedule" class="flex flex-col gap-2 text-sm">
+                            <span class="font-medium">Preferred slot</span>
+                            <PreferredSlotButtons
+                                :slots="deliverySchedules"
+                                :schedule-id="saleForm.delivery_schedule_id"
+                                :preferred-on="saleForm.preferred_on"
+                                tone="pos"
+                                @select="chooseSlot"
+                            />
+                            <span v-if="deliverySchedules.length === 0" class="text-ink/60">No open delivery slots for this branch.</span>
+                            <span v-if="saleForm.errors.delivery_schedule_id" class="text-danger">{{ saleForm.errors.delivery_schedule_id }}</span>
+                        </div>
                         <input
                             v-if="saleForm.delivery_method_id"
                             v-model="saleForm.delivery_fee"

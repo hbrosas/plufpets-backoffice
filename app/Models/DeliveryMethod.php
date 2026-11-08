@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'fee', 'notes', 'instructions_for_all_branches', 'instruction_images', 'asks_for_address', 'is_active'])]
+#[Fillable(['name', 'fee', 'notes', 'instructions_for_all_branches', 'instruction_images', 'asks_for_address', 'uses_delivery_schedule', 'is_active'])]
 class DeliveryMethod extends Model
 {
     /** @use HasFactory<DeliveryMethodFactory> */
@@ -21,6 +21,7 @@ class DeliveryMethod extends Model
     protected $attributes = [
         'instructions_for_all_branches' => true,
         'asks_for_address' => false,
+        'uses_delivery_schedule' => false,
         'is_active' => true,
     ];
 
@@ -34,6 +35,7 @@ class DeliveryMethod extends Model
             'instruction_images' => 'array',
             'fee' => 'decimal:2',
             'asks_for_address' => 'boolean',
+            'uses_delivery_schedule' => 'boolean',
             'is_active' => 'boolean',
         ];
     }
