@@ -28,7 +28,7 @@ const tab = ref('activities');
 const branchOrderTabs = ref({});
 const tabs = computed(() => [
     { id: 'activities', label: "Today's Activities" },
-    ...(props.schedule ? [{ id: 'employees', label: 'For Approval' }] : []),
+    ...(props.schedule ? [{ id: 'employees', label: 'Calendar' }] : []),
     ...(props.pulse ? [{ id: 'sales', label: 'Sales' }] : []),
     ...(props.commissions ? [{ id: 'commissions', label: 'Commissions' }] : []),
     ...(props.stock ? [{ id: 'stock', label: 'Stock' }] : []),
@@ -61,6 +61,7 @@ const calendarDays = computed(() => {
             number: date.getDate(),
             inMonth: dayNumber >= 1 && dayNumber <= daysInMonth,
             events: props.schedule.events.filter((event) => event.dates.includes(key)),
+            guests: (props.schedule.guests ?? []).filter((guest) => guest.dates.includes(key)),
             holidays: (props.schedule.holidays ?? []).filter((holiday) => holiday.date === key),
         };
     });
@@ -459,6 +460,7 @@ function reviewRequest(filing, status) {
                 <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-sm bg-danger/20" /> Leave</span>
                 <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-sm bg-pine/20 dark:bg-sand/30" /> Overnight</span>
                 <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-sm bg-sand" /> Holiday</span>
+                <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-sm bg-ember/30" /> Hotel</span>
                 <span class="text-ink/55 dark:text-foam/50">Dashed means still pending.</span>
             </div>
             <div class="overflow-x-auto">
@@ -495,6 +497,14 @@ function reviewRequest(filing, status) {
                             >
                                 {{ event.type_label }} · {{ event.employee }}
                             </li>
+                            <li
+                                v-for="guest in day.guests"
+                                :key="`${day.key}-guest-${guest.id}`"
+                                class="flex items-center justify-between gap-1 rounded-md bg-ember/20 px-1.5 py-0.5 text-xs text-ink"
+                            >
+                                <span class="truncate">{{ guest.client }} · {{ guest.pets }}</span>
+                                <span class="shrink-0">{{ guest.paid_label }}</span>
+                            </li>
                         </ul>
                     </button>
                 </div>
@@ -508,7 +518,7 @@ function reviewRequest(filing, status) {
                 <h2 id="calendar-day-title" class="text-lg font-medium">{{ dayTitle(selectedDay) }}</h2>
                 <button class="text-sm font-medium" type="button" @click="selectedDay = null">Close</button>
             </div>
-            <p v-if="selectedDay.holidays.length === 0 && selectedDay.events.length === 0" class="text-sm text-ink/60 dark:text-foam/60">Nothing on this day.</p>
+            <p v-if="selectedDay.holidays.length === 0 && selectedDay.events.length === 0 && selectedDay.guests.length === 0" class="text-sm text-ink/60 dark:text-foam/60">Nothing on this day.</p>
             <ul v-else class="flex flex-col gap-3">
                 <li v-for="holiday in selectedDay.holidays" :key="`day-holiday-${holiday.id}`" class="rounded-2xl border border-mist px-4 py-3 dark:border-white/10">
                     <p class="font-medium">{{ holiday.name }}</p>
@@ -517,6 +527,14 @@ function reviewRequest(filing, status) {
                 <li v-for="event in selectedDay.events" :key="`day-event-${event.id}`" class="rounded-2xl border border-mist px-4 py-3 dark:border-white/10">
                     <p class="font-medium">{{ event.employee }}</p>
                     <p class="text-sm text-ink/55 dark:text-foam/50">{{ event.type_label }} · {{ event.status_label }}</p>
+                </li>
+                <li v-for="guest in selectedDay.guests" :key="`day-guest-${guest.id}`" class="rounded-2xl border border-mist px-4 py-3 dark:border-white/10">
+                    <div class="flex items-baseline justify-between gap-3">
+                        <p class="font-medium">{{ guest.client }}</p>
+                        <p class="text-sm font-medium">{{ guest.paid_label }}</p>
+                    </div>
+                    <p class="text-sm text-ink/55 dark:text-foam/50">{{ guest.pets }} · {{ guest.pod_type }} · {{ guest.branch }}</p>
+                    <p class="text-sm text-ink/55 dark:text-foam/50">Checked in</p>
                 </li>
             </ul>
         </div>

@@ -3,10 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Actions\RefundPosSale;
+use App\Actions\WaivePosSaleCommission;
 use App\Http\Requests\RefundPosSaleRequest;
 use App\Http\Requests\SalesFilterRequest;
+use App\Http\Requests\WaivePosSaleCommissionRequest;
 use App\Models\Branch;
 use App\Models\PosSale;
+use App\Models\PosSaleItem;
+use App\Models\PosSaleItemCommission;
 use App\Support\EmployeeSession;
 use App\Support\Peso;
 use Illuminate\Http\RedirectResponse;
@@ -25,7 +29,7 @@ class SalesReceiptController extends Controller
 
     public function show(SalesFilterRequest $request, PosSale $posSale): Response
     {
-        $posSale->load(['branch:id,name', 'items', 'payments', 'taxes']);
+        $posSale->load(['branch:id,name', 'items.commissions', 'payments', 'taxes']);
 
         return Inertia::render('Sales/Receipts/Index', [
             ...$this->listProps($request),
@@ -41,7 +45,7 @@ class SalesReceiptController extends Controller
         $filters = $request->filters();
 
         $receipts = PosSale::query()
-            ->with(['branch:id,name', 'payments', 'items', 'taxes'])
+            ->with(['branch:id,name', 'payments', 'items.commissions', 'taxes'])
             ->inPeriod($filters)
             ->when($filters->search !== '', function ($query) use ($filters): void {
                 $search = '%'.$filters->search.'%';
@@ -62,6 +66,7 @@ class SalesReceiptController extends Controller
             'filters' => $filters->toArray(),
             'period_label' => $filters->label(),
             'branches' => Branch::query()->orderBy('name')->orderBy('id')->get(['id', 'name']),
+            'can_waive_commissions' => EmployeeSession::allows('sales.waive-commission'),
             'receipts' => $receipts,
         ];
     }
@@ -108,7 +113,42 @@ class SalesReceiptController extends Controller
                 'name' => $tax->name,
                 'amount' => Peso::format($tax->amount),
             ]),
+            'commissions' => $this->commissionPayload($sale),
         ];
+    }
+
+    /**
+     * @return list<array{id: int, employee_id: int|null, employee_number: string, employee_name: string, role: string, item: string, amount: string, waived: bool, waived_at: string|null, waived_by: string|null}>
+     */
+    private function commissionPayload(PosSale $sale): array
+    {
+        return $sale->items
+            ->flatMap(fn (PosSaleItem $item) => $item->commissions->map(fn (PosSaleItemCommission $commission): array => [
+                'id' => $commission->id,
+                'employee_id' => $commission->employee_id,
+                'employee_number' => $commission->employee_number,
+                'employee_name' => $commission->employee_name,
+                'role' => ucfirst($commission->role->value),
+                'item' => $this->itemLabel($item),
+                'amount' => Peso::format($commission->amount),
+                'waived' => $commission->waived_at !== null,
+                'waived_at' => $commission->waived_at?->timezone(config('app.timezone'))->format('M j, Y g:i A'),
+                'waived_by' => $commission->waived_by_name,
+            ]))
+            ->sortBy('id')
+            ->values()
+            ->all();
+    }
+
+    private function itemLabel(PosSaleItem $item): string
+    {
+        $variant = trim((string) $item->variant_name);
+
+        if ($variant !== '' && strcasecmp($variant, 'Default') !== 0) {
+            return $item->product_name.' · '.$variant;
+        }
+
+        return (string) $item->product_name;
     }
 
     public function refund(RefundPosSaleRequest $request, PosSale $posSale, RefundPosSale $refundPosSale): RedirectResponse
@@ -117,5 +157,24 @@ class SalesReceiptController extends Controller
         $refundPosSale->handle($posSale, (string) $request->validated('reason'), $employee);
 
         return back()->with('status', 'Receipt '.$posSale->number.' refunded.');
+    }
+
+    public function waiveCommission(WaivePosSaleCommissionRequest $request, PosSale $posSale, WaivePosSaleCommission $waivePosSaleCommission): RedirectResponse
+    {
+        $employee = EmployeeSession::current() ?? ['employee_number' => '', 'name' => ''];
+        $employeeId = $request->validated('employee_id');
+
+        $waivePosSaleCommission->handle(
+            $posSale,
+            $employeeId === 'all' ? null : (int) $employeeId,
+            $employee,
+        );
+
+        return redirect()
+            ->route('sales.receipts.show', array_merge(
+                ['pos_sale' => $posSale],
+                $request->query(),
+            ))
+            ->with('status', 'Commission waived.');
     }
 }

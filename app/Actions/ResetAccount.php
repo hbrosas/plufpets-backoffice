@@ -11,7 +11,9 @@ class ResetAccount
 {
     public function handle(): void
     {
-        $tables = collect(Schema::getTableListing(schemaQualified: false))
+        $schema = DB::getDriverName() === 'pgsql' ? 'public' : null;
+
+        $tables = collect(Schema::getTableListing(schema: $schema, schemaQualified: false))
             ->reject(fn (string $table): bool => in_array($table, [
                 'migrations',
                 'sqlite_sequence',

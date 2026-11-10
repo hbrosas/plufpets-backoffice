@@ -391,6 +391,7 @@ class GeneratePayroll
         $to = Carbon::parse($periodEnd, 'Asia/Manila')->endOfDay()->utc();
 
         $lines = PosSaleItemCommission::query()
+            ->payable()
             ->where('employee_id', $employee->id)
             ->whereHas('saleItem.sale', function ($query) use ($from, $to): void {
                 $query->whereNull('refunded_at')

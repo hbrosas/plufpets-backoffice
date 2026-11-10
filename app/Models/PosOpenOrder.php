@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'total',
     'checkout',
     'pos_sale_id',
+    'hotel_stay_id',
 ])]
 class PosOpenOrder extends Model
 {
@@ -62,6 +63,14 @@ class PosOpenOrder extends Model
     public function sale(): BelongsTo
     {
         return $this->belongsTo(PosSale::class, 'pos_sale_id');
+    }
+
+    /**
+     * @return BelongsTo<HotelStay, $this>
+     */
+    public function hotelStay(): BelongsTo
+    {
+        return $this->belongsTo(HotelStay::class);
     }
 
     /**

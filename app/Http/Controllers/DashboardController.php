@@ -9,6 +9,7 @@ use App\Enums\ShopOrderStatus;
 use App\Http\Requests\CommissionPeriodRequest;
 use App\Models\Branch;
 use App\Models\Holiday;
+use App\Models\HotelStay;
 use App\Models\PayrollFiling;
 use App\Models\PosCashMovement;
 use App\Models\PosOpenOrder;
@@ -155,7 +156,7 @@ class DashboardController extends Controller
             ->get()
             ->groupBy('branch_id');
         $shifts = PosShift::query()
-            ->with(['sales.payments', 'cashMovements'])
+            ->with(['sales.payments', 'cashMovements', 'hotelPayments.stay:id,client_name'])
             ->where(function ($query) use ($today): void {
                 $query->where(fn ($open) => $open->open())
                     ->orWhereBetween('opened_at', [$today->from, $today->to])
@@ -197,7 +198,9 @@ class DashboardController extends Controller
                     'cash_label' => Peso::format($cash),
                     'activities' => $this->shiftActivities($branchShifts),
                     'open' => $rows
-                        ->filter(fn (PosOpenOrder $order): bool => $order->pos_sale_id === null && ($order->status === null || $order->status === ''))
+                        ->filter(fn (PosOpenOrder $order): bool => $order->pos_sale_id === null
+                            && $order->hotel_stay_id === null
+                            && ($order->status === null || $order->status === ''))
                         ->map(fn (PosOpenOrder $order): array => $this->openOrder($order))
                         ->values()
                         ->all(),
@@ -241,6 +244,11 @@ class DashboardController extends Controller
     private function shiftActivities(Collection $shifts): array
     {
         $rows = collect();
+        $hotelCashMovementIds = $shifts
+            ->flatMap(fn (PosShift $shift) => $shift->hotelPayments)
+            ->pluck('pos_cash_movement_id')
+            ->filter()
+            ->all();
 
         foreach ($shifts as $shift) {
             $rows->push([
@@ -273,8 +281,18 @@ class DashboardController extends Controller
                 ]);
             }
 
+            foreach ($shift->hotelPayments as $payment) {
+                $rows->push([
+                    'key' => 'hotel-payment-'.$payment->id,
+                    'title' => 'Hotel payment',
+                    'detail' => (string) $payment->stay?->client_name,
+                    'at' => $payment->recorded_at,
+                    'amount_label' => Peso::format($payment->amount),
+                ]);
+            }
+
             foreach ($shift->cashMovements as $movement) {
-                if ($movement->type === PosCashMovementType::OpenDrawer) {
+                if ($movement->type === PosCashMovementType::OpenDrawer || in_array($movement->id, $hotelCashMovementIds, true)) {
                     continue;
                 }
 
@@ -372,7 +390,8 @@ class DashboardController extends Controller
      *     next: string,
      *     requests: list<array<string, mixed>>,
      *     events: list<array{id: int, employee: string, type: string, type_label: string, status: string, status_label: string, dates: list<string>}>,
-     *     holidays: list<array{id: int, name: string, type: string, type_label: string, date: string}>
+     *     holidays: list<array{id: int, name: string, type: string, type_label: string, date: string}>,
+     *     guests: list<array{id: int, client: string, pets: string, pod_type: string, branch: string, paid_label: string, dates: list<string>}>
      * }
      */
     private function schedule(CommissionPeriodRequest $request): array
@@ -420,6 +439,39 @@ class DashboardController extends Controller
             ->values()
             ->all();
 
+        $guests = HotelStay::query()
+            ->with(['pets:id,hotel_stay_id,name', 'podType:id,name', 'branch:id,name'])
+            ->withSum('payments', 'amount')
+            ->where('checked_in_at', '<=', $end->utc())
+            ->where(function ($query) use ($start): void {
+                $query->whereNull('checked_out_at')
+                    ->orWhere('checked_out_at', '>=', $start->utc())
+                    ->orWhereDate('checkout_on', '>=', $start->toDateString());
+            })
+            ->orderBy('checked_in_at')
+            ->orderBy('id')
+            ->get()
+            ->map(function (HotelStay $stay) use ($start, $end): ?array {
+                $dates = $this->stayDates($stay, $start, $end);
+
+                if ($dates === []) {
+                    return null;
+                }
+
+                return [
+                    'id' => $stay->id,
+                    'client' => $stay->client_name,
+                    'pets' => $stay->pets->pluck('name')->join(', '),
+                    'pod_type' => $stay->podType?->name ?? '',
+                    'branch' => (string) $stay->branch?->name,
+                    'paid_label' => Peso::format($stay->payments_sum_amount ?? 0),
+                    'dates' => $dates,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+
         return [
             'month' => $month->format('Y-m'),
             'label' => $month->format('F Y'),
@@ -448,6 +500,7 @@ class DashboardController extends Controller
                     'date' => $holiday->date->toDateString(),
                 ])
                 ->all(),
+            'guests' => $guests,
         ];
     }
 
@@ -475,6 +528,39 @@ class DashboardController extends Controller
         $end = $filing->type === PayrollFilingType::Overnight
             ? $start->addDays(max((int) $filing->nights, 1) - 1)
             : CarbonImmutable::parse($filing->ends_on ?? $filing->starts_on)->startOfDay();
+        $cursor = $start->max($monthStart->startOfDay());
+        $last = $end->min($monthEnd->startOfDay());
+        $dates = [];
+
+        while ($cursor->lessThanOrEqualTo($last)) {
+            $dates[] = $cursor->toDateString();
+            $cursor = $cursor->addDay();
+        }
+
+        return $dates;
+    }
+
+    /**
+     * Days this guest occupies during the visible month.
+     * A guest who is still checked in continues through today when the planned checkout has passed.
+     * A guest who has checked out stays on the calendar through the later of the planned checkout and the day they left.
+     *
+     * @return list<string>
+     */
+    private function stayDates(HotelStay $stay, CarbonImmutable $monthStart, CarbonImmutable $monthEnd): array
+    {
+        $start = CarbonImmutable::parse($stay->checked_in_at)->timezone(ReportPeriod::ZONE)->startOfDay();
+        $checkoutOn = CarbonImmutable::parse($stay->checkout_on->toDateString(), ReportPeriod::ZONE)->startOfDay();
+        $today = CarbonImmutable::now(ReportPeriod::ZONE)->startOfDay();
+        $checkedOutOn = $stay->checked_out_at === null
+            ? null
+            : CarbonImmutable::parse($stay->checked_out_at)->timezone(ReportPeriod::ZONE)->startOfDay();
+
+        if ($checkedOutOn === null) {
+            $end = $today->greaterThan($checkoutOn) ? $today : $checkoutOn;
+        } else {
+            $end = $checkedOutOn->greaterThan($checkoutOn) ? $checkedOutOn : $checkoutOn;
+        }
         $cursor = $start->max($monthStart->startOfDay());
         $last = $end->min($monthEnd->startOfDay());
         $dates = [];

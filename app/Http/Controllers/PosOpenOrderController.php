@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\SavePosOpenOrder;
+use App\Actions\ShopOrderStock;
 use App\Http\Requests\StorePosOpenOrderRequest;
 use App\Models\Branch;
 use App\Models\PosOpenOrder;
@@ -17,7 +18,7 @@ class PosOpenOrderController extends Controller
     {
         $order = $savePosOpenOrder->handle(
             $branch,
-            $request->safe()->only(['name', 'items']),
+            $request->safe()->only(['name', 'items', 'hotel_stay_id']),
             EmployeeSession::current() ?? ['employee_number' => '', 'name' => ''],
         );
 
@@ -35,7 +36,7 @@ class PosOpenOrderController extends Controller
     ): RedirectResponse|Response {
         $order = $savePosOpenOrder->handle(
             $branch,
-            $request->safe()->only(['name', 'items']),
+            $request->safe()->only(['name', 'items', 'hotel_stay_id']),
             EmployeeSession::current() ?? ['employee_number' => '', 'name' => ''],
             $posOpenOrder,
         );
@@ -45,13 +46,24 @@ class PosOpenOrderController extends Controller
         ]);
     }
 
-    public function destroy(Request $request, Branch $branch, PosOpenOrder $posOpenOrder, PosController $posController): RedirectResponse|Response
+    public function destroy(Request $request, Branch $branch, string $pos_open_order, ShopOrderStock $shopOrderStock, PosController $posController): RedirectResponse|Response
     {
-        $number = $posOpenOrder->number;
-        $posOpenOrder->delete();
+        $order = PosOpenOrder::query()->whereKey($pos_open_order)->first();
+
+        if ($order instanceof PosOpenOrder && $order->branch_id !== $branch->id) {
+            abort(404);
+        }
+
+        $number = null;
+
+        if ($order instanceof PosOpenOrder) {
+            $shopOrderStock->release($order);
+            $number = $order->number;
+            $order->delete();
+        }
 
         return $posController->fromMutation($request, $branch, [
-            'status' => 'Open order '.$number.' removed.',
+            'status' => $number === null ? 'Open order removed.' : 'Open order '.$number.' removed.',
         ]);
     }
 }

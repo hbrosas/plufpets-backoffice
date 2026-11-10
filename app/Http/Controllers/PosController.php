@@ -6,6 +6,8 @@ use App\Actions\SavePosOpenOrder;
 use App\Actions\SendShopOrderText;
 use App\Actions\ShopOrderStock;
 use App\Enums\CatalogItemType;
+use App\Enums\HotelPetGender;
+use App\Enums\HotelVaccine;
 use App\Enums\PosCashMovementType;
 use App\Enums\ShopOrderStatus;
 use App\Http\Requests\UpdateShopOrderRequest;
@@ -16,6 +18,9 @@ use App\Models\CatalogItemVariant;
 use App\Models\DeliveryMethod;
 use App\Models\DeliverySchedule;
 use App\Models\Employee;
+use App\Models\HotelPodType;
+use App\Models\HotelStay;
+use App\Models\HotelStayPayment;
 use App\Models\Modifier;
 use App\Models\PaymentMethod;
 use App\Models\PosCashMovement;
@@ -50,7 +55,7 @@ class PosController extends Controller
         $partial = array_values(array_filter(explode(',', (string) $request->header('X-Inertia-Partial-Data'))));
 
         if ($partial === [] && ! $request->isMethod('GET') && ! $request->isMethod('HEAD')) {
-            $partial = ['shift', 'todayTransactions', 'todayTransactionsTotal', 'openOrders', 'flash'];
+            $partial = ['shift', 'todayTransactions', 'todayTransactionsTotal', 'openOrders', 'hotelStays', 'flash'];
         }
 
         $wants = fn (string $key): bool => $partial === [] || in_array($key, $partial, true);
@@ -165,11 +170,42 @@ class PosController extends Controller
             $props['openOrders'] = PosOpenOrder::query()
                 ->where('branch_id', $branch->id)
                 ->whereNull('pos_sale_id')
+                ->whereNull('hotel_stay_id')
                 ->where(fn ($query) => $query->whereNull('status')->orWhere('status', ''))
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->get()
                 ->map(fn (PosOpenOrder $order): array => $this->openOrderPayload($order));
+        }
+
+        if ($wants('hotelStays')) {
+            $props['hotelStays'] = HotelStay::query()
+                ->with(['pets', 'payments', 'sales', 'podType', 'branch', 'guestCart'])
+                ->where('branch_id', $branch->id)
+                ->checkedIn()
+                ->orderByDesc('checked_in_at')
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn (HotelStay $stay): array => $stay->toRegisterPayload())
+                ->all();
+        }
+
+        if ($wants('hotelOptions')) {
+            $props['hotelOptions'] = [
+                'pod_types' => HotelPodType::query()
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('name')
+                    ->orderBy('id')
+                    ->get(['id', 'name'])
+                    ->map(fn (HotelPodType $podType): array => [
+                        'id' => $podType->id,
+                        'name' => $podType->name,
+                    ])
+                    ->all(),
+                'genders' => HotelPetGender::options(),
+                'vaccines' => HotelVaccine::options(),
+            ];
         }
 
         if ($wants('assignableEmployees')) {
@@ -715,10 +751,17 @@ class PosController extends Controller
             ->whereDate('sold_at', now()->toDateString())
             ->get();
 
-        $movements = PosCashMovement::query()
+        $hotelPayments = HotelStayPayment::query()
+            ->with('stay:id,client_name')
             ->whereHas('shift', fn ($query) => $query->where('branch_id', $branch->id))
             ->whereDate('recorded_at', now()->toDateString())
             ->get();
+        $hotelCashMovementIds = $hotelPayments->pluck('pos_cash_movement_id')->filter()->all();
+        $movements = PosCashMovement::query()
+            ->whereHas('shift', fn ($query) => $query->where('branch_id', $branch->id))
+            ->whereDate('recorded_at', now()->toDateString())
+            ->get()
+            ->reject(fn (PosCashMovement $movement): bool => in_array($movement->id, $hotelCashMovementIds, true));
 
         $startingShifts = PosShift::query()
             ->where('branch_id', $branch->id)
@@ -755,6 +798,19 @@ class PosController extends Controller
                     PosCashMovementType::OpenDrawer => '',
                     PosCashMovementType::CashIn => $amountLabel,
                 },
+                'payments' => [],
+                'items' => [],
+            ];
+        }))->concat($hotelPayments->map(function (HotelStayPayment $payment): array {
+            return [
+                'key' => 'hotel-payment-'.$payment->id,
+                'type' => 'hotel_payment',
+                'title' => 'Hotel payment',
+                'sort' => $payment->recorded_at?->timestamp ?? 0,
+                'time' => $this->clockLabel($payment->recorded_at),
+                'actor_name' => $payment->recorded_by_name,
+                'detail' => $payment->stay?->client_name,
+                'amount_label' => Peso::format($payment->amount),
                 'payments' => [],
                 'items' => [],
             ];

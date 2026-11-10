@@ -6,6 +6,7 @@ use App\Enums\PosCashMovementType;
 use App\Enums\PrinterRole;
 use App\Http\Requests\SalesShiftFilterRequest;
 use App\Models\Branch;
+use App\Models\HotelStayPayment;
 use App\Models\PosCashMovement;
 use App\Models\PosSale;
 use App\Models\PosShift;
@@ -32,6 +33,7 @@ class SalesShiftController extends Controller
                     'payments:id,pos_sale_id,payment_method_name,amount',
                 ]),
                 'cashMovements',
+                'hotelPayments.stay:id,client_name',
             ])
             ->inPeriod($filters)
             ->orderByDesc('opened_at')
@@ -86,6 +88,10 @@ class SalesShiftController extends Controller
     {
         $timezone = config('app.timezone');
         $rows = collect();
+        $hotelCashMovementIds = $shift->hotelPayments
+            ->pluck('pos_cash_movement_id')
+            ->filter()
+            ->all();
 
         if ((float) $shift->starting_cash > 0) {
             $rows->push([
@@ -119,8 +125,26 @@ class SalesShiftController extends Controller
             ]);
         }
 
+        foreach ($shift->hotelPayments as $payment) {
+            /** @var HotelStayPayment $payment */
+            $rows->push([
+                'key' => 'hotel-payment-'.$payment->id,
+                'sort' => $payment->recorded_at?->timestamp ?? 0,
+                'type' => 'Hotel payment',
+                'title' => 'Hotel payment',
+                'time' => $payment->recorded_at?->timezone($timezone)->format('g:i A'),
+                'actor' => $payment->recorded_by_name,
+                'detail' => (string) $payment->stay?->client_name,
+                'amount' => Peso::format($payment->amount),
+            ]);
+        }
+
         foreach ($shift->cashMovements as $movement) {
             /** @var PosCashMovement $movement */
+            if (in_array($movement->id, $hotelCashMovementIds, true)) {
+                continue;
+            }
+
             $amount = Peso::format($movement->amount);
             $rows->push([
                 'key' => 'cash-'.$movement->id,

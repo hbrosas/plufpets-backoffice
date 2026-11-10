@@ -1,12 +1,39 @@
 <script setup>
-import { ref } from 'vue';
+import { useForm } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import SalesRefundModal from '../../../components/SalesRefundModal.vue';
 
-defineProps({
+const props = defineProps({
     receipt: { type: Object, required: true },
+    canWaive: { type: Boolean, default: false },
 });
 
 const refundOpen = ref(false);
+const waiveForm = useForm({
+    employee_id: 'all',
+});
+
+const openEmployees = computed(() => {
+    const employees = new Map();
+
+    for (const line of props.receipt.commissions ?? []) {
+        if (line.waived || employees.has(line.employee_id)) {
+            continue;
+        }
+
+        employees.set(line.employee_id, line);
+    }
+
+    return [...employees.values()];
+});
+
+function waiveCommission() {
+    const params = window.location.search;
+
+    waiveForm.post(`/backoffice/sales/receipts/${props.receipt.id}/commissions/waive${params}`, {
+        preserveScroll: true,
+    });
+}
 </script>
 
 <template>
@@ -73,6 +100,50 @@ const refundOpen = ref(false);
                 </tbody>
             </table>
         </div>
+
+        <section
+            v-if="(receipt.commissions ?? []).length > 0"
+            class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5"
+        >
+            <h2 class="text-sm font-medium">Commissions</h2>
+            <ul class="flex flex-col gap-3 text-sm">
+                <li v-for="line in receipt.commissions" :key="line.id" class="flex flex-wrap items-baseline justify-between gap-2">
+                    <span>
+                        <span class="font-medium">{{ line.employee_name }}</span>
+                        <span class="text-ink/55 dark:text-foam/50"> · #{{ line.employee_number }} · {{ line.role }} · {{ line.item }}</span>
+                        <span v-if="line.waived" class="text-ink/55 dark:text-foam/50"> · Waived {{ line.waived_at }} by {{ line.waived_by }}</span>
+                    </span>
+                    <span :class="line.waived ? 'text-ink/40 line-through dark:text-foam/40' : ''">{{ line.amount }}</span>
+                </li>
+            </ul>
+            <form
+                v-if="canWaive && !receipt.is_refunded && openEmployees.length > 0"
+                class="flex flex-col gap-3 border-t border-mist pt-4 dark:border-white/10"
+                @submit.prevent="waiveCommission"
+            >
+                <label class="flex max-w-sm flex-col gap-1 text-sm" for="waive-commission-employee">
+                    Employee
+                    <select
+                        id="waive-commission-employee"
+                        v-model="waiveForm.employee_id"
+                        class="h-10 rounded-xl border border-mist bg-white pr-10 pl-3 text-sm outline-none transition focus:border-pine dark:border-white/15 dark:bg-ink"
+                    >
+                        <option value="all">All employees</option>
+                        <option v-for="employee in openEmployees" :key="employee.employee_id" :value="String(employee.employee_id)">
+                            {{ employee.employee_name }} · #{{ employee.employee_number }}
+                        </option>
+                    </select>
+                </label>
+                <p v-if="waiveForm.errors.employee_id" class="text-sm text-danger">{{ waiveForm.errors.employee_id }}</p>
+                <button
+                    class="h-10 w-fit rounded-xl bg-pine px-4 text-sm font-medium text-foam disabled:opacity-70"
+                    type="submit"
+                    :disabled="waiveForm.processing"
+                >
+                    {{ waiveForm.processing ? 'Waiving…' : 'Waive commission' }}
+                </button>
+            </form>
+        </section>
 
         <section class="grid gap-4 sm:grid-cols-2">
             <article class="flex flex-col gap-3 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">

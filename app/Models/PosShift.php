@@ -129,6 +129,14 @@ class PosShift extends Model
         return $this->hasMany(PosSale::class)->orderByDesc('sold_at')->orderByDesc('id');
     }
 
+    /**
+     * @return HasMany<HotelStayPayment, $this>
+     */
+    public function hotelPayments(): HasMany
+    {
+        return $this->hasMany(HotelStayPayment::class)->orderByDesc('recorded_at')->orderByDesc('id');
+    }
+
     public function cashInTotal(): string
     {
         return number_format((float) $this->cashMovements()

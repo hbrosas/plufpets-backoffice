@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'pos_shift_id',
     'branch_id',
+    'hotel_stay_id',
     'number',
     'payment_method_id',
     'payment_method_name',
@@ -27,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'subtotal',
     'tax_total',
     'total',
+    'hotel_credit',
     'amount_tendered',
     'change_due',
     'sold_by_employee_number',
@@ -53,6 +55,7 @@ class PosSale extends Model
             'subtotal' => 'decimal:2',
             'tax_total' => 'decimal:2',
             'total' => 'decimal:2',
+            'hotel_credit' => 'decimal:2',
             'amount_tendered' => 'decimal:2',
             'change_due' => 'decimal:2',
             'preferred_on' => 'date',
@@ -75,6 +78,14 @@ class PosSale extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * @return BelongsTo<HotelStay, $this>
+     */
+    public function hotelStay(): BelongsTo
+    {
+        return $this->belongsTo(HotelStay::class);
     }
 
     /**

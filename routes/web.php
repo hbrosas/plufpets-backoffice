@@ -17,6 +17,9 @@ use App\Http\Controllers\EmployeePayrollController;
 use App\Http\Controllers\EmployeeProfileController;
 use App\Http\Controllers\HolidayController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\HotelController;
+use App\Http\Controllers\HotelPodTypeController;
+use App\Http\Controllers\HotelStayController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\ModifierController;
 use App\Http\Controllers\MyCommissionController;
@@ -116,6 +119,16 @@ Route::prefix('backoffice')->group(function () {
             ->middleware('employee.permission:dashboard.view')
             ->name('dashboard');
 
+        Route::middleware('employee.permission:hotel.manage')->group(function () {
+            Route::get('/hotel', [HotelController::class, 'index'])->name('hotel.index');
+            Route::post('/hotel/stays', [HotelController::class, 'store'])->name('hotel.stays.store');
+            Route::post('/hotel/stays/{hotel_stay}/payments', [HotelController::class, 'storePayment'])->name('hotel.stays.payments.store');
+            Route::post('/hotel/stays/{hotel_stay}/checkout', [HotelController::class, 'checkout'])->name('hotel.stays.checkout');
+            Route::post('/hotel/pod-types', [HotelPodTypeController::class, 'store'])->name('hotel.pod-types.store');
+            Route::put('/hotel/pod-types/{hotel_pod_type}', [HotelPodTypeController::class, 'update'])->name('hotel.pod-types.update');
+            Route::delete('/hotel/pod-types/{hotel_pod_type}', [HotelPodTypeController::class, 'destroy'])->name('hotel.pod-types.destroy');
+        });
+
         Route::get('/reports/sales', [ReportController::class, 'sales'])
             ->middleware('employee.permission:sales.view')
             ->name('reports.sales');
@@ -190,6 +203,9 @@ Route::prefix('backoffice')->group(function () {
             Route::post('/pos/register/{branch}/shifts', [PosShiftController::class, 'store'])->name('pos.shifts.store');
             Route::post('/pos/register/{branch}/shifts/{pos_shift}/close', [PosShiftController::class, 'close'])->name('pos.shifts.close');
             Route::get('/pos/register/{branch}/shifts/{pos_shift}/z-report', [PosZReportController::class, 'show'])->name('pos.shifts.z-report');
+            Route::post('/pos/register/{branch}/hotel-stays', [HotelStayController::class, 'store'])->name('pos.hotel-stays.store');
+            Route::post('/pos/register/{branch}/hotel-stays/{hotel_stay}/payments', [HotelStayController::class, 'storePayment'])->name('pos.hotel-stays.payments.store');
+            Route::post('/pos/register/{branch}/hotel-stays/{hotel_stay}/checkout', [HotelStayController::class, 'checkout'])->name('pos.hotel-stays.checkout');
             Route::post('/pos/register/{branch}/sales/preview', [PosSaleController::class, 'preview'])->name('pos.sales.preview');
             Route::post('/pos/register/{branch}/sales', [PosSaleController::class, 'store'])->name('pos.sales.store');
             Route::get('/pos/register/{branch}/sales/{pos_sale}/receipt', [PosSaleController::class, 'receipt'])->name('pos.sales.receipt');
@@ -199,7 +215,6 @@ Route::prefix('backoffice')->group(function () {
                 ->scopeBindings()
                 ->name('pos.open-orders.update');
             Route::delete('/pos/register/{branch}/open-orders/{pos_open_order}', [PosOpenOrderController::class, 'destroy'])
-                ->scopeBindings()
                 ->name('pos.open-orders.destroy');
             Route::post('/pos/register/{branch}/cash-movements', [PosCashMovementController::class, 'store'])->name('pos.cash-movements.store');
             Route::post('/pos/register/{branch}/drawer-opens', [PosCashMovementController::class, 'openDrawer'])
@@ -247,6 +262,9 @@ Route::prefix('backoffice')->group(function () {
             Route::post('receipts/{pos_sale}/refund', [SalesReceiptController::class, 'refund'])
                 ->middleware('employee.permission:sales.refund')
                 ->name('receipts.refund');
+            Route::post('receipts/{pos_sale}/commissions/waive', [SalesReceiptController::class, 'waiveCommission'])
+                ->middleware('employee.permission:sales.waive-commission')
+                ->name('receipts.commissions.waive');
             Route::get('items', [SalesItemController::class, 'index'])->name('items.index');
             Route::get('shifts', [SalesShiftController::class, 'index'])->name('shifts.index');
         });

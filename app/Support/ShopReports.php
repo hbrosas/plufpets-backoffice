@@ -151,6 +151,7 @@ class ShopReports
     public function commissions(ReportPeriod $period, ?int $employeeId = null): array
     {
         $rows = PosSaleItemCommission::query()
+            ->payable()
             ->join('pos_sale_items', 'pos_sale_items.id', '=', 'pos_sale_item_commissions.pos_sale_item_id')
             ->join('pos_sales', 'pos_sales.id', '=', 'pos_sale_items.pos_sale_id')
             ->whereNull('pos_sales.refunded_at')
@@ -195,6 +196,7 @@ class ShopReports
     public function commissionLines(ReportPeriod $period, int $employeeId): array
     {
         return PosSaleItemCommission::query()
+            ->payable()
             ->join('pos_sale_items', 'pos_sale_items.id', '=', 'pos_sale_item_commissions.pos_sale_item_id')
             ->join('pos_sales', 'pos_sales.id', '=', 'pos_sale_items.pos_sale_id')
             ->whereNull('pos_sales.refunded_at')

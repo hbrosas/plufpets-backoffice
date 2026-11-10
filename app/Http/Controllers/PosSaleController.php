@@ -40,6 +40,8 @@ class PosSaleController extends Controller
                 'preferred_on',
                 'delivery_fee',
                 'tax_fee_ids',
+                'hotel_stay_id',
+                'apply_hotel_payment',
             ]),
             $shopOrderStock->coveredQuantities($openOrder),
         );
@@ -85,6 +87,8 @@ class PosSaleController extends Controller
                     'delivery_fee',
                     'tax_fee_ids',
                     'number',
+                    'hotel_stay_id',
+                    'apply_hotel_payment',
                 ]),
                 $employee ?? ['employee_number' => '', 'name' => ''],
                 $onlineOrder ?? $ticket,
@@ -103,6 +107,14 @@ class PosSaleController extends Controller
 
             if ($ticket instanceof PosOpenOrder && (! is_string($ticket->status) || $ticket->status === '')) {
                 $ticket->delete();
+            }
+
+            if ($sale->hotel_stay_id !== null) {
+                PosOpenOrder::query()
+                    ->where('branch_id', $branch->id)
+                    ->where('hotel_stay_id', $sale->hotel_stay_id)
+                    ->where(fn ($query) => $query->whereNull('status')->orWhere('status', ''))
+                    ->delete();
             }
 
             return $sale;

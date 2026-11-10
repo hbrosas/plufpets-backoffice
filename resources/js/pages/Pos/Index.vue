@@ -1,7 +1,8 @@
 <script setup>
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import BarcodeInput from '../../components/BarcodeInput.vue';
+import HotelManager from '../../components/HotelManager.vue';
 import PreferredSlotButtons from '../../components/PreferredSlotButtons.vue';
 import CountBadge from '../../components/CountBadge.vue';
 import { formatPeso } from '../../formatPeso';
@@ -38,6 +39,11 @@ const props = defineProps({
     openOrders: { type: Array, default: () => [] },
     printers: { type: Array, default: () => [] },
     assignableEmployees: { type: Array, default: () => [] },
+    hotelStays: { type: Array, default: () => [] },
+    hotelOptions: {
+        type: Object,
+        default: () => ({ pod_types: [], genders: [], vaccines: [] }),
+    },
 });
 
 const page = usePage();
@@ -58,6 +64,9 @@ const selectedProductCategory = ref('');
 const search = ref('');
 const cart = ref([]);
 const salesOpen = ref(false);
+const hotelOpen = ref(false);
+const hotelSale = ref(null);
+const applyHotelPayment = ref(false);
 const reprintingSaleId = ref(null);
 const cashOpen = ref(false);
 const closeOpen = ref(false);
@@ -74,6 +83,8 @@ const printersOpen = ref(false);
 const printerNotice = ref('');
 const connectingPrinterId = ref(null);
 const openOrdersOpen = ref(false);
+const hiddenOpenOrderIds = ref([]);
+const visibleOpenOrders = computed(() => props.openOrders.filter((order) => !hiddenOpenOrderIds.value.includes(order.id)));
 const saveOpen = ref(false);
 const activeOpenOrderId = ref(null);
 const orderStockCredit = ref({});
@@ -101,7 +112,7 @@ const registerPartial = {
     preserveState: true,
     preserveUrl: true,
     showProgress: false,
-    only: ['shift', 'todayTransactions', 'todayTransactionsTotal', 'openOrders', 'flash'],
+    only: ['shift', 'todayTransactions', 'todayTransactionsTotal', 'openOrders', 'hotelStays', 'flash'],
 };
 
 watch(
@@ -145,6 +156,12 @@ const checkoutError = ref('');
 const openOrderForm = useForm({
     name: '',
     items: [],
+});
+
+const guestCartForm = useForm({
+    name: '',
+    items: [],
+    hotel_stay_id: null,
 });
 
 const deleteOpenOrderForm = useForm({});
@@ -282,11 +299,27 @@ const taxTotal = computed(() => props.taxFees.reduce((sum, tax) => {
 
 const saleTotal = computed(() => cartSubtotal.value + deliveryFee.value + taxTotal.value);
 
+const hotelCreditApplied = computed(() => {
+    if (!applyHotelPayment.value || !hotelSale.value) {
+        return 0;
+    }
+
+    const available = Number(hotelSale.value.payments_available ?? 0);
+
+    if (!Number.isFinite(available) || available <= 0) {
+        return 0;
+    }
+
+    return Math.round(Math.min(available, saleTotal.value) * 100) / 100;
+});
+
+const amountDue = computed(() => Math.max(0, Math.round((saleTotal.value - hotelCreditApplied.value) * 100) / 100));
+
 const paidTotal = computed(() =>
     checkoutPayments.value.reduce((sum, payment) => sum + Number(payment.amount), 0),
 );
 
-const remainingTotal = computed(() => Math.max(0, Math.round((saleTotal.value - paidTotal.value) * 100) / 100));
+const remainingTotal = computed(() => Math.max(0, Math.round((amountDue.value - paidTotal.value) * 100) / 100));
 
 const checkoutBillValues = computed(() =>
     [...props.denominations]
@@ -460,6 +493,24 @@ function recordDrawerOpen() {
                 reject(new Error(Array.isArray(message) ? message[0] : (message || 'Could not record the drawer open.')));
             },
         });
+    });
+}
+
+const skipDrawerFlash = ref(false);
+
+async function kickCashDrawer() {
+    try {
+        await openAssignedDrawer(receiptPrinter.value, false);
+    } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.', { tone: 'warning' });
+    }
+}
+
+function openHotelDrawer() {
+    skipDrawerFlash.value = true;
+    kickCashDrawer();
+    nextTick(() => {
+        skipDrawerFlash.value = false;
     });
 }
 
@@ -979,13 +1030,52 @@ function openOrderItems() {
     }));
 }
 
+let cashTenderedDefault = '';
+
+function sameMoney(left, right) {
+    const amount = Number(left);
+    const other = Number(right);
+
+    return Number.isFinite(amount) && Number.isFinite(other) && Math.abs(amount - other) < 0.005;
+}
+
+function cashChargeDefault() {
+    const method = props.paymentMethods.find((row) => String(row.id) === String(draftPaymentMethodId.value));
+
+    if (!method?.is_cash || remainingTotal.value <= 0) {
+        return '';
+    }
+
+    return remainingTotal.value.toFixed(2);
+}
+
+function applyCashChargeDefault() {
+    const next = cashChargeDefault();
+
+    if (draftTendered.value === '' || sameMoney(draftTendered.value, cashTenderedDefault)) {
+        draftTendered.value = next;
+    }
+
+    cashTenderedDefault = next;
+}
+
 function resetDraftPayment() {
     draftPaymentMethodId.value = defaultPaymentMethodId();
     draftAmount.value = remainingTotal.value > 0 ? remainingTotal.value.toFixed(2) : '';
-    draftTendered.value = '';
     draftReference.value = '';
     checkoutError.value = '';
+    cashTenderedDefault = '';
+    draftTendered.value = '';
+    applyCashChargeDefault();
 }
+
+watch([remainingTotal, draftPaymentMethodId], () => {
+    if (!chargeOpen.value) {
+        return;
+    }
+
+    applyCashChargeDefault();
+});
 
 function closeCheckout() {
     if (charging.value) {
@@ -1177,6 +1267,8 @@ async function charge() {
         delivery_fee: saleForm.delivery_fee,
         tax_fee_ids: selectedTaxIds.value,
         pos_open_order_id: activeOpenOrderId.value,
+        hotel_stay_id: hotelSale.value?.id ?? null,
+        apply_hotel_payment: hotelCreditApplied.value > 0,
     };
 
     checkoutSuccess.value = {
@@ -1216,6 +1308,8 @@ async function charge() {
         splitCheckout.value = false;
         activeOpenOrderId.value = null;
         activeOpenOrderName.value = '';
+        hotelSale.value = null;
+        applyHotelPayment.value = false;
         orderStockCredit.value = {};
         saleForm.reset();
 
@@ -1288,8 +1382,92 @@ async function reprintReceipt(transaction) {
     }
 }
 
+function beginHotelSale(stay) {
+    const cartId = stay.cart?.open_order_id ?? null;
+
+    if (cart.value.length > 0 && activeOpenOrderId.value !== cartId) {
+        showToast('Clear the cart before opening this guest cart.');
+
+        return;
+    }
+
+    hotelOpen.value = false;
+    applyHotelPayment.value = false;
+    hotelSale.value = {
+        id: stay.id,
+        client_name: stay.client_name,
+        payments_available: stay.payments_available,
+        payments_available_label: stay.payments_available_label,
+    };
+
+    if (cart.value.length === 0 && cartId) {
+        loadGuestCart(stay.cart);
+    }
+}
+
+function loadGuestCart(saved) {
+    partialDelivery.value = '';
+    cart.value = (saved.items ?? []).map((item) => {
+        cartLineSeq += 1;
+        const variant = props.variants.find((row) => row.id === item.catalog_item_variant_id);
+
+        return {
+            key: cartLineSeq,
+            id: item.catalog_item_variant_id,
+            product_name: item.product_name,
+            variant_name: item.variant_name,
+            price: Number(item.price),
+            quantity: item.quantity,
+            notes: item.notes ?? '',
+            modifiers: item.modifiers ?? [],
+            assigned_employee_ids: item.is_free ? [] : (item.assigned_employee_ids ?? []),
+            assisted_employee_ids: item.is_free ? [] : (item.assisted_employee_ids ?? []),
+            is_product: item.is_free ? false : item.is_product,
+            is_free: Boolean(item.is_free),
+            available: item.is_free ? null : (variant?.quantity ?? null),
+        };
+    });
+    activeOpenOrderId.value = saved.open_order_id;
+    activeOpenOrderName.value = hotelSale.value?.client_name ?? '';
+}
+
+function clearGuestCart() {
+    cart.value = [];
+    activeOpenOrderId.value = null;
+    activeOpenOrderName.value = '';
+    hotelSale.value = null;
+    applyHotelPayment.value = false;
+}
+
+function saveGuestCart() {
+    const stay = hotelSale.value;
+
+    if (!stay || guestCartForm.processing || cart.value.length === 0) {
+        return;
+    }
+
+    const stayId = stay.id;
+    guestCartForm.name = stay.client_name;
+    guestCartForm.hotel_stay_id = stayId;
+    guestCartForm.items = openOrderItems();
+    guestCartForm.post(`${registerPath.value}/open-orders`, {
+        preserveScroll: true,
+        preserveState: true,
+        preserveUrl: true,
+        only: ['openOrders', 'hotelStays', 'flash'],
+        onSuccess: (page) => {
+            const saved = (page.props.hotelStays ?? []).find((row) => row.id === stayId);
+
+            if (hotelSale.value?.id === stayId && saved?.cart?.open_order_id) {
+                activeOpenOrderId.value = saved.cart.open_order_id;
+                activeOpenOrderName.value = stay.client_name;
+            }
+        },
+    });
+}
+
 function openSave() {
-    if (cart.value.length === 0) {
+    if (cart.value.length === 0 || hotelSale.value) {
         return;
     }
 
@@ -1357,14 +1535,38 @@ function resumeOpenOrder(order) {
 }
 
 function removeOpenOrder(order) {
+    if (hiddenOpenOrderIds.value.includes(order.id)) {
+        return;
+    }
+
+    hiddenOpenOrderIds.value = [...hiddenOpenOrderIds.value, order.id];
+
     deleteOpenOrderForm.delete(`${registerPath.value}/open-orders/${order.id}`, {
-        ...registerPartial,
+        preserveScroll: true,
+        preserveState: true,
+        preserveUrl: true,
+        only: ['openOrders', 'flash'],
         onSuccess: () => {
             if (activeOpenOrderId.value === order.id) {
                 activeOpenOrderId.value = null;
                 activeOpenOrderName.value = '';
                 orderStockCredit.value = {};
             }
+        },
+        onError: () => {
+            hiddenOpenOrderIds.value = hiddenOpenOrderIds.value.filter((id) => id !== order.id);
+            showToast('Could not remove this open order.');
+        },
+        onCancel: () => {
+            router.reload({
+                preserveScroll: true,
+                preserveState: true,
+                preserveUrl: true,
+                only: ['openOrders'],
+                onFinish: () => {
+                    hiddenOpenOrderIds.value = hiddenOpenOrderIds.value.filter((id) => id !== order.id);
+                },
+            });
         },
     });
 }
@@ -1448,6 +1650,12 @@ async function submitClose() {
 watch(
     () => flash.value.open_drawer,
     (value) => {
+        if (skipDrawerFlash.value) {
+            skipDrawerFlash.value = false;
+
+            return;
+        }
+
         if (value) {
             openDrawer(false);
         }
@@ -1911,6 +2119,16 @@ onUnmounted(() => {
             <button
                 class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
                 type="button"
+                @click="hotelOpen = true"
+            >
+                <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M3.5 8.5 10 3.5l6.5 5V16a1 1 0 0 1-1 1h-4.2v-4.2H8.7V17H4.5a1 1 0 0 1-1-1V8.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                </svg>
+                Manage Hotel
+            </button>
+            <button
+                class="flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium hover:bg-mist/70 dark:hover:bg-white/10"
+                type="button"
                 @click="beginCloseShift"
             >
                 <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -1922,14 +2140,25 @@ onUnmounted(() => {
         </template>
     </Teleport>
 
+    <HotelManager
+        :open="hotelOpen"
+        :stays="hotelStays"
+        :options="hotelOptions"
+        :payment-methods="paymentMethods"
+        :register-path="registerPath"
+        @close="hotelOpen = false"
+        @sell="beginHotelSale"
+        @drawer="openHotelDrawer"
+    />
+
     <div class="relative flex min-h-0 flex-1 flex-col gap-3 sm:gap-4">
         <form
             v-if="!shift"
             id="open-shift-form"
-            class="grid min-h-0 flex-1 grid-cols-2 overflow-hidden rounded-2xl border border-mist bg-foam dark:border-white/10 dark:bg-ink"
+            class="grid h-full min-h-0 flex-1 grid-cols-2 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl border border-mist bg-foam dark:border-white/10 dark:bg-ink"
             @submit.prevent="openShift"
         >
-            <section class="flex min-h-0 flex-col gap-6 overflow-y-auto border-r border-mist p-4 sm:p-6 dark:border-white/10">
+            <section class="flex h-full min-h-0 flex-col gap-6 overflow-y-auto border-r border-mist p-4 sm:p-6 dark:border-white/10">
                 <div class="flex flex-col gap-1">
                     <h2 class="text-lg font-medium">Open Shift · {{ branch.name }}</h2>
                     <p class="text-sm text-ink/60 dark:text-foam/60">
@@ -1999,9 +2228,9 @@ onUnmounted(() => {
 
         <div
             v-else
-            class="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(14rem,48dvh)] gap-3 sm:gap-4 min-[48rem]:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] min-[48rem]:grid-rows-none"
+            class="grid h-full min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(14rem,48dvh)] gap-3 sm:gap-4 min-[48rem]:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] min-[48rem]:grid-rows-[minmax(0,1fr)]"
         >
-            <section class="@container flex min-h-0 flex-col gap-3">
+            <section class="@container flex h-full min-h-0 flex-col gap-3">
                 <div class="flex shrink-0 items-center gap-2">
                     <div class="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5">
                         <button
@@ -2084,6 +2313,10 @@ onUnmounted(() => {
                             {{ employee?.name }} · #{{ employee?.employee_number }}
                         </p>
                         <p v-if="activeOpenOrderName" class="truncate text-xs font-medium">{{ activeOpenOrderName }}</p>
+                        <p v-if="hotelSale" class="mt-1 flex items-center justify-between gap-2 text-xs">
+                            <span class="truncate font-medium">Guest cart · {{ hotelSale.client_name }}</span>
+                            <button class="shrink-0 font-medium" type="button" @click="clearGuestCart">Clear</button>
+                        </p>
                         <p v-if="partialDelivery" class="mt-1 text-xs text-ink/70 dark:text-foam/70">{{ partialDelivery }}</p>
                     </div>
                     <div v-if="cart.length === 0" class="min-h-0 flex-1 overflow-y-auto px-4 py-6 text-sm text-ink/60 sm:px-5">
@@ -2146,15 +2379,17 @@ onUnmounted(() => {
                         <span>Total</span>
                         <span>{{ formatPeso(cartSubtotal) }}</span>
                     </div>
-                    <p v-if="openOrderForm.errors.items" class="text-sm text-danger">{{ openOrderForm.errors.items }}</p>
-                    <p v-if="openOrderForm.errors.status" class="text-sm text-danger">{{ openOrderForm.errors.status }}</p>
+                    <p v-if="openOrderForm.errors.items || guestCartForm.errors.items" class="text-sm text-danger">{{ openOrderForm.errors.items || guestCartForm.errors.items }}</p>
+                    <p v-if="guestCartForm.errors.hotel_stay_id" class="text-sm text-danger">{{ guestCartForm.errors.hotel_stay_id }}</p>
+                    <p v-if="openOrderForm.errors.status || guestCartForm.errors.status" class="text-sm text-danger">{{ openOrderForm.errors.status || guestCartForm.errors.status }}</p>
                     <div class="flex overflow-hidden rounded-xl border border-mist dark:border-white/15">
                         <button
-                            class="h-11 flex-1 text-sm font-medium"
+                            class="h-11 flex-1 text-sm font-medium disabled:opacity-50"
                             type="button"
-                            @click="cart.length > 0 ? openSave() : (openOrdersOpen = true)"
+                            :disabled="guestCartForm.processing"
+                            @click="cart.length > 0 ? (hotelSale ? saveGuestCart() : openSave()) : (openOrdersOpen = true)"
                         >
-                            {{ cart.length > 0 ? 'Save' : 'Open Orders' }}
+                            {{ guestCartForm.processing ? 'Saving…' : (cart.length > 0 ? 'Save' : 'Open Orders') }}
                         </button>
                         <button
                             class="h-11 flex-1 bg-pine text-sm font-medium text-foam disabled:opacity-50"
@@ -2172,10 +2407,10 @@ onUnmounted(() => {
         <form
             v-if="closeOpen && shift"
             id="close-shift-form"
-            class="absolute inset-0 z-40 grid grid-cols-2 overflow-hidden rounded-2xl border border-mist bg-foam dark:border-white/10 dark:bg-ink"
+            class="absolute inset-0 z-40 grid h-full grid-cols-2 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl border border-mist bg-foam dark:border-white/10 dark:bg-ink"
             @submit.prevent="submitClose"
         >
-            <section class="flex min-h-0 flex-col gap-6 overflow-y-auto border-r border-mist p-4 sm:p-6 dark:border-white/10">
+            <section class="flex h-full min-h-0 flex-col gap-6 overflow-y-auto border-r border-mist p-4 sm:p-6 dark:border-white/10">
                 <p class="text-sm font-medium">Cash breakdown</p>
                 <dl class="flex flex-col gap-3 text-sm">
                     <div class="flex items-center justify-between gap-4">
@@ -2431,8 +2666,8 @@ onUnmounted(() => {
             <h2 class="text-lg font-medium">Checkout · {{ formatPeso(saleTotal) }}</h2>
             <button class="text-sm font-medium disabled:opacity-70" type="button" :disabled="charging" @click="closeCheckout">Close</button>
         </div>
-        <div class="grid min-h-0 flex-1 grid-cols-2">
-            <section class="min-h-0 overflow-y-auto border-r border-mist p-4 sm:p-6 dark:border-white/10">
+        <div class="grid h-full min-h-0 flex-1 grid-cols-2 grid-rows-[minmax(0,1fr)]">
+            <section class="h-full min-h-0 overflow-y-auto border-r border-mist p-4 sm:p-6 dark:border-white/10">
                 <p class="text-sm font-medium">Order</p>
                 <ul class="mt-3 flex flex-col gap-3">
                     <li v-for="line in cart" :key="line.key" class="flex items-start justify-between gap-3 text-sm">
@@ -2520,6 +2755,14 @@ onUnmounted(() => {
                         </label>
                         <div class="flex justify-between"><span>Tax</span><span>{{ formatPeso(taxTotal) }}</span></div>
                         <div class="flex justify-between font-medium"><span>Total</span><span>{{ formatPeso(saleTotal) }}</span></div>
+                        <div v-if="hotelCreditApplied > 0" class="flex justify-between">
+                            <span>Hotel payment</span>
+                            <span>-{{ formatPeso(hotelCreditApplied) }}</span>
+                        </div>
+                        <div v-if="hotelCreditApplied > 0" class="flex justify-between font-medium">
+                            <span>Amount due</span>
+                            <span>{{ formatPeso(amountDue) }}</span>
+                        </div>
                         <template v-if="splitCheckout">
                             <div class="flex justify-between"><span>Paid</span><span>{{ formatPeso(paidTotal) }}</span></div>
                             <div class="flex justify-between font-medium"><span>Remaining</span><span>{{ formatPeso(remainingTotal) }}</span></div>
@@ -2538,8 +2781,16 @@ onUnmounted(() => {
                             Split Payment
                         </button>
                     </div>
+                    <label
+                        v-if="hotelSale && Number(hotelSale.payments_available) > 0"
+                        class="flex items-center gap-2 text-sm font-medium"
+                    >
+                        <input v-model="applyHotelPayment" class="h-4 w-4 accent-pine" type="checkbox" />
+                        Apply hotel payment ({{ hotelSale.payments_available_label }} available)
+                    </label>
+                    <p v-if="saleForm.errors.apply_hotel_payment" class="text-sm text-danger">{{ saleForm.errors.apply_hotel_payment }}</p>
                     <p class="text-center text-4xl font-medium sm:text-5xl">
-                        {{ formatPeso(splitCheckout ? remainingTotal : saleTotal) }}
+                        {{ formatPeso(splitCheckout || hotelCreditApplied > 0 ? remainingTotal : saleTotal) }}
                     </p>
                     <p class="text-center text-sm text-ink/55 dark:text-foam/55">
                         {{ splitCheckout ? 'Remaining' : 'Amount due' }}
@@ -2613,6 +2864,8 @@ onUnmounted(() => {
                                     step="0.01"
                                     type="number"
                                     :placeholder="draftPaymentMethod.asks_for_change ? 'Change for' : 'Cash given'"
+                                    @focus="selectInputValue"
+                                    @click="selectInputValue"
                                 />
                                 <button
                                     class="h-11 shrink-0 rounded-xl bg-pine px-5 text-sm font-medium text-foam disabled:opacity-70"
@@ -2943,9 +3196,9 @@ onUnmounted(() => {
                 <button class="text-sm font-medium" type="button" @click="openOrdersOpen = false">Close</button>
             </div>
             <p class="text-sm text-ink/60">Select an open order to load it into the cart.</p>
-            <p v-if="openOrders.length === 0" class="text-sm text-ink/60">No open orders.</p>
+            <p v-if="visibleOpenOrders.length === 0" class="text-sm text-ink/60">No open orders.</p>
             <article
-                v-for="order in openOrders"
+                v-for="order in visibleOpenOrders"
                 :key="order.id"
                 class="flex flex-col gap-2 border-b border-mist pb-3 dark:border-white/10"
             >

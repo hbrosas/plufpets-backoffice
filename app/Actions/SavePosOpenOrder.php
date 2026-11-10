@@ -3,6 +3,7 @@
 namespace App\Actions;
 
 use App\Models\Branch;
+use App\Models\HotelStay;
 use App\Models\PosOpenOrder;
 use App\Models\PosShift;
 use Illuminate\Validation\ValidationException;
@@ -11,11 +12,29 @@ class SavePosOpenOrder
 {
     /**
      * @param  array{employee_number: string, name: string}  $employee
-     * @param  array{name: string, items: list<array<string, mixed>>}  $attributes
+     * @param  array{name: string, items: list<array<string, mixed>>, hotel_stay_id?: int|null}  $attributes
      */
     public function handle(Branch $branch, array $attributes, array $employee, ?PosOpenOrder $openOrder = null): PosOpenOrder
     {
         $this->ensureOpenShift($branch);
+
+        $stayId = isset($attributes['hotel_stay_id']) ? (int) $attributes['hotel_stay_id'] : null;
+
+        if ($stayId !== null) {
+            $this->ensureCheckedInGuest($branch, $stayId);
+        }
+
+        if ($openOrder === null && $stayId !== null) {
+            $existing = PosOpenOrder::query()
+                ->where('branch_id', $branch->id)
+                ->where('hotel_stay_id', $stayId)
+                ->whereNull('pos_sale_id')
+                ->first();
+
+            if ($existing instanceof PosOpenOrder) {
+                $openOrder = $existing;
+            }
+        }
 
         $items = $attributes['items'];
         $subtotal = collect($items)->sum(
@@ -30,6 +49,10 @@ class SavePosOpenOrder
             'saved_by_name' => $employee['name'],
         ];
 
+        if ($stayId !== null) {
+            $payload['hotel_stay_id'] = $stayId;
+        }
+
         if ($openOrder !== null) {
             $openOrder->update($payload);
 
@@ -41,6 +64,21 @@ class SavePosOpenOrder
             'branch_id' => $branch->id,
             'number' => $this->nextNumber($branch->id),
         ]);
+    }
+
+    private function ensureCheckedInGuest(Branch $branch, int $stayId): void
+    {
+        $stay = HotelStay::query()
+            ->whereKey($stayId)
+            ->where('branch_id', $branch->id)
+            ->whereNull('checked_out_at')
+            ->first();
+
+        if (! $stay instanceof HotelStay) {
+            throw ValidationException::withMessages([
+                'hotel_stay_id' => 'Choose a guest who is still checked in.',
+            ]);
+        }
     }
 
     private function ensureOpenShift(Branch $branch): void

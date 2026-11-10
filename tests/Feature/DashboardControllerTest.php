@@ -12,6 +12,10 @@ use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
 use App\Models\Employee;
 use App\Models\Holiday;
+use App\Models\HotelPodType;
+use App\Models\HotelStay;
+use App\Models\HotelStayPayment;
+use App\Models\HotelStayPet;
 use App\Models\PayrollFiling;
 use App\Models\PosCashMovement;
 use App\Models\PosOpenOrder;
@@ -525,6 +529,97 @@ class DashboardControllerTest extends TestCase
                 ->where('cashAdvances.0.reason', 'Emergency')
                 ->where('cashAdvances.0.status_label', 'Pending')
                 ->where('cashAdvances.0.requested_on', 'Nov 7, 2026'));
+    }
+
+    public function test_shift_activity_lists_a_hotel_payment_by_the_amount_paid(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-06-15 04:00:00', 'UTC'));
+
+        $branch = Branch::factory()->create(['name' => 'Greenheights']);
+        $viewer = $this->employeeWith(['dashboard.view', 'sales.view']);
+        $shift = PosShift::factory()->create([
+            'branch_id' => $branch->id,
+            'opened_at' => CarbonImmutable::parse('2026-06-15 01:00:00', 'UTC'),
+            'starting_cash' => 1000,
+        ]);
+        $stay = HotelStay::factory()->create([
+            'branch_id' => $branch->id,
+            'pos_shift_id' => $shift->id,
+            'client_name' => 'Mina Cruz',
+        ]);
+        $movement = PosCashMovement::factory()->create([
+            'pos_shift_id' => $shift->id,
+            'type' => PosCashMovementType::CashIn,
+            'amount' => 500,
+            'reason' => 'Hotel downpayment for Mina Cruz',
+            'recorded_at' => CarbonImmutable::parse('2026-06-15 02:00:00', 'UTC'),
+        ]);
+        HotelStayPayment::factory()->create([
+            'hotel_stay_id' => $stay->id,
+            'pos_shift_id' => $shift->id,
+            'pos_cash_movement_id' => $movement->id,
+            'amount' => '500.00',
+            'recorded_at' => CarbonImmutable::parse('2026-06-15 02:00:00', 'UTC'),
+        ]);
+
+        $this->actingAsEmployee($viewer)
+            ->get('/backoffice/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('branchOrders.0.activities', fn ($rows) => $rows->contains(
+                    fn ($row) => $row['title'] === 'Hotel payment'
+                        && $row['detail'] === 'Mina Cruz'
+                        && $row['amount_label'] === '₱500.00',
+                ) && $rows->doesntContain(fn ($row) => $row['title'] === 'Cash in')));
+    }
+
+    public function test_calendar_shows_guests_after_they_check_out(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-06-15 04:00:00', 'UTC'));
+
+        $manager = $this->employeeWith(['dashboard.view', 'staff.manage'], 'Ada Manager', '30001');
+        $branch = Branch::factory()->create(['name' => 'North']);
+        $stay = HotelStay::factory()->create([
+            'branch_id' => $branch->id,
+            'client_name' => 'Mina Cruz',
+            'checked_in_at' => '2026-06-14 02:00:00',
+            'checkout_on' => '2026-06-14',
+            'hotel_pod_type_id' => HotelPodType::query()->where('name', 'Small dog')->value('id'),
+        ]);
+        HotelStayPet::factory()->create([
+            'hotel_stay_id' => $stay->id,
+            'name' => 'Biscuit',
+        ]);
+        HotelStayPayment::factory()->create([
+            'hotel_stay_id' => $stay->id,
+            'pos_shift_id' => $stay->pos_shift_id,
+            'amount' => '250.00',
+        ]);
+        HotelStay::factory()->checkedOut()->create([
+            'branch_id' => $branch->id,
+            'client_name' => 'Gone Guest',
+            'checked_in_at' => '2026-06-14 02:00:00',
+            'checkout_on' => '2026-06-16',
+        ]);
+        HotelStay::factory()->create([
+            'client_name' => 'Later Guest',
+            'checked_in_at' => '2026-07-02 02:00:00',
+            'checkout_on' => '2026-07-04',
+        ]);
+
+        $this->actingAsEmployee($manager)
+            ->get('/backoffice/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('schedule.guests', 2)
+                ->where('schedule.guests.0.client', 'Mina Cruz')
+                ->where('schedule.guests.0.pets', 'Biscuit')
+                ->where('schedule.guests.0.pod_type', 'Small dog')
+                ->where('schedule.guests.0.paid_label', '₱250.00')
+                ->where('schedule.guests.0.branch', 'North')
+                ->where('schedule.guests.0.dates', ['2026-06-14', '2026-06-15'])
+                ->where('schedule.guests.1.client', 'Gone Guest')
+                ->where('schedule.guests.1.dates', ['2026-06-14', '2026-06-15', '2026-06-16']));
     }
 
     /**

@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Enums\CommissionRole;
 use Database\Factories\PosSaleItemCommissionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,6 +21,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'pool_size',
     'commissionable_amount',
     'amount',
+    'waived_at',
+    'waived_by_employee_number',
+    'waived_by_name',
 ])]
 class PosSaleItemCommission extends Model
 {
@@ -36,7 +41,18 @@ class PosSaleItemCommission extends Model
             'pool_size' => 'integer',
             'commissionable_amount' => 'decimal:2',
             'amount' => 'decimal:2',
+            'waived_at' => 'datetime',
         ];
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    #[Scope]
+    protected function payable(Builder $query): Builder
+    {
+        return $query->whereNull($query->qualifyColumn('waived_at'));
     }
 
     /**

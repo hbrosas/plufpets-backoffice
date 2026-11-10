@@ -540,6 +540,31 @@ class EmployeePayrollControllerTest extends TestCase
                 ->where('payroll.net', '185.00'));
     }
 
+    public function test_waived_commissions_are_left_out_of_payroll(): void
+    {
+        $employee = $this->employeeWithProfile(PayBasis::Day);
+        $branch = Branch::factory()->create(['name' => 'BGC']);
+
+        $this->recordCommission($employee, '2026-10-05 02:00:00', '25.00', branch: $branch);
+        $this->recordCommission($employee, '2026-10-05 03:00:00', '40.00', branch: $branch, waived: true);
+
+        $this->actingAsEmployee()
+            ->get(route('staff.record.show', [
+                'employee' => $employee,
+                ...$this->hours(),
+                'days_worked' => '0',
+                'late_hours' => '0',
+                'overtime_hours' => '0',
+                'deduct_government' => 0,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('payroll.earnings.1.group', 'Commissions')
+                ->where('payroll.earnings.1.label', 'BGC')
+                ->where('payroll.earnings.1.amount', '25.00')
+                ->where('payroll.net', '25.00'));
+    }
+
     public function test_days_worked_cannot_exceed_the_period_and_holidays_must_fall_inside_it(): void
     {
         $employee = $this->employeeWithProfile();
@@ -802,7 +827,7 @@ class EmployeePayrollControllerTest extends TestCase
             ]);
     }
 
-    private function recordCommission(Employee $employee, string $soldAt, string $amount, bool $refunded = false, ?Branch $branch = null): void
+    private function recordCommission(Employee $employee, string $soldAt, string $amount, bool $refunded = false, ?Branch $branch = null, bool $waived = false): void
     {
         $sale = PosSale::factory()->create([
             'sold_at' => $soldAt,
@@ -817,6 +842,7 @@ class EmployeePayrollControllerTest extends TestCase
             'pos_sale_item_id' => $item->id,
             'employee_id' => $employee->id,
             'amount' => $amount,
+            'waived_at' => $waived ? $soldAt : null,
         ]);
     }
 

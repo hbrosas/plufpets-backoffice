@@ -15,6 +15,7 @@ const props = defineProps({
     branches: { type: Array, required: true },
     receipts: { type: Object, required: true },
     receipt: { type: Object, default: null },
+    can_waive_commissions: { type: Boolean, default: false },
 });
 
 const selectedId = ref(props.receipt?.id ?? null);
@@ -128,7 +129,7 @@ function selectReceipt(item) {
             </nav>
         </div>
 
-        <ReceiptView v-if="selected" :key="selected.id" :receipt="selected" />
+        <ReceiptView v-if="selected" :key="selected.id" :receipt="selected" :can-waive="can_waive_commissions" />
         <p v-else class="rounded-2xl border border-mist bg-white px-5 py-10 text-sm text-ink/60 dark:border-white/10 dark:bg-white/5 dark:text-foam/60">
             Select a receipt.
         </p>

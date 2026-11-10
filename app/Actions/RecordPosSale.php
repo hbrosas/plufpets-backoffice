@@ -14,6 +14,7 @@ use App\Models\DeliveryMethod;
 use App\Models\DeliverySchedule;
 use App\Models\Employee;
 use App\Models\EmployeeServiceCommission;
+use App\Models\HotelStay;
 use App\Models\Modifier;
 use App\Models\PaymentMethod;
 use App\Models\PosOpenOrder;
@@ -67,9 +68,10 @@ class RecordPosSale
             $sale = PosSale::query()->create([
                 'pos_shift_id' => $shift->id,
                 'branch_id' => $shift->branch_id,
+                'hotel_stay_id' => $attributes['hotel_stay_id'] ?? null,
                 'number' => $this->assignedNumber($shift->branch_id, $attributes['number'] ?? null),
                 'payment_method_id' => $primaryPayment['payment_method_id'],
-                'payment_method_name' => collect($preparedPayments)->pluck('payment_method_name')->unique()->implode(' + '),
+                'payment_method_name' => $prepared['payment_method_name'],
                 'is_cash' => $prepared['has_cash'],
                 'delivery_method_id' => $deliveryMethod?->id,
                 'delivery_method_name' => $deliveryMethod?->name,
@@ -79,6 +81,7 @@ class RecordPosSale
                 'subtotal' => number_format($prepared['subtotal'], 2, '.', ''),
                 'tax_total' => number_format($prepared['tax_total'], 2, '.', ''),
                 'total' => number_format($prepared['total'], 2, '.', ''),
+                'hotel_credit' => number_format($prepared['hotel_credit'], 2, '.', ''),
                 'amount_tendered' => number_format($prepared['amount_tendered'], 2, '.', ''),
                 'change_due' => number_format($prepared['change_due'], 2, '.', ''),
                 'sold_by_employee_number' => $employee['employee_number'],
@@ -181,7 +184,7 @@ class RecordPosSale
      * @param  list<array{payment_method_id?: mixed, amount?: mixed, amount_tendered?: mixed, reference_number?: mixed}>  $payments
      * @return list<array{payment_method_id: int, payment_method_name: string, is_cash: bool, amount: string, amount_tendered: string, change_due: string, reference_number: string|null}>
      */
-    private function preparedPayments(array $payments, float $total): array
+    private function preparedPayments(array $payments, float $total, string $mismatch = 'Payments must equal the sale total.'): array
     {
         $prepared = [];
         $applied = 0.0;
@@ -274,7 +277,7 @@ class RecordPosSale
 
         if (abs($applied - $total) > 0.005) {
             throw ValidationException::withMessages([
-                'payments' => 'Payments must equal the sale total.',
+                'payments' => $mismatch,
             ]);
         }
 
@@ -620,7 +623,32 @@ class RecordPosSale
             ]);
         }
 
-        $preparedPayments = $this->preparedPayments($attributes['payments'] ?? [], $total);
+        $hotelCredit = $this->hotelCredit($shift, $attributes, $total, $lock);
+        $due = round($total - $hotelCredit, 2);
+
+        if ($hotelCredit > 0.005 && $due < 0.005) {
+            $preparedPayments = [[
+                'payment_method_id' => null,
+                'payment_method_name' => 'Hotel payment',
+                'is_cash' => false,
+                'amount' => '0.00',
+                'amount_tendered' => '0.00',
+                'change_due' => '0.00',
+                'reference_number' => null,
+            ]];
+        } else {
+            $preparedPayments = $this->preparedPayments(
+                $attributes['payments'] ?? [],
+                $due,
+                $hotelCredit > 0.005 ? 'Payments must equal the amount due.' : 'Payments must equal the sale total.',
+            );
+        }
+
+        $paymentNames = collect($preparedPayments)->pluck('payment_method_name')->filter();
+
+        if ($hotelCredit > 0.005 && ! $paymentNames->contains('Hotel payment')) {
+            $paymentNames->push('Hotel payment');
+        }
 
         return [
             'delivery_method' => $deliveryMethod,
@@ -631,6 +659,8 @@ class RecordPosSale
             'tax_rows' => $taxRows,
             'tax_total' => $taxTotal,
             'total' => $total,
+            'hotel_credit' => $hotelCredit,
+            'payment_method_name' => $paymentNames->unique()->implode(' + '),
             'payments' => $preparedPayments,
             'primary_payment' => $preparedPayments[0],
             'has_cash' => collect($preparedPayments)->contains(fn (array $payment): bool => $payment['is_cash']),
@@ -674,6 +704,68 @@ class RecordPosSale
      *     payments: list<array{name: string, reference: string|null}>
      * }
      */
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function hotelCredit(PosShift $shift, array $attributes, float $total, bool $lock): float
+    {
+        if (! filter_var($attributes['apply_hotel_payment'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            return 0.0;
+        }
+
+        $stayId = $attributes['hotel_stay_id'] ?? null;
+
+        if ($stayId === null || $stayId === '') {
+            throw ValidationException::withMessages([
+                'apply_hotel_payment' => 'Choose a checked-in guest before applying a hotel payment.',
+            ]);
+        }
+
+        $query = HotelStay::query()->whereKey($stayId);
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        $stay = $query->first();
+
+        if (! $stay instanceof HotelStay || ! $stay->isCheckedIn() || $stay->branch_id !== $shift->branch_id) {
+            throw ValidationException::withMessages([
+                'apply_hotel_payment' => 'Choose a guest who is still checked in.',
+            ]);
+        }
+
+        $paid = (float) $stay->payments()->sum('amount');
+        $used = (float) $stay->sales()->whereNull('refunded_at')->sum('hotel_credit');
+        $available = round($paid - $used, 2);
+
+        if ($available < 0.01) {
+            throw ValidationException::withMessages([
+                'apply_hotel_payment' => 'This guest has no hotel payment left to apply.',
+            ]);
+        }
+
+        return round(min($available, $total), 2);
+    }
+
+    /**
+     * @param  array<string, mixed>  $prepared
+     * @return list<array{name: string, reference: string|null}>
+     */
+    private function receiptPayments(array $prepared): array
+    {
+        $payments = array_map(fn (array $payment): array => [
+            'name' => $payment['payment_method_name'],
+            'reference' => $payment['reference_number'],
+        ], $prepared['payments']);
+
+        if (($prepared['hotel_credit'] ?? 0) > 0.005 && ! collect($payments)->contains(fn (array $payment): bool => $payment['name'] === 'Hotel payment')) {
+            $payments[] = ['name' => 'Hotel payment', 'reference' => null];
+        }
+
+        return $payments;
+    }
+
     private function receiptLines(PosShift $shift, array $attributes, bool $lock, array $held = []): array
     {
         $prepared = $this->prepare($shift, $attributes, $lock, $held);
@@ -688,10 +780,7 @@ class RecordPosSale
                 'quantity' => $item['quantity'],
                 'subtotal' => Peso::format($item['line_total']),
             ], $prepared['items']),
-            'payments' => array_map(fn (array $payment): array => [
-                'name' => $payment['payment_method_name'],
-                'reference' => $payment['reference_number'],
-            ], $prepared['payments']),
+            'payments' => $this->receiptPayments($prepared),
             'taxes' => array_map(fn (array $row): array => [
                 'name' => $row['tax_fee']->name,
                 'amount' => Peso::format($row['amount']),

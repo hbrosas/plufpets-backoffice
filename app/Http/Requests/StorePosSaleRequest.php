@@ -30,6 +30,14 @@ class StorePosSaleRequest extends FormRequest
 
         return [
             ...PosSaleRules::for(),
+            'hotel_stay_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('hotel_stays', 'id')->where(
+                    fn ($query) => $query->where('branch_id', $branchId)->whereNull('checked_out_at'),
+                ),
+            ],
+            'apply_hotel_payment' => ['sometimes', 'boolean'],
             'pos_open_order_id' => [
                 'nullable',
                 'integer',
@@ -43,7 +51,11 @@ class StorePosSaleRequest extends FormRequest
      */
     public function messages(): array
     {
-        return PosSaleRules::messages();
+        return [
+            ...PosSaleRules::messages(),
+            'hotel_stay_id.exists' => 'Choose a guest who is still checked in.',
+            'apply_hotel_payment.boolean' => 'Choose whether to apply the hotel payment.',
+        ];
     }
 
     public function after(): array
@@ -104,6 +116,8 @@ class StorePosSaleRequest extends FormRequest
             'preferred_on' => $this->filled('preferred_on') ? $this->input('preferred_on') : null,
             'delivery_fee' => ($fee === '' || $fee === null) ? null : $fee,
             'pos_open_order_id' => $this->filled('pos_open_order_id') ? $this->input('pos_open_order_id') : null,
+            'hotel_stay_id' => $this->filled('hotel_stay_id') ? $this->input('hotel_stay_id') : null,
+            'apply_hotel_payment' => $this->boolean('apply_hotel_payment'),
         ]);
     }
 }
