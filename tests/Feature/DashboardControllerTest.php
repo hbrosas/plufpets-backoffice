@@ -55,6 +55,7 @@ class DashboardControllerTest extends TestCase
             ->component('Dashboard')
             ->where('employee.employee_number', '10001')
             ->where('employee.name', 'Sample Employee')
+            ->where('employee.has_record', false)
             ->where('commissions.scope', 'all')
             ->where('pulse.metrics.0.label', 'Revenue')
             ->where('pulse.metrics.0.today', '₱0.00')

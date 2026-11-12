@@ -32,9 +32,9 @@ const menu = [
     { key: 'dashboard', type: 'link', name: 'Dashboard', href: '/backoffice/dashboard', match: '/backoffice/dashboard', permission: 'dashboard.view' },
     { key: 'orders', type: 'link', name: 'Manage Orders', href: '/backoffice/shop/orders', match: '/backoffice/shop/orders', permission: 'shop.orders' },
     { key: 'hotel', type: 'link', name: 'Manage Hotel', href: '/backoffice/hotel', match: '/backoffice/hotel', permission: 'hotel.manage' },
-    { key: 'my-commissions', type: 'link', name: 'My Commissions', href: '/backoffice/me/commissions', match: '/backoffice/me/commissions' },
-    { key: 'my-payroll', type: 'link', name: 'My Payroll', href: '/backoffice/me/payroll', match: '/backoffice/me/payroll' },
-    { key: 'my-employee-201', type: 'link', name: 'My Employee 201', href: '/backoffice/me/employee-201', match: '/backoffice/me/employee-201' },
+    { key: 'my-commissions', type: 'link', name: 'My Commissions', href: '/backoffice/me/commissions', match: '/backoffice/me/commissions', requiresRecord: true },
+    { key: 'my-payroll', type: 'link', name: 'My Payroll', href: '/backoffice/me/payroll', match: '/backoffice/me/payroll', requiresRecord: true },
+    { key: 'my-employee-201', type: 'link', name: 'My Employee 201', href: '/backoffice/me/employee-201', match: '/backoffice/me/employee-201', requiresRecord: true },
     { key: 'divider-operations', type: 'divider' },
     {
         key: 'inventory',
@@ -182,6 +182,10 @@ const visibleMenu = computed(() => {
         }
 
         if (entry.type === 'link') {
+            if (entry.requiresRecord && !employee.value?.has_record) {
+                return [];
+            }
+
             return !entry.permission || can(entry.permission) ? [entry] : [];
         }
 

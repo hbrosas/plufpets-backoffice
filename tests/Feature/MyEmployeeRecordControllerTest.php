@@ -40,6 +40,27 @@ class MyEmployeeRecordControllerTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_signed_in_employee_without_a_record_is_marked_for_the_menu(): void
+    {
+        $employee = Employee::factory()->create();
+
+        $this->actingAsEmployee($employee)
+            ->get('/backoffice/me/employee-201')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('employee.has_record', false));
+    }
+
+    public function test_signed_in_employee_with_a_record_is_marked_for_the_menu(): void
+    {
+        $employee = Employee::factory()->create();
+        EmployeeProfile::factory()->create(['employee_id' => $employee->id]);
+
+        $this->actingAsEmployee($employee)
+            ->get('/backoffice/me/employee-201')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('employee.has_record', true));
+    }
+
     public function test_employee_sees_only_their_201_file(): void
     {
         $employee = Employee::factory()->create([

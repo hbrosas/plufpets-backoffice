@@ -15,7 +15,7 @@ class EmployeeSession
      * full access until the person signs in again. A session with an id always
      * uses that employee's current role.
      *
-     * @return array{id: int|null, employee_number: string, name: string, role: string|null, permissions: array<int, string>}|null
+     * @return array{id: int|null, employee_number: string, name: string, role: string|null, permissions: array<int, string>, has_record: bool}|null
      */
     public static function current(): ?array
     {
@@ -49,7 +49,7 @@ class EmployeeSession
     }
 
     /**
-     * @return array{id: int|null, employee_number: string, name: string, role: string|null, permissions: array<int, string>}|null
+     * @return array{id: int|null, employee_number: string, name: string, role: string|null, permissions: array<int, string>, has_record: bool}|null
      */
     private static function resolve(): ?array
     {
@@ -62,7 +62,7 @@ class EmployeeSession
         if (isset($stored['id'])) {
             $employee = Employee::query()->with(['role.permissions' => function ($query): void {
                 $query->orderBy('sort_order');
-            }])->find($stored['id']);
+            }])->withExists('profile')->find($stored['id']);
 
             if (! $employee instanceof Employee || ! $employee->is_active) {
                 return null;
@@ -74,6 +74,7 @@ class EmployeeSession
                 'name' => $employee->name,
                 'role' => $employee->role?->name,
                 'permissions' => $employee->role?->permissions->pluck('key')->values()->all() ?? [],
+                'has_record' => (bool) $employee->profile_exists,
             ];
         }
 
@@ -83,6 +84,7 @@ class EmployeeSession
             'name' => (string) ($stored['name'] ?? ''),
             'role' => isset($stored['role']) ? (string) $stored['role'] : null,
             'permissions' => PermissionCatalog::keys(),
+            'has_record' => false,
         ];
     }
 }
