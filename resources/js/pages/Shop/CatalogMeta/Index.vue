@@ -40,6 +40,11 @@ const brandForm = useForm({
     remove_image: false,
 });
 
+const importKind = ref(null);
+const importForm = useForm({
+    file: null,
+});
+
 function openCreateCategory() {
     editingCategory.value = null;
     categoryForm.reset();
@@ -144,6 +149,31 @@ function deleteBrand(brand) {
         preserveScroll: true,
     });
 }
+
+function openImport(kind) {
+    importKind.value = kind;
+    importForm.reset();
+    importForm.clearErrors();
+}
+
+function onImportFileChange(event) {
+    importForm.file = event.target.files[0] ?? null;
+}
+
+function submitImport() {
+    const url = importKind.value === 'brand'
+        ? '/backoffice/shop/brands/import'
+        : '/backoffice/shop/categories/import';
+
+    importForm.post(url, {
+        forceFormData: true,
+        preserveScroll: true,
+        onSuccess: () => {
+            importForm.reset();
+            importKind.value = null;
+        },
+    });
+}
 </script>
 
 <template>
@@ -163,9 +193,26 @@ function deleteBrand(brand) {
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
+        <div
+            v-if="flash.import_errors?.length"
+            class="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+        >
+            <p class="font-medium">Skipped rows</p>
+            <ul class="mt-2 flex flex-col gap-1">
+                <li v-for="error in flash.import_errors" :key="`${error.row}-${error.message}`">
+                    Row {{ error.row }}: {{ error.message }}
+                </li>
+            </ul>
+        </div>
+
         <div class="grid gap-6 xl:grid-cols-2">
             <section class="flex flex-col gap-4">
-                <h2 class="text-lg font-medium">Categories</h2>
+                <div class="flex items-center justify-between gap-4">
+                    <h2 class="text-lg font-medium">Categories</h2>
+                    <button class="text-sm font-medium text-pine dark:text-sand" type="button" @click="openImport('category')">
+                        Upload CSV
+                    </button>
+                </div>
                 <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
                     <table class="w-full text-left text-sm">
                         <thead class="text-ink/50 dark:text-foam/50">
@@ -207,7 +254,12 @@ function deleteBrand(brand) {
             </section>
 
             <section class="flex flex-col gap-4">
-                <h2 class="text-lg font-medium">Brands</h2>
+                <div class="flex items-center justify-between gap-4">
+                    <h2 class="text-lg font-medium">Brands</h2>
+                    <button class="text-sm font-medium text-pine dark:text-sand" type="button" @click="openImport('brand')">
+                        Upload CSV
+                    </button>
+                </div>
                 <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
                     <table class="w-full text-left text-sm">
                         <thead class="text-ink/50 dark:text-foam/50">
@@ -350,6 +402,50 @@ function deleteBrand(brand) {
                     :disabled="brandForm.processing"
                 >
                     {{ brandForm.processing ? 'Saving…' : 'Save' }}
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div v-if="importKind" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
+        <div class="flex w-full max-w-md flex-col gap-4 rounded-2xl bg-foam p-6 dark:bg-ink">
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex flex-col gap-1">
+                    <h2 class="text-lg font-medium">{{ importKind === 'brand' ? 'Upload brands' : 'Upload categories' }}</h2>
+                    <p class="text-sm text-ink/70 dark:text-foam/70">
+                        {{
+                            importKind === 'brand'
+                                ? 'CSV column: name. A name that already exists is skipped.'
+                                : 'CSV columns: name, pos_category, show_on_shop. pos_category must already exist. An existing category is updated.'
+                        }}
+                    </p>
+                </div>
+                <button class="text-sm font-medium" type="button" @click="importKind = null">Close</button>
+            </div>
+
+            <a
+                class="text-sm font-medium text-pine dark:text-sand"
+                :href="importKind === 'brand' ? '/backoffice/shop/brands/import/template' : '/backoffice/shop/categories/import/template'"
+            >
+                Download template
+            </a>
+
+            <form class="flex flex-col gap-4" @submit.prevent="submitImport">
+                <FilePicker
+                    id="meta-import-file"
+                    accept=".csv,text/csv"
+                    button-label="Choose CSV file"
+                    :file-name="importForm.file?.name ?? ''"
+                    hint="No file chosen"
+                    @change="onImportFileChange"
+                />
+                <p v-if="importForm.errors.file" class="text-sm text-danger">{{ importForm.errors.file }}</p>
+                <button
+                    class="h-11 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-70"
+                    type="submit"
+                    :disabled="importForm.processing"
+                >
+                    {{ importForm.processing ? 'Uploading…' : 'Upload CSV' }}
                 </button>
             </form>
         </div>

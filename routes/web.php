@@ -3,11 +3,13 @@
 use App\Http\Controllers\AuthenticatedSessionController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BrandController;
+use App\Http\Controllers\BrandImportController;
 use App\Http\Controllers\BusinessController;
 use App\Http\Controllers\CatalogItemController;
 use App\Http\Controllers\CatalogItemImportController;
 use App\Http\Controllers\CatalogMetaController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\CategoryImportController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeliveryMethodController;
 use App\Http\Controllers\DeliveryOrderController;
@@ -286,6 +288,16 @@ Route::prefix('backoffice')->group(function () {
 
             Route::middleware('employee.permission:shop.catalog-meta')->group(function () {
                 Route::get('catalog-meta', [CatalogMetaController::class, 'index'])->name('catalog-meta.index');
+                Route::get('categories/import/template', [CategoryImportController::class, 'template'])
+                    ->name('categories.import.template');
+                Route::post('categories/import', [CategoryImportController::class, 'store'])
+                    ->middleware('throttle:catalog-import')
+                    ->name('categories.import.store');
+                Route::get('brands/import/template', [BrandImportController::class, 'template'])
+                    ->name('brands.import.template');
+                Route::post('brands/import', [BrandImportController::class, 'store'])
+                    ->middleware('throttle:catalog-import')
+                    ->name('brands.import.store');
                 Route::post('categories', [CategoryController::class, 'store'])->name('categories.store');
                 Route::put('categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
                 Route::delete('categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');

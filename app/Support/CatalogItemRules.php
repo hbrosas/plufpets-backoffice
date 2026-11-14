@@ -96,6 +96,8 @@ class CatalogItemRules
             'variants.min' => 'Add at least one variant.',
             'variants.*.name.required' => 'Enter a variant name.',
             'variants.*.price.required' => 'Enter a variant price.',
+            'variant_name.required' => 'Enter a variant name.',
+            'price.required' => 'Enter a variant price.',
             'variants.*.barcode.unique' => 'That barcode is already used.',
             'variants.*.barcode.distinct' => 'Each variant needs a different barcode.',
             'barcode.unique' => 'That barcode is already used.',
@@ -148,23 +150,27 @@ class CatalogItemRules
     /**
      * @return array<string, mixed>
      */
-    public static function importRow(): array
+    public static function importProduct(): array
     {
         return [
             'type' => ['required', Rule::enum(CatalogItemType::class)],
             'name' => ['required', 'string', 'max:255'],
-            'category_name' => [
-                'nullable',
-                'string',
-                'max:255',
-                'required_if:type,'.CatalogItemType::Product->value,
-            ],
+            'category_name' => ['nullable', 'string', 'max:255'],
             'brand_name' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'is_active' => ['required', 'boolean'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function importVariant(): array
+    {
+        return [
             'variant_name' => ['required', 'string', 'max:255'],
-            'sku' => ['nullable', 'string', 'max:64', Rule::unique('catalog_item_variants', 'sku')],
-            'barcode' => ['nullable', 'string', 'max:128', Rule::unique('catalog_item_variants', 'barcode')],
+            'sku' => ['nullable', 'string', 'max:64'],
+            'barcode' => ['nullable', 'string', 'max:128'],
             'price' => ['required', 'numeric', 'min:0', 'decimal:0,2', 'max:999999.99'],
         ];
     }

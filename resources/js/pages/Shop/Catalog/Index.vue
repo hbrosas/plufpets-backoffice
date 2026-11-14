@@ -470,7 +470,8 @@ watch(visibleIds, (ids) => {
                     <div class="flex flex-col gap-1">
                         <h2 class="text-lg font-medium">Bulk upload</h2>
                         <p class="text-sm text-ink/70 dark:text-foam/70">
-                            CSV columns: type, name, description, category, brand, variant_name, sku, barcode, price, is_active.
+                            One row per variant. Leave the product name blank to add another variant to the product above.
+                            Columns: type, name, description, category, brand, variant_name, sku, barcode, price, is_active, variant_active.
                         </p>
                     </div>
                     <button class="text-sm font-medium" type="button" @click="importOpen = false">Close</button>

@@ -12,9 +12,10 @@ class CatalogItemImportController extends Controller
     public function template(): StreamedResponse
     {
         return response()->streamDownload(function (): void {
-            echo "type,name,description,category,brand,variant_name,sku,barcode,price,is_active\n";
-            echo "product,Organic kibble,Daily dry food,Food,Pluf Pets,1kg,KIB-001,4800123456789,29.90,1\n";
-            echo "service,Full groom,Bath and haircut,Grooming,,Standard,GRM-001,4800987654321,45.00,1\n";
+            echo "type,name,description,category,brand,variant_name,sku,barcode,price,is_active,variant_active\n";
+            echo "product,Organic kibble,Daily dry food,Food,Pluf Pets,1kg,KIB-001,4800123456789,29.90,1,1\n";
+            echo ",,,,,5kg,KIB-002,4800123456796,89.00,,1\n";
+            echo "service,Full groom,Bath and haircut,Grooming,,Standard,GRM-001,4800987654321,45.00,1,1\n";
         }, 'catalog-items-template.csv', [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
