@@ -606,7 +606,7 @@ function addVariant(variant) {
         return;
     }
 
-    if (!variant.is_product || hasModifiers(variant) || variant.ask_price_on_pos) {
+    if (!variant.is_product || hasModifiers(variant) || asksForPrice(variant)) {
         openCustomize(variant);
         return;
     }
@@ -739,9 +739,13 @@ const customUnitPrice = computed(() => {
     }
 
     const extra = selectedModifierRows().reduce((sum, row) => sum + Number(row.price), 0);
-    const base = variant.ask_price_on_pos ? enteredPrice(customPrice.value) : Number(variant.price);
+    const base = asksForPrice(variant) ? enteredPrice(customPrice.value) : Number(variant.price);
 
     return (base ?? 0) + extra;
+}
+
+function asksForPrice(variant) {
+    return Boolean(variant?.ask_price_on_pos) || variant?.price === null || variant?.price === '';
 }
 
 function enteredPrice(value) {
@@ -762,7 +766,7 @@ function pricedLine(item, variant) {
     const extra = (item.modifiers ?? []).reduce((sum, row) => sum + Number(row.price), 0);
 
     return {
-        ask_price_on_pos: Boolean(variant?.ask_price_on_pos),
+        ask_price_on_pos: asksForPrice(variant),
         base_price: Number(item.price) - extra,
         price: Number(item.price),
     };
@@ -793,7 +797,7 @@ function confirmCustomize() {
 
     const modifiers = selectedModifierRows();
     const staff = selectedStaffIds();
-    const base = variant.ask_price_on_pos ? enteredPrice(customPrice.value) : Number(variant.price);
+    const base = asksForPrice(variant) ? enteredPrice(customPrice.value) : Number(variant.price);
 
     if (base === null) {
         return;
@@ -806,7 +810,7 @@ function confirmCustomize() {
             const extra = modifiers.reduce((sum, row) => sum + Number(row.price), 0);
             line.notes = customNotes.value.trim();
             line.modifiers = modifiers;
-            line.ask_price_on_pos = Boolean(variant.ask_price_on_pos);
+            line.ask_price_on_pos = asksForPrice(variant);
             line.base_price = base;
             line.price = base + extra;
             line.quantity = qty;
@@ -826,7 +830,7 @@ function pushCartLine(variant, quantity, notes, modifiers, assigned = [], assist
     const base = basePrice ?? Number(variant.price);
     const signature = JSON.stringify(modifiers);
     const people = staffSignature(assigned, assisted);
-    const priceKey = variant.ask_price_on_pos ? base.toFixed(2) : '';
+    const priceKey = asksForPrice(variant) ? base.toFixed(2) : '';
     const existing = cart.value.find(
         (line) =>
             !line.is_free &&
@@ -834,7 +838,7 @@ function pushCartLine(variant, quantity, notes, modifiers, assigned = [], assist
             line.notes === notes &&
             JSON.stringify(line.modifiers) === signature &&
             staffSignature(line.assigned_employee_ids ?? [], line.assisted_employee_ids ?? []) === people &&
-            (variant.ask_price_on_pos ? Number(line.base_price).toFixed(2) === priceKey : true),
+            (asksForPrice(variant) ? Number(line.base_price).toFixed(2) === priceKey : true),
     );
 
     if (existing) {
@@ -856,7 +860,7 @@ function pushCartLine(variant, quantity, notes, modifiers, assigned = [], assist
         id: variant.id,
         product_name: variant.product_name,
         variant_name: variant.variant_name,
-        ask_price_on_pos: Boolean(variant.ask_price_on_pos),
+        ask_price_on_pos: asksForPrice(variant),
         base_price: base,
         price: base + extra,
         quantity,
@@ -2350,7 +2354,7 @@ onUnmounted(() => {
                         <div class="flex min-w-0 flex-col gap-0.5">
                             <p class="truncate font-medium">{{ variant.product_name }}</p>
                             <p class="truncate text-xs text-ink/50 dark:text-foam/50">{{ variant.variant_name }}</p>
-                            <p class="text-sm font-medium">{{ variant.price_label }}</p>
+                            <p class="text-sm font-medium">{{ variant.price_label || 'Set price' }}</p>
                         </div>
                     </button>
                     <p v-if="filteredVariants.length === 0" class="col-span-full text-sm text-ink/60 dark:text-foam/60">No variants match.</p>
@@ -2644,7 +2648,7 @@ onUnmounted(() => {
                 </div>
             </section>
 
-            <div v-if="customizing.ask_price_on_pos" class="flex flex-col gap-2">
+            <div v-if="asksForPrice(customizing)" class="flex flex-col gap-2">
                 <label class="text-sm font-medium" for="pos-item-price">Price</label>
                 <input
                     id="pos-item-price"
@@ -2700,7 +2704,7 @@ onUnmounted(() => {
                 <button
                     class="h-11 rounded-xl bg-pine px-4 text-sm font-medium text-foam disabled:opacity-50"
                     type="button"
-                    :disabled="customizing.ask_price_on_pos && enteredPrice(customPrice) === null"
+                    :disabled="asksForPrice(customizing) && enteredPrice(customPrice) === null"
                     @click="confirmCustomize"
                 >
                     {{ editingLineKey ? 'Update item' : 'Add to cart' }}

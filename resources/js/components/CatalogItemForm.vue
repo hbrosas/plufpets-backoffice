@@ -139,9 +139,7 @@ function firstIncompleteTab() {
         return 'category';
     }
 
-    const variantIncomplete = form.variants.some((variant) => {
-        return !String(variant.name).trim() || variant.price === '' || variant.price === null;
-    });
+    const variantIncomplete = form.variants.some((variant) => !String(variant.name).trim());
     if (variantIncomplete) {
         return 'variants';
     }
@@ -524,7 +522,7 @@ function submitBrand() {
                     Set the price when adding to the POS cart
                 </label>
                 <p class="text-sm text-ink/70 dark:text-foam/70">
-                    POS asks for the price each time this is added. The shop keeps the listed price.
+                    For products and services. POS asks for the price each time this is added. The shop keeps the listed price.
                 </p>
                 <p v-if="form.errors.ask_price_on_pos" class="text-sm text-danger">{{ form.errors.ask_price_on_pos }}</p>
             </div>
@@ -694,10 +692,10 @@ function submitBrand() {
                         v-model="variant.price"
                         class="h-11 rounded-xl border border-mist bg-white px-4 text-sm outline-none transition focus:border-pine dark:border-white/10 dark:bg-white/5"
                         min="0"
-                        required
                         step="0.01"
                         type="number"
                     />
+                    <p class="text-sm text-ink/70 dark:text-foam/70">Leave this blank and POS will ask for the price.</p>
                     <p v-if="variantError(index, 'price')" class="text-sm text-danger">{{ variantError(index, 'price') }}</p>
                 </div>
                 <div class="flex items-end justify-between gap-3">

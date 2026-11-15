@@ -206,6 +206,27 @@ class ShopCheckoutTest extends TestCase
                 ->where('products.0.variants.1.allows_preorder', true));
     }
 
+    public function test_home_hides_an_item_that_has_no_listed_price(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['name' => 'Custom treat']))
+            ->create(['name' => 'Bag', 'price' => null]);
+        CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->service()->create(['name' => 'Custom groom']))
+            ->create(['name' => 'Default', 'price' => null]);
+        CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['name' => 'Kibble']))
+            ->create(['name' => 'Default', 'price' => 40]);
+
+        $this->get('/?branch='.$branch->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Site/Home')
+                ->has('products', 1)
+                ->where('products.0.name', 'Kibble'));
+    }
+
     public function test_hidden_categories_stay_off_the_public_shop(): void
     {
         $branch = Branch::factory()->create(['name' => 'Greenheights', 'is_active' => true]);

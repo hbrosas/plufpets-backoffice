@@ -246,6 +246,26 @@ class CatalogItemControllerTest extends TestCase
                 ->where('catalogItem.variants.0.price', '50.00'));
     }
 
+    public function test_a_service_can_leave_its_price_blank_for_pos(): void
+    {
+        $response = $this->actingAsEmployee()->post('/backoffice/shop/catalog', [
+            'type' => CatalogItemType::Service->value,
+            'name' => 'Custom groom',
+            'is_active' => true,
+            'ask_price_on_pos' => true,
+            'variants' => [
+                ['name' => 'Standard', 'price' => '', 'is_active' => true],
+            ],
+        ]);
+
+        $item = CatalogItem::query()->where('name', 'Custom groom')->first();
+
+        $response->assertRedirect(route('shop.catalog.index'));
+        $this->assertNotNull($item);
+        $this->assertTrue($item->ask_price_on_pos);
+        $this->assertNull($item->variants()->value('price'));
+    }
+
     public function test_valid_service_is_created_without_category(): void
     {
         $response = $this->actingAsEmployee()->post('/backoffice/shop/catalog', [

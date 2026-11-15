@@ -18,7 +18,7 @@ trait PreparesCatalogItemData
                 'name' => trim((string) ($row['name'] ?? '')),
                 'sku' => $sku === '' ? null : $sku,
                 'barcode' => $barcode === '' ? null : $barcode,
-                'price' => $row['price'] ?? null,
+                'price' => $row['price'] === '' || $row['price'] === null ? null : $row['price'],
                 'is_active' => filter_var($row['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN),
                 'remove_image' => filter_var($row['remove_image'] ?? false, FILTER_VALIDATE_BOOLEAN),
                 'branch_prices' => collect($row['branch_prices'] ?? [])->map(function (mixed $price): array {

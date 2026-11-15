@@ -578,11 +578,11 @@ class PosController extends Controller
             ->orderBy('id')
             ->get()
             ->map(function (CatalogItemVariant $variant) use ($branchId): array {
-                $price = (float) $variant->price;
+                $price = $variant->price === null ? null : (float) $variant->price;
 
                 if ($variant->catalogItem?->has_branch_pricing) {
                     $branchPrice = $variant->branchPrices->firstWhere('branch_id', $branchId);
-                    if ($branchPrice !== null) {
+                    if ($branchPrice !== null && $branchPrice->price !== null) {
                         $price = (float) $branchPrice->price;
                     }
                 }
@@ -600,11 +600,11 @@ class PosController extends Controller
                     'image_url' => $variant->imageUrl(),
                     'pos_category_id' => $shopCategory?->pos_category_id,
                     'shop_category_name' => $shopCategory?->name ?? 'Uncategorized',
-                    'price' => number_format($price, 2, '.', ''),
-                    'price_label' => Peso::format($price),
+                    'price' => $price === null ? null : number_format($price, 2, '.', ''),
+                    'price_label' => $price === null ? null : Peso::format($price),
                     'quantity' => $quantity,
                     'is_product' => $isProduct,
-                    'ask_price_on_pos' => (bool) $variant->catalogItem?->ask_price_on_pos,
+                    'ask_price_on_pos' => (bool) $variant->catalogItem?->ask_price_on_pos || $price === null,
                     'modifiers' => $this->modifiersForItem($variant->catalogItem, $branchId),
                 ];
             })

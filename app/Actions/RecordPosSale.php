@@ -380,17 +380,17 @@ class RecordPosSale
         return round((float) $price, 2);
     }
 
-    private function unitPrice(CatalogItemVariant $variant, int $branchId): float
+    private function unitPrice(CatalogItemVariant $variant, int $branchId): ?float
     {
         if ($variant->catalogItem?->has_branch_pricing) {
             $branchPrice = $variant->branchPrices->firstWhere('branch_id', $branchId);
 
-            if ($branchPrice !== null) {
+            if ($branchPrice !== null && $branchPrice->price !== null) {
                 return (float) $branchPrice->price;
             }
         }
 
-        return (float) $variant->price;
+        return $variant->price === null ? null : (float) $variant->price;
     }
 
     /**
@@ -587,9 +587,10 @@ class RecordPosSale
             }
 
             $selectedModifiers = $this->selectedModifiers($variant, $item['modifiers'] ?? [], $index, $shift->branch_id);
-            $basePrice = $variant->catalogItem?->ask_price_on_pos
+            $listedPrice = $this->unitPrice($variant, $shift->branch_id);
+            $basePrice = $variant->catalogItem?->ask_price_on_pos || $listedPrice === null
                 ? $this->enteredPrice($item, $index)
-                : $this->unitPrice($variant, $shift->branch_id);
+                : $listedPrice;
             $unitPrice = $basePrice + $selectedModifiers['extra'];
             $lineTotal = round($unitPrice * $quantity, 2);
             $commissionable = round(($basePrice + $selectedModifiers['included']) * $quantity, 2);

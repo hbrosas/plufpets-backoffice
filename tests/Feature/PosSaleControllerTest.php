@@ -226,6 +226,70 @@ class PosSaleControllerTest extends TestCase
         ]);
     }
 
+    public function test_pos_sale_charges_the_price_entered_for_a_service_without_one(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->service()->create(['name' => 'Custom groom']))
+            ->create(['name' => 'Standard', 'price' => null]);
+        $payment = PaymentMethod::factory()->cash()->create();
+
+        $this->actingAsEmployee()
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [[
+                    'catalog_item_variant_id' => $variant->id,
+                    'quantity' => 1,
+                    'price' => '75.00',
+                ]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '75',
+                    'amount_tendered' => '75',
+                ]],
+            ])
+            ->assertRedirect(route('pos.index', $branch));
+
+        $this->assertDatabaseHas('pos_sale_items', [
+            'catalog_item_variant_id' => $variant->id,
+            'unit_price' => '75.00',
+            'line_total' => '75.00',
+        ]);
+    }
+
+    public function test_pos_sale_charges_the_price_entered_for_a_service_that_asks(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->service()->create([
+                'name' => 'Bath',
+                'ask_price_on_pos' => true,
+            ]))
+            ->create(['name' => 'Standard', 'price' => 250]);
+        $payment = PaymentMethod::factory()->cash()->create();
+
+        $this->actingAsEmployee()
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [[
+                    'catalog_item_variant_id' => $variant->id,
+                    'quantity' => 1,
+                    'price' => '300.00',
+                ]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '300',
+                    'amount_tendered' => '300',
+                ]],
+            ])
+            ->assertRedirect(route('pos.index', $branch));
+
+        $this->assertDatabaseHas('pos_sale_items', [
+            'catalog_item_variant_id' => $variant->id,
+            'unit_price' => '300.00',
+        ]);
+    }
+
     public function test_a_sale_requires_a_preferred_slot_when_the_delivery_method_uses_one(): void
     {
         $branch = Branch::factory()->create();

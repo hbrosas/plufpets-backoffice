@@ -159,6 +159,7 @@ class ShopCatalog
                 'branchPrices' => fn ($query) => $query->where('branch_id', $branch->id),
             ])
             ->get()
+            ->filter(fn (CatalogItemVariant $variant): bool => $this->listedPrice($variant, $branch->id) !== null)
             ->groupBy('catalog_item_id')
             ->map(fn (Collection $variants): array => $this->groupedProduct($variants, $branch->id))
             ->sortBy([
@@ -229,20 +230,25 @@ class ShopCatalog
         ];
     }
 
+    private function listedPrice(CatalogItemVariant $variant, int $branchId): ?float
+    {
+        if ($variant->catalogItem?->has_branch_pricing) {
+            $branchPrice = $variant->branchPrices->firstWhere('branch_id', $branchId);
+
+            if ($branchPrice !== null && $branchPrice->price !== null) {
+                return (float) $branchPrice->price;
+            }
+        }
+
+        return $variant->price === null ? null : (float) $variant->price;
+    }
+
     /**
      * @return array<string, mixed>
      */
     private function product(CatalogItemVariant $variant, int $branchId): array
     {
-        $price = (float) $variant->price;
-
-        if ($variant->catalogItem?->has_branch_pricing) {
-            $branchPrice = $variant->branchPrices->firstWhere('branch_id', $branchId);
-
-            if ($branchPrice !== null) {
-                $price = (float) $branchPrice->price;
-            }
-        }
+        $price = $this->listedPrice($variant, $branchId) ?? 0.0;
 
         $isProduct = $variant->catalogItem?->type === CatalogItemType::Product;
         $stock = $isProduct ? ($variant->inventories->first()?->available() ?? 0) : null;

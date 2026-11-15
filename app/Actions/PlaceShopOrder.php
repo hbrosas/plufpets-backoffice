@@ -175,6 +175,13 @@ class PlaceShopOrder
             }
 
             $price = $this->unitPrice($variant);
+
+            if ($price === null) {
+                throw ValidationException::withMessages([
+                    'items' => $this->productName($variant).' is not available.',
+                ]);
+            }
+
             $subtotal += $price * $quantity;
             $lines[] = [
                 'catalog_item_variant_id' => $variant->id,
@@ -346,17 +353,17 @@ class PlaceShopOrder
         return $text === '' ? null : $text;
     }
 
-    private function unitPrice(CatalogItemVariant $variant): float
+    private function unitPrice(CatalogItemVariant $variant): ?float
     {
         if ($variant->catalogItem?->has_branch_pricing) {
             $branchPrice = $variant->branchPrices->first();
 
-            if ($branchPrice !== null) {
+            if ($branchPrice !== null && $branchPrice->price !== null) {
                 return (float) $branchPrice->price;
             }
         }
 
-        return (float) $variant->price;
+        return $variant->price === null ? null : (float) $variant->price;
     }
 
     private function productName(CatalogItemVariant $variant): string
