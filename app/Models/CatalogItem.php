@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'is_active',
     'has_branch_pricing',
     'allows_preorder',
+    'ask_price_on_pos',
 ])]
 class CatalogItem extends Model
 {
@@ -34,6 +35,7 @@ class CatalogItem extends Model
         'is_active' => true,
         'has_branch_pricing' => false,
         'allows_preorder' => true,
+        'ask_price_on_pos' => false,
     ];
 
     /**
@@ -46,6 +48,7 @@ class CatalogItem extends Model
             'is_active' => 'boolean',
             'has_branch_pricing' => 'boolean',
             'allows_preorder' => 'boolean',
+            'ask_price_on_pos' => 'boolean',
         ];
     }
 

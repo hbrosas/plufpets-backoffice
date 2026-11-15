@@ -72,6 +72,7 @@ const cashOpen = ref(false);
 const closeOpen = ref(false);
 const customizeOpen = ref(false);
 const customizing = ref(null);
+const customPrice = ref('');
 const customQty = ref(1);
 const customNotes = ref('');
 const customSelections = ref({});
@@ -605,7 +606,7 @@ function addVariant(variant) {
         return;
     }
 
-    if (!variant.is_product || hasModifiers(variant)) {
+    if (!variant.is_product || hasModifiers(variant) || variant.ask_price_on_pos) {
         openCustomize(variant);
         return;
     }
@@ -615,6 +616,7 @@ function addVariant(variant) {
 
 function openCustomize(variant) {
     customizing.value = variant;
+    customPrice.value = variant.price ?? '';
     customQty.value = 1;
     customNotes.value = '';
     customSelections.value = Object.fromEntries((variant.modifiers ?? []).map((modifier) => [modifier.id, '']));
@@ -737,9 +739,44 @@ const customUnitPrice = computed(() => {
     }
 
     const extra = selectedModifierRows().reduce((sum, row) => sum + Number(row.price), 0);
+    const base = variant.ask_price_on_pos ? enteredPrice(customPrice.value) : Number(variant.price);
 
-    return Number(variant.price) + extra;
-});
+    return (base ?? 0) + extra;
+}
+
+function enteredPrice(value) {
+    if (String(value ?? '').trim() === '') {
+        return null;
+    }
+
+    const amount = Number(value);
+
+    if (!Number.isFinite(amount) || amount < 0) {
+        return null;
+    }
+
+    return Math.round(amount * 100) / 100;
+}
+
+function pricedLine(item, variant) {
+    const extra = (item.modifiers ?? []).reduce((sum, row) => sum + Number(row.price), 0);
+
+    return {
+        ask_price_on_pos: Boolean(variant?.ask_price_on_pos),
+        base_price: Number(item.price) - extra,
+        price: Number(item.price),
+    };
+}
+
+function lineBasePrice(line) {
+    if (line.base_price !== undefined && line.base_price !== null && line.base_price !== '') {
+        return Number(line.base_price);
+    }
+
+    const extra = (line.modifiers ?? []).reduce((sum, row) => sum + Number(row.price), 0);
+
+    return Number(line.price) - extra;
+}
 
 function confirmCustomize() {
     const variant = customizing.value;
@@ -756,6 +793,11 @@ function confirmCustomize() {
 
     const modifiers = selectedModifierRows();
     const staff = selectedStaffIds();
+    const base = variant.ask_price_on_pos ? enteredPrice(customPrice.value) : Number(variant.price);
+
+    if (base === null) {
+        return;
+    }
 
     if (editingLineKey.value !== null) {
         const line = cart.value.find((item) => item.key === editingLineKey.value);
@@ -764,7 +806,9 @@ function confirmCustomize() {
             const extra = modifiers.reduce((sum, row) => sum + Number(row.price), 0);
             line.notes = customNotes.value.trim();
             line.modifiers = modifiers;
-            line.price = Number(variant.price) + extra;
+            line.ask_price_on_pos = Boolean(variant.ask_price_on_pos);
+            line.base_price = base;
+            line.price = base + extra;
             line.quantity = qty;
             line.assigned_employee_ids = staff.assigned;
             line.assisted_employee_ids = staff.assisted;
@@ -774,20 +818,23 @@ function confirmCustomize() {
         return;
     }
 
-    pushCartLine(variant, qty, customNotes.value.trim(), modifiers, staff.assigned, staff.assisted);
+    pushCartLine(variant, qty, customNotes.value.trim(), modifiers, staff.assigned, staff.assisted, base);
     closeCustomize();
 }
 
-function pushCartLine(variant, quantity, notes, modifiers, assigned = [], assisted = []) {
+function pushCartLine(variant, quantity, notes, modifiers, assigned = [], assisted = [], basePrice = null) {
+    const base = basePrice ?? Number(variant.price);
     const signature = JSON.stringify(modifiers);
     const people = staffSignature(assigned, assisted);
+    const priceKey = variant.ask_price_on_pos ? base.toFixed(2) : '';
     const existing = cart.value.find(
         (line) =>
             !line.is_free &&
             line.id === variant.id &&
             line.notes === notes &&
             JSON.stringify(line.modifiers) === signature &&
-            staffSignature(line.assigned_employee_ids ?? [], line.assisted_employee_ids ?? []) === people,
+            staffSignature(line.assigned_employee_ids ?? [], line.assisted_employee_ids ?? []) === people &&
+            (variant.ask_price_on_pos ? Number(line.base_price).toFixed(2) === priceKey : true),
     );
 
     if (existing) {
@@ -809,7 +856,9 @@ function pushCartLine(variant, quantity, notes, modifiers, assigned = [], assist
         id: variant.id,
         product_name: variant.product_name,
         variant_name: variant.variant_name,
-        price: Number(variant.price) + extra,
+        ask_price_on_pos: Boolean(variant.ask_price_on_pos),
+        base_price: base,
+        price: base + extra,
         quantity,
         notes,
         modifiers,
@@ -836,7 +885,7 @@ function onBarcode(value) {
     const match = props.variants.find((variant) => variant.barcode && variant.barcode === code);
 
     if (match && variantIsAvailable(match)) {
-        pushCartLine(match, 1, '', []);
+        addVariant(match);
     }
 
     requestAnimationFrame(() => {
@@ -931,6 +980,8 @@ function makeFree(line) {
         id: line.id,
         product_name: line.product_name,
         variant_name: line.variant_name,
+        ask_price_on_pos: Boolean(line.ask_price_on_pos),
+        base_price: line.base_price,
         price: Number(line.price),
         quantity: line.quantity,
         notes: line.notes ?? '',
@@ -980,6 +1031,7 @@ function openEditLine(line) {
 
     editingLineKey.value = line.key;
     customizing.value = variant;
+    customPrice.value = lineBasePrice(line).toFixed(2);
     customQty.value = line.quantity;
     customNotes.value = line.notes ?? '';
     customSelections.value = Object.fromEntries(
@@ -1006,6 +1058,7 @@ function saleItems() {
         assigned_employee_ids: line.is_free ? [] : (line.assigned_employee_ids ?? []),
         assisted_employee_ids: line.is_free ? [] : (line.assisted_employee_ids ?? []),
         is_free: Boolean(line.is_free),
+        ...(line.ask_price_on_pos ? { price: lineBasePrice(line).toFixed(2) } : {}),
     }));
 }
 
@@ -1416,7 +1469,7 @@ function loadGuestCart(saved) {
             id: item.catalog_item_variant_id,
             product_name: item.product_name,
             variant_name: item.variant_name,
-            price: Number(item.price),
+            ...pricedLine(item, variant),
             quantity: item.quantity,
             notes: item.notes ?? '',
             modifiers: item.modifiers ?? [],
@@ -1518,7 +1571,7 @@ function resumeOpenOrder(order) {
             id: item.catalog_item_variant_id,
             product_name: item.product_name,
             variant_name: item.variant_name,
-            price: Number(item.price),
+            ...pricedLine(item, variant),
             quantity: item.quantity,
             notes: item.notes ?? '',
             modifiers: item.modifiers ?? [],
@@ -1949,7 +2002,7 @@ async function createSaleFromOnlineOrder(order) {
             id: item.catalog_item_variant_id,
             product_name: item.product_name,
             variant_name: item.variant_name,
-            price: Number(item.price),
+            ...pricedLine(item, variant),
             quantity: item.quantity,
             notes: item.notes ?? '',
             modifiers: item.modifiers ?? [],
@@ -2591,6 +2644,18 @@ onUnmounted(() => {
                 </div>
             </section>
 
+            <div v-if="customizing.ask_price_on_pos" class="flex flex-col gap-2">
+                <label class="text-sm font-medium" for="pos-item-price">Price</label>
+                <input
+                    id="pos-item-price"
+                    v-model="customPrice"
+                    class="h-11 rounded-xl border border-mist bg-white px-4 text-sm dark:border-white/10 dark:bg-white/5"
+                    inputmode="decimal"
+                    type="text"
+                    autofocus
+                />
+            </div>
+
             <div class="flex flex-col gap-2">
                 <label class="text-sm font-medium" for="pos-item-notes">Notes</label>
                 <textarea
@@ -2632,7 +2697,12 @@ onUnmounted(() => {
 
             <div class="flex items-center justify-between gap-3">
                 <p class="text-sm font-medium">{{ formatPeso(customUnitPrice * Math.max(1, Number(customQty) || 1)) }}</p>
-                <button class="h-11 rounded-xl bg-pine px-4 text-sm font-medium text-foam" type="button" @click="confirmCustomize">
+                <button
+                    class="h-11 rounded-xl bg-pine px-4 text-sm font-medium text-foam disabled:opacity-50"
+                    type="button"
+                    :disabled="customizing.ask_price_on_pos && enteredPrice(customPrice) === null"
+                    @click="confirmCustomize"
+                >
                     {{ editingLineKey ? 'Update item' : 'Add to cart' }}
                 </button>
             </div>

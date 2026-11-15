@@ -60,6 +60,7 @@ class PosControllerTest extends TestCase
             ->where('variants.0.pos_category_id', $posCategory->id)
             ->where('variants.0.quantity', 0)
             ->where('variants.0.modifiers', [])
+            ->where('variants.0.ask_price_on_pos', false)
             ->has('openOrders', 0)
             ->has('printers', 0));
     }

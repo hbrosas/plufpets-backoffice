@@ -24,6 +24,7 @@ class PosSaleRules
             'items.*.assisted_employee_ids' => ['nullable', 'array'],
             'items.*.assisted_employee_ids.*' => ['integer', 'distinct', 'exists:employees,id'],
             'items.*.is_free' => ['sometimes', 'boolean'],
+            'items.*.price' => ['nullable', 'numeric', 'min:0', 'decimal:0,2', 'max:999999.99'],
             'payments' => ['present', 'array'],
             'payments.*.payment_method_id' => ['required', 'integer', 'exists:payment_methods,id'],
             'payments.*.amount' => ['required', 'numeric', 'min:0.01', 'decimal:0,2', 'max:9999999.99'],

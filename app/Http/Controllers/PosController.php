@@ -604,6 +604,7 @@ class PosController extends Controller
                     'price_label' => Peso::format($price),
                     'quantity' => $quantity,
                     'is_product' => $isProduct,
+                    'ask_price_on_pos' => (bool) $variant->catalogItem?->ask_price_on_pos,
                     'modifiers' => $this->modifiersForItem($variant->catalogItem, $branchId),
                 ];
             })

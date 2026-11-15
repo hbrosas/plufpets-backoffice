@@ -30,6 +30,7 @@ class SaveCatalogItem
                 'is_active' => $attributes['is_active'],
                 'has_branch_pricing' => $attributes['has_branch_pricing'] ?? false,
                 'allows_preorder' => (bool) ($attributes['allows_preorder'] ?? true),
+                'ask_price_on_pos' => (bool) ($attributes['ask_price_on_pos'] ?? false),
                 'category_id' => $this->categoryId($attributes['category_name'] ?? null),
                 'brand_id' => $this->brandId($attributes['brand_name'] ?? null),
             ]);

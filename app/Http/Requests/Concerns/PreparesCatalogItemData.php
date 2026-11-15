@@ -88,6 +88,9 @@ trait PreparesCatalogItemData
             'allows_preorder' => $this->exists('allows_preorder')
                 ? $this->boolean('allows_preorder')
                 : true,
+            'ask_price_on_pos' => $this->exists('ask_price_on_pos')
+                ? $this->boolean('ask_price_on_pos')
+                : false,
             'variants' => $variants,
             'modifier_ids' => $modifierIds,
             'modifier_prices' => $modifierPrices,

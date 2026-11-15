@@ -364,6 +364,22 @@ class RecordPosSale
         return (float) $row->price;
     }
 
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function enteredPrice(array $item, int $index): float
+    {
+        $price = $item['price'] ?? null;
+
+        if (! is_numeric($price)) {
+            throw ValidationException::withMessages([
+                "items.{$index}.price" => 'Enter a price for this item.',
+            ]);
+        }
+
+        return round((float) $price, 2);
+    }
+
     private function unitPrice(CatalogItemVariant $variant, int $branchId): float
     {
         if ($variant->catalogItem?->has_branch_pricing) {
@@ -571,7 +587,9 @@ class RecordPosSale
             }
 
             $selectedModifiers = $this->selectedModifiers($variant, $item['modifiers'] ?? [], $index, $shift->branch_id);
-            $basePrice = $this->unitPrice($variant, $shift->branch_id);
+            $basePrice = $variant->catalogItem?->ask_price_on_pos
+                ? $this->enteredPrice($item, $index)
+                : $this->unitPrice($variant, $shift->branch_id);
             $unitPrice = $basePrice + $selectedModifiers['extra'];
             $lineTotal = round($unitPrice * $quantity, 2);
             $commissionable = round(($basePrice + $selectedModifiers['included']) * $quantity, 2);

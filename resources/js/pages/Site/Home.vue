@@ -692,8 +692,8 @@ function removeLine(productId) {
                             v-else
                             type="button"
                             class="mt-auto h-10 rounded-xl text-sm font-medium disabled:cursor-not-allowed"
-                            :class="product.in_stock ? 'bg-green-600 text-white' : (canPreorder(product) ? 'bg-yellow-400 text-black' : 'bg-black/10 text-black/50')"
-                            :disabled="product.is_product && !product.in_stock && !product.allows_preorder"
+                            :class="product.in_stock ? 'bg-green-600 text-white' : (canPreorder(product) ? 'bg-yellow-400 text-black' : (hasVariantChoice(product) ? 'border border-black/15 bg-white text-black' : 'bg-black/10 text-black/50'))"
+                            :disabled="!hasVariantChoice(product) && product.is_product && !product.in_stock && !product.allows_preorder"
                             @click="hasVariantChoice(product) ? openVariantPicker(product) : addProduct(product)"
                         >
                             {{ product.in_stock ? 'Add' : (canPreorder(product) ? 'Preorder' : 'Out of stock') }}
@@ -780,65 +780,66 @@ function removeLine(productId) {
                 aria-modal="true"
                 aria-labelledby="variant-picker-title"
             >
-                <img
-                    v-if="pickerImage && !pickerImageMissing"
-                    :src="pickerImage"
-                    :alt="variantPicker.item_name"
-                    class="aspect-[4/3] w-full bg-cream object-cover"
-                    @error="pickerImageMissing = true"
-                />
-                <div v-else class="flex aspect-[4/3] w-full items-center justify-center bg-cream text-sm text-black/50">
-                    No photo
-                </div>
+                <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+                    <img
+                        v-if="pickerImage && !pickerImageMissing"
+                        :src="pickerImage"
+                        :alt="variantPicker.item_name"
+                        class="h-40 w-full shrink-0 bg-cream object-cover sm:h-48"
+                        @error="pickerImageMissing = true"
+                    />
+                    <div v-else class="flex h-40 w-full shrink-0 items-center justify-center bg-cream text-sm text-black/50 sm:h-48">
+                        No photo
+                    </div>
 
-                <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="flex min-w-0 flex-col gap-1">
-                            <div v-if="variantPicker.brand_name" class="flex items-center gap-2">
-                                <img
-                                    v-if="variantPicker.brand_logo_url"
-                                    :src="variantPicker.brand_logo_url"
-                                    alt=""
-                                    class="h-6 w-6 rounded object-contain"
-                                />
-                                <p class="text-xs font-medium text-black/70">{{ variantPicker.brand_name }}</p>
+                    <div class="flex flex-col gap-4 px-4 pb-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex min-w-0 flex-col gap-1">
+                                <div v-if="variantPicker.brand_name" class="flex items-center gap-2">
+                                    <img
+                                        v-if="variantPicker.brand_logo_url"
+                                        :src="variantPicker.brand_logo_url"
+                                        alt=""
+                                        class="h-6 w-6 rounded object-contain"
+                                    />
+                                    <p class="text-xs font-medium text-black/70">{{ variantPicker.brand_name }}</p>
+                                </div>
+                                <h2 id="variant-picker-title" class="text-lg font-semibold leading-6">{{ variantPicker.item_name }}</h2>
+                                <p v-if="variantPicker.badge" class="w-fit rounded-full bg-ember px-2 py-1 text-xs font-medium">{{ variantPicker.badge }}</p>
                             </div>
-                            <h2 id="variant-picker-title" class="text-lg font-semibold leading-6">{{ variantPicker.item_name }}</h2>
-                            <p v-if="variantPicker.badge" class="w-fit rounded-full bg-ember px-2 py-1 text-xs font-medium">{{ variantPicker.badge }}</p>
+                            <button type="button" class="h-10 shrink-0 rounded-xl px-3 text-sm" @click="closeVariantPicker">
+                                Close
+                            </button>
                         </div>
-                        <button type="button" class="h-10 shrink-0 rounded-xl px-3 text-sm" @click="closeVariantPicker">
-                            Close
-                        </button>
-                    </div>
 
-                    <p v-if="variantPicker.description" class="text-sm leading-5 whitespace-pre-line text-black/80">
-                        {{ variantPicker.description }}
-                    </p>
+                        <p v-if="variantPicker.description" class="text-sm leading-5 whitespace-pre-line text-black/80">
+                            {{ variantPicker.description }}
+                        </p>
 
-                    <div class="flex flex-col gap-2" role="radiogroup" aria-label="Choose a variant">
-                        <button
-                            v-for="variant in productVariants(variantPicker)"
-                            :key="variant.id"
-                            type="button"
-                            role="radio"
-                            class="flex items-center gap-3 rounded-xl border px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
-                            :class="selectedVariantId === variant.id ? 'border-navy bg-cream' : 'border-black/15 bg-white'"
-                            :aria-checked="selectedVariantId === variant.id"
-                            :disabled="variant.is_product && !variant.in_stock && !variant.allows_preorder"
-                            @click="selectedVariantId = variant.id"
-                        >
-                            <span class="min-w-0 flex-1">
-                                <span class="block text-sm font-medium">{{ variantLabel(variant) }}</span>
-                                <span class="block text-xs text-black/60">
-                                    {{ variant.in_stock ? variant.stock_label : (canPreorder(variant) ? 'Preorder' : variant.stock_label) }}
+                        <div class="flex flex-col gap-2" role="radiogroup" aria-label="Choose a variant">
+                            <button
+                                v-for="variant in productVariants(variantPicker)"
+                                :key="variant.id"
+                                type="button"
+                                role="radio"
+                                class="flex items-center gap-3 rounded-xl border px-3 py-3 text-left"
+                                :class="selectedVariantId === variant.id ? 'border-navy bg-cream' : 'border-black/15 bg-white'"
+                                :aria-checked="selectedVariantId === variant.id"
+                                @click="selectedVariantId = variant.id"
+                            >
+                                <span class="min-w-0 flex-1">
+                                    <span class="block text-sm font-medium">{{ variantLabel(variant) }}</span>
+                                    <span class="block text-xs text-black/60">
+                                        {{ variant.in_stock ? variant.stock_label : (canPreorder(variant) ? 'Preorder' : variant.stock_label) }}
+                                    </span>
                                 </span>
-                            </span>
-                            <span class="text-sm font-medium text-ember">{{ variant.price_label }}</span>
-                        </button>
+                                <span class="text-sm font-medium text-ember">{{ variant.price_label }}</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="border-t border-black/10 p-4">
+                <div class="shrink-0 border-t border-black/10 p-4">
                     <div
                         v-if="selectedVariant && cartQuantity(selectedVariant.id) > 0"
                         class="flex h-11 items-center justify-between rounded-xl border border-black/15 bg-white px-2"

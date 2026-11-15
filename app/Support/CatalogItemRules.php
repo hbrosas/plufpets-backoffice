@@ -35,6 +35,7 @@ class CatalogItemRules
             'is_active' => ['required', 'boolean'],
             'has_branch_pricing' => ['required', 'boolean'],
             'allows_preorder' => ['required', 'boolean'],
+            'ask_price_on_pos' => ['required', 'boolean'],
             'variants' => ['required', 'array', 'min:1'],
             'variants.*.id' => $catalogItem === null
                 ? ['prohibited']

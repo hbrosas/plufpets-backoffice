@@ -71,6 +71,7 @@ const form = useForm({
     is_active: props.item?.is_active ?? true,
     has_branch_pricing: props.item?.has_branch_pricing ?? false,
     allows_preorder: props.item?.allows_preorder ?? true,
+    ask_price_on_pos: props.item?.ask_price_on_pos ?? false,
     modifier_ids: (props.item?.modifier_ids ?? []).map(Number),
     modifier_prices: [],
     variants: props.item?.variants?.length
@@ -115,7 +116,7 @@ function tabHasError(id) {
     const keys = Object.keys(form.errors);
 
     if (id === 'details') {
-        return keys.some((key) => ['type', 'name', 'description', 'is_active', 'allows_preorder'].includes(key));
+        return keys.some((key) => ['type', 'name', 'description', 'is_active', 'allows_preorder', 'ask_price_on_pos'].includes(key));
     }
 
     if (id === 'category') {
@@ -515,6 +516,17 @@ function submitBrand() {
                     When this is off, customers cannot order this product once a branch is out of stock.
                 </p>
                 <p v-if="form.errors.allows_preorder" class="text-sm text-danger">{{ form.errors.allows_preorder }}</p>
+            </div>
+
+            <div class="flex flex-col gap-1">
+                <label class="flex items-center gap-3 text-sm font-medium" for="ask-price-on-pos">
+                    <input id="ask-price-on-pos" v-model="form.ask_price_on_pos" class="h-4 w-4 accent-pine" type="checkbox" />
+                    Set the price when adding to the POS cart
+                </label>
+                <p class="text-sm text-ink/70 dark:text-foam/70">
+                    POS asks for the price each time this is added. The shop keeps the listed price.
+                </p>
+                <p v-if="form.errors.ask_price_on_pos" class="text-sm text-danger">{{ form.errors.ask_price_on_pos }}</p>
             </div>
         </section>
 

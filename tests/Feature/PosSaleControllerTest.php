@@ -115,6 +115,117 @@ class PosSaleControllerTest extends TestCase
         ]);
     }
 
+    public function test_pos_sale_charges_the_price_entered_for_an_open_priced_item(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create([
+                'name' => 'Custom treat',
+                'ask_price_on_pos' => true,
+            ]))
+            ->create(['name' => 'Bag', 'price' => 50]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 5,
+        ]);
+        $payment = PaymentMethod::factory()->cash()->create();
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [[
+                    'catalog_item_variant_id' => $variant->id,
+                    'quantity' => 2,
+                    'price' => '80.00',
+                ]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '160',
+                    'amount_tendered' => '160',
+                ]],
+            ])
+            ->assertRedirect(route('pos.index', $branch));
+
+        $this->assertDatabaseHas('pos_sale_items', [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+            'unit_price' => '80.00',
+            'line_total' => '160.00',
+        ]);
+    }
+
+    public function test_pos_sale_rejects_an_open_priced_item_without_a_price(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create([
+                'ask_price_on_pos' => true,
+            ]))
+            ->create(['price' => 50]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+        ]);
+        $payment = PaymentMethod::factory()->cash()->create();
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [[
+                    'catalog_item_variant_id' => $variant->id,
+                    'quantity' => 1,
+                ]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '50',
+                    'amount_tendered' => '50',
+                ]],
+            ])
+            ->assertRedirect("/backoffice/pos/register/{$branch->id}")
+            ->assertSessionHasErrors(['items.0.price' => 'Enter a price for this item.']);
+
+        $this->assertDatabaseCount('pos_sales', 0);
+    }
+
+    public function test_pos_sale_keeps_the_listed_price_when_the_item_does_not_ask(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->create(['ask_price_on_pos' => false]))
+            ->create(['price' => 100]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 2,
+        ]);
+        $payment = PaymentMethod::factory()->cash()->create();
+
+        $this->actingAsEmployee()
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [[
+                    'catalog_item_variant_id' => $variant->id,
+                    'quantity' => 1,
+                    'price' => '1.00',
+                ]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '100',
+                    'amount_tendered' => '100',
+                ]],
+            ])
+            ->assertRedirect(route('pos.index', $branch));
+
+        $this->assertDatabaseHas('pos_sale_items', [
+            'catalog_item_variant_id' => $variant->id,
+            'unit_price' => '100.00',
+        ]);
+    }
+
     public function test_a_sale_requires_a_preferred_slot_when_the_delivery_method_uses_one(): void
     {
         $branch = Branch::factory()->create();

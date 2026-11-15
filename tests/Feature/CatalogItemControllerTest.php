@@ -218,6 +218,34 @@ class CatalogItemControllerTest extends TestCase
                 ->where('catalogItem.allows_preorder', false));
     }
 
+    public function test_product_can_ask_for_a_price_when_it_is_added_in_pos(): void
+    {
+        $response = $this->actingAsEmployee()->post('/backoffice/shop/catalog', [
+            'type' => CatalogItemType::Product->value,
+            'name' => 'Custom treat',
+            'category_name' => 'Food',
+            'is_active' => true,
+            'ask_price_on_pos' => true,
+            'variants' => [
+                ['name' => 'Bag', 'price' => '50.00', 'is_active' => true],
+            ],
+        ]);
+
+        $item = CatalogItem::query()->where('name', 'Custom treat')->first();
+
+        $response->assertRedirect(route('shop.catalog.index'));
+        $this->assertNotNull($item);
+        $this->assertTrue($item->ask_price_on_pos);
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/shop/catalog/{$item->id}/edit")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Shop/Catalog/Edit')
+                ->where('catalogItem.ask_price_on_pos', true)
+                ->where('catalogItem.variants.0.price', '50.00'));
+    }
+
     public function test_valid_service_is_created_without_category(): void
     {
         $response = $this->actingAsEmployee()->post('/backoffice/shop/catalog', [
