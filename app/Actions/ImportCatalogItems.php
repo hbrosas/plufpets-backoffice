@@ -3,16 +3,14 @@
 namespace App\Actions;
 
 use App\Enums\CatalogItemType;
-use App\Models\BranchModifierOptionPrice;
-use App\Models\BranchVariantPrice;
 use App\Models\Brand;
 use App\Models\CatalogItem;
-use App\Models\CatalogItemModifierOptionPrice;
 use App\Models\CatalogItemVariant;
 use App\Models\Category;
 use App\Support\CatalogItemRules;
 use App\Support\CsvImportFile;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -45,13 +43,13 @@ class ImportCatalogItems
         'variant_active',
     ];
 
-    public function __construct(private SaveCatalogItem $saveCatalogItem) {}
-
     /**
      * @return array{imported: int, errors: list<array{row: int, message: string}>}
      */
     public function handle(UploadedFile $file): array
     {
+        set_time_limit(120);
+
         $parsed = CsvImportFile::read(
             $file,
             self::REQUIRED_COLUMNS,
@@ -176,10 +174,13 @@ class ImportCatalogItems
     private function saveGroups(array $groups, array &$errors): int
     {
         $items = $this->existingItems($groups);
-        $storedCategories = $this->storedNames(Category::class, $this->filledNames($groups, 'category_name'));
-        $storedBrands = $this->storedNames(Brand::class, $this->filledNames($groups, 'brand_name'));
+        $categoryIds = $this->ensureNames(Category::class, $this->filledNames($groups, 'category_name'));
+        $brandIds = $this->ensureNames(Brand::class, $this->filledNames($groups, 'brand_name'));
         [$bySku, $byBarcode] = $this->existingVariants($groups);
         $imported = 0;
+        $newItems = [];
+        $newVariants = [];
+        $timestamp = now();
 
         foreach ($groups as $key => $group) {
             $item = $items[$key] ?? null;
@@ -212,99 +213,182 @@ class ImportCatalogItems
                 continue;
             }
 
-            $categoryName = $this->canonicalName(
-                $group['category_name'] ?? $item?->category?->name,
-                $storedCategories,
-            );
-            $brandName = $this->canonicalName(
-                $group['brand_name'] ?? $item?->brand?->name,
-                $storedBrands,
-            );
+            $categoryName = $group['category_name'];
 
-            if (! $item instanceof CatalogItem && $group['type'] === CatalogItemType::Product->value && $categoryName === null) {
+            if (! $item instanceof CatalogItem && $group['type'] === CatalogItemType::Product->value && ($categoryName === null || $categoryName === '')) {
                 $errors[] = ['row' => $group['row'], 'message' => 'Enter a category.'];
 
                 continue;
             }
 
-            $this->saveCatalogItem->handle([
-                'type' => $group['type'],
-                'name' => $group['name'],
-                'description' => $group['description'] ?? $item?->description,
-                'badge' => $item?->badge,
-                'is_active' => $group['is_active'] ?? $item?->is_active ?? true,
-                'has_branch_pricing' => $item?->has_branch_pricing ?? false,
-                'allows_preorder' => $item?->allows_preorder ?? true,
-                'category_name' => $categoryName,
-                'brand_name' => $brandName,
-                'modifier_ids' => $item?->modifiers->pluck('id')->all() ?? [],
-                'modifier_prices' => $item?->modifierOptionPrices->map(fn (CatalogItemModifierOptionPrice $price): array => [
-                    'modifier_id' => $price->modifier_id,
-                    'option' => $price->option,
-                    'price' => $price->price,
-                    'branch_prices' => $price->branchPrices->map(fn (BranchModifierOptionPrice $branchPrice): array => [
-                        'branch_id' => $branchPrice->branch_id,
-                        'price' => $branchPrice->price,
-                    ])->all(),
-                ])->all() ?? [],
-                'variants' => $this->variantsForSave($item, $accepted, $bySku),
-            ], $item);
+            if (! $item instanceof CatalogItem) {
+                $newItems[] = [
+                    'key' => $key,
+                    'group' => $group,
+                    'variants' => $accepted,
+                ];
+                $imported += count($accepted);
 
+                continue;
+            }
+
+            $this->saveItem($item, $group, $categoryIds, $brandIds);
             $imported += count($accepted);
+            $this->collectNewVariants($item->id, $accepted, $bySku, $newVariants, $timestamp);
+        }
+
+        $this->insertItems($newItems, $categoryIds, $brandIds, $newVariants, $timestamp);
+
+        foreach (array_chunk($newVariants, 500) as $chunk) {
+            CatalogItemVariant::query()->insert($chunk);
         }
 
         return $imported;
     }
 
     /**
-     * @param  list<array<string, mixed>>  $accepted
-     * @return list<array<string, mixed>>
+     * @param  array<string, mixed>  $group
+     * @param  array<string, int>  $categoryIds
+     * @param  array<string, int>  $brandIds
      */
-    private function variantsForSave(?CatalogItem $item, array $accepted, Collection $bySku): array
+    private function saveItem(CatalogItem $item, array $group, array $categoryIds, array $brandIds): void
     {
-        $variants = [];
+        $categoryId = $this->nameId($group['category_name'], $categoryIds);
+        $brandId = $this->nameId($group['brand_name'], $brandIds);
 
-        foreach ($item?->variants ?? [] as $existing) {
-            $variants[$existing->id] = [
-                'id' => $existing->id,
-                'name' => $existing->name,
-                'sku' => $existing->sku,
-                'barcode' => $existing->barcode,
-                'price' => $existing->price,
-                'is_active' => $existing->is_active,
-                'branch_prices' => $existing->branchPrices->map(fn (BranchVariantPrice $price): array => [
-                    'branch_id' => $price->branch_id,
-                    'price' => $price->price,
-                ])->all(),
+        $item->name = $group['name'];
+
+        if ($group['description'] !== null) {
+            $item->description = $group['description'];
+        }
+
+        if ($group['is_active'] !== null) {
+            $item->is_active = $group['is_active'];
+        }
+
+        if ($categoryId !== null) {
+            $item->category_id = $categoryId;
+        }
+
+        if ($brandId !== null) {
+            $item->brand_id = $brandId;
+        }
+
+        $item->save();
+    }
+
+    /**
+     * @param  list<array{key: string, group: array<string, mixed>, variants: list<array<string, mixed>>}>  $newItems
+     * @param  array<string, int>  $categoryIds
+     * @param  array<string, int>  $brandIds
+     * @param  list<array<string, mixed>>  $newVariants
+     */
+    private function insertItems(array $newItems, array $categoryIds, array $brandIds, array &$newVariants, Carbon $timestamp): void
+    {
+        if ($newItems === []) {
+            return;
+        }
+
+        $rows = [];
+
+        foreach ($newItems as $newItem) {
+            $group = $newItem['group'];
+            $rows[] = [
+                'type' => $group['type'],
+                'name' => $group['name'],
+                'description' => $group['description'],
+                'category_id' => $this->nameId($group['category_name'], $categoryIds),
+                'brand_id' => $this->nameId($group['brand_name'], $brandIds),
+                'is_active' => $group['is_active'] ?? true,
+                'has_branch_pricing' => false,
+                'allows_preorder' => true,
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
             ];
         }
 
+        foreach (array_chunk($rows, 200) as $chunk) {
+            CatalogItem::query()->insert($chunk);
+        }
+
+        $created = $this->existingItems(array_map(
+            fn (array $newItem): array => [
+                'type' => $newItem['group']['type'],
+                'name' => $newItem['group']['name'],
+            ],
+            $newItems,
+        ));
+
+        foreach ($newItems as $newItem) {
+            $item = $created[$newItem['key']];
+
+            foreach ($newItem['variants'] as $variant) {
+                $newVariants[] = $this->variantRow($item->id, $variant, $timestamp);
+            }
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $accepted
+     * @param  Collection<string, CatalogItemVariant>  $bySku
+     * @param  list<array<string, mixed>>  $newVariants
+     */
+    private function collectNewVariants(int $itemId, array $accepted, Collection $bySku, array &$newVariants, Carbon $timestamp): void
+    {
         foreach ($accepted as $variant) {
             $owner = $variant['sku'] !== null ? $bySku->get($variant['sku']) : null;
 
-            if ($owner instanceof CatalogItemVariant && $item instanceof CatalogItem && $owner->catalog_item_id === $item->id) {
-                $current = $variants[$owner->id];
-                $variants[$owner->id] = [
-                    ...$current,
+            if ($owner instanceof CatalogItemVariant && $owner->catalog_item_id === $itemId) {
+                $changes = [
                     'name' => $variant['name'],
                     'price' => $variant['price'],
-                    'barcode' => $variant['barcode'] ?? $current['barcode'],
-                    'is_active' => $variant['is_active'] ?? $current['is_active'],
                 ];
+
+                if ($variant['barcode'] !== null) {
+                    $changes['barcode'] = $variant['barcode'];
+                }
+
+                if ($variant['is_active'] !== null) {
+                    $changes['is_active'] = $variant['is_active'];
+                }
+
+                $owner->update($changes);
 
                 continue;
             }
 
-            $variants['new-'.$variant['row']] = [
-                'name' => $variant['name'],
-                'sku' => $variant['sku'],
-                'barcode' => $variant['barcode'],
-                'price' => $variant['price'],
-                'is_active' => $variant['is_active'] ?? true,
-            ];
+            $newVariants[] = $this->variantRow($itemId, $variant, $timestamp);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $variant
+     * @return array<string, mixed>
+     */
+    private function variantRow(int $itemId, array $variant, Carbon $timestamp): array
+    {
+        return [
+            'catalog_item_id' => $itemId,
+            'name' => $variant['name'],
+            'sku' => $variant['sku'],
+            'barcode' => $variant['barcode'],
+            'price' => $variant['price'],
+            'is_active' => $variant['is_active'] ?? true,
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ];
+    }
+
+    /**
+     * @param  array<string, int>  $ids
+     */
+    private function nameId(mixed $name, array $ids): ?int
+    {
+        if (! is_string($name) || $name === '') {
+            return null;
         }
 
-        return array_values($variants);
+        return $ids[Str::lower($name)];
     }
 
     /**
@@ -313,20 +397,19 @@ class ImportCatalogItems
      */
     private function existingItems(array $groups): array
     {
+        $names = [];
+        $types = [];
+
+        foreach ($groups as $group) {
+            $names[Str::lower($group['name'])] = true;
+            $types[$group['type']] = true;
+        }
+
         $items = CatalogItem::query()
-            ->with([
-                'category',
-                'brand',
-                'variants.branchPrices',
-                'modifiers',
-                'modifierOptionPrices.branchPrices',
-            ])
-            ->where(function ($query) use ($groups): void {
-                foreach ($groups as $group) {
-                    $query->orWhere(function ($query) use ($group): void {
-                        $query->where('type', $group['type'])
-                            ->whereRaw('lower(name) = ?', [Str::lower($group['name'])]);
-                    });
+            ->whereIn('type', array_keys($types))
+            ->where(function ($query) use ($names): void {
+                foreach (array_chunk(array_keys($names), 500) as $chunk) {
+                    $query->orWhereIn(DB::raw('lower(name)'), $chunk);
                 }
             })
             ->orderBy('id')
@@ -490,46 +573,31 @@ class ImportCatalogItems
     /**
      * @param  class-string<Category|Brand>  $model
      * @param  list<string>  $names
-     * @return array<string, string>
+     * @return array<string, int>
      */
-    private function storedNames(string $model, array $names): array
+    private function ensureNames(string $model, array $names): array
     {
-        if ($names === []) {
-            return [];
-        }
+        $ids = [];
 
-        $records = $model::query()
-            ->where(function ($query) use ($names): void {
-                foreach ($names as $name) {
-                    $query->orWhereRaw('lower(name) = ?', [Str::lower($name)]);
-                }
-            })
-            ->orderBy('id')
-            ->get();
-
-        $stored = [];
-
-        foreach ($records as $record) {
+        foreach ($model::query()->orderBy('id')->get(['id', 'name']) as $record) {
             $key = Str::lower($record->name);
 
-            if (! isset($stored[$key])) {
-                $stored[$key] = $record->name;
+            if (! isset($ids[$key])) {
+                $ids[$key] = $record->id;
             }
         }
 
-        return $stored;
-    }
+        foreach ($names as $name) {
+            $key = Str::lower($name);
 
-    /**
-     * @param  array<string, string>  $stored
-     */
-    private function canonicalName(?string $name, array $stored): ?string
-    {
-        if ($name === null || $name === '') {
-            return null;
+            if (isset($ids[$key])) {
+                continue;
+            }
+
+            $ids[$key] = $model::query()->create(['name' => $name])->id;
         }
 
-        return $stored[Str::lower($name)] ?? $name;
+        return $ids;
     }
 
     private function toOptionalBoolean(string $value): ?bool

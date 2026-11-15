@@ -12,6 +12,7 @@ use App\Models\Category;
 use App\Models\Modifier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class CatalogItemImportControllerTest extends TestCase
@@ -412,6 +413,27 @@ class CatalogItemImportControllerTest extends TestCase
             'option' => 'Gift wrap',
             'price' => '5.00',
         ]);
+    }
+
+    public function test_a_large_file_imports_with_one_write_per_product(): void
+    {
+        $lines = ['type,name,description,category,brand,variant_name,sku,barcode,price,is_active'];
+
+        for ($index = 1; $index <= 40; $index++) {
+            $lines[] = "product,Product {$index},Daily food,Food,Pluf Pets,1kg,SKU-{$index},4800{$index},10.00,1";
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $response = $this->actingAsEmployee()->post('/backoffice/shop/catalog/import', [
+            'file' => UploadedFile::fake()->createWithContent('catalog.csv', implode("\n", $lines)."\n"),
+        ]);
+
+        $response->assertRedirect(route('shop.catalog.index'));
+        $response->assertSessionHas('status', 'Imported 40 catalog rows.');
+        $this->assertDatabaseCount('catalog_items', 40);
+        $this->assertLessThan(25, count(DB::getQueryLog()));
     }
 
     private function csvFile(): UploadedFile
