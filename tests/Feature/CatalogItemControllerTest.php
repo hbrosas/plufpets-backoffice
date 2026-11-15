@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Enums\CatalogItemType;
 use App\Models\Branch;
+use App\Models\BranchVariantPrice;
 use App\Models\Brand;
 use App\Models\CatalogItem;
+use App\Models\CatalogItemModifierOptionPrice;
 use App\Models\CatalogItemVariant;
 use App\Models\Category;
 use App\Models\Modifier;
@@ -723,6 +725,115 @@ class CatalogItemControllerTest extends TestCase
         $response->assertSessionHas('status', 'Catalog item deleted.');
         $this->assertDatabaseMissing('catalog_items', [
             'id' => $item->id,
+        ]);
+    }
+
+    public function test_guest_cannot_duplicate_a_catalog_item(): void
+    {
+        $item = CatalogItem::factory()->create();
+
+        $this->post("/backoffice/shop/catalog/{$item->id}/duplicate")->assertRedirect(route('login'));
+        $this->assertDatabaseCount('catalog_items', 1);
+    }
+
+    public function test_catalog_item_can_be_duplicated(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('catalog-images/one.jpg', 'image');
+
+        $category = Category::factory()->create(['name' => 'Food']);
+        $brand = Brand::factory()->create(['name' => 'Pluf Pets']);
+        $item = CatalogItem::factory()->create([
+            'name' => 'Organic kibble',
+            'description' => 'Daily dry food',
+            'category_id' => $category->id,
+            'brand_id' => $brand->id,
+            'badge' => 'Sale',
+            'is_active' => true,
+            'has_branch_pricing' => true,
+            'allows_preorder' => false,
+        ]);
+        $variant = CatalogItemVariant::factory()->for($item)->create([
+            'name' => '1kg',
+            'sku' => 'KIB-001',
+            'barcode' => '4800123456789',
+            'price' => 29.90,
+            'image_path' => 'catalog-images/one.jpg',
+            'is_active' => true,
+        ]);
+        $branchPrice = BranchVariantPrice::factory()->create([
+            'catalog_item_variant_id' => $variant->id,
+            'price' => 32,
+        ]);
+        $modifier = Modifier::factory()->create([
+            'name' => 'Gift wrap',
+            'options' => ['Gift wrap'],
+        ]);
+        $item->modifiers()->attach($modifier->id);
+        CatalogItemModifierOptionPrice::factory()->create([
+            'catalog_item_id' => $item->id,
+            'modifier_id' => $modifier->id,
+            'option' => 'Gift wrap',
+            'price' => 5,
+        ]);
+
+        $response = $this->actingAsEmployee()->post("/backoffice/shop/catalog/{$item->id}/duplicate");
+
+        $copy = CatalogItem::query()->where('name', 'Organic kibble (copy)')->first();
+        $this->assertNotNull($copy);
+        $response->assertRedirect(route('shop.catalog.edit', $copy));
+        $response->assertSessionHas('status', 'Catalog item duplicated.');
+        $this->assertSame($category->id, $copy->category_id);
+        $this->assertSame($brand->id, $copy->brand_id);
+        $this->assertSame('Daily dry food', $copy->description);
+        $this->assertSame('Sale', $copy->badge);
+        $this->assertTrue($copy->has_branch_pricing);
+        $this->assertFalse($copy->allows_preorder);
+        $this->assertDatabaseHas('catalog_item_variants', [
+            'catalog_item_id' => $item->id,
+            'sku' => 'KIB-001',
+            'barcode' => '4800123456789',
+        ]);
+        $this->assertDatabaseHas('catalog_item_variants', [
+            'catalog_item_id' => $copy->id,
+            'name' => '1kg',
+            'sku' => null,
+            'barcode' => null,
+            'price' => '29.90',
+        ]);
+
+        $copiedVariant = CatalogItemVariant::query()->where('catalog_item_id', $copy->id)->first();
+        $this->assertNotNull($copiedVariant);
+        $this->assertNotSame('catalog-images/one.jpg', $copiedVariant->image_path);
+        Storage::disk('public')->assertExists('catalog-images/one.jpg');
+        Storage::disk('public')->assertExists($copiedVariant->image_path);
+        $this->assertDatabaseHas('branch_variant_prices', [
+            'catalog_item_variant_id' => $copiedVariant->id,
+            'branch_id' => $branchPrice->branch_id,
+            'price' => '32.00',
+        ]);
+        $this->assertDatabaseHas('catalog_item_modifier', [
+            'catalog_item_id' => $copy->id,
+            'modifier_id' => $modifier->id,
+        ]);
+        $this->assertDatabaseHas('catalog_item_modifier_option_prices', [
+            'catalog_item_id' => $copy->id,
+            'modifier_id' => $modifier->id,
+            'option' => 'Gift wrap',
+            'price' => '5.00',
+        ]);
+    }
+
+    public function test_duplicating_again_uses_the_next_copy_name(): void
+    {
+        $item = CatalogItem::factory()->create(['name' => 'Organic kibble']);
+        CatalogItemVariant::factory()->for($item)->create();
+        CatalogItem::factory()->create(['name' => 'Organic kibble (copy)']);
+
+        $this->actingAsEmployee()->post("/backoffice/shop/catalog/{$item->id}/duplicate");
+
+        $this->assertDatabaseHas('catalog_items', [
+            'name' => 'Organic kibble (copy 2)',
         ]);
     }
 

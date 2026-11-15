@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
 defineOptions({
@@ -16,12 +16,23 @@ defineProps({
         required: true,
     },
 });
+
+function duplicateItem(catalogItem) {
+    router.post(`/backoffice/shop/catalog/${catalogItem.id}/duplicate`);
+}
 </script>
 
 <template>
     <Head :title="catalogItem.name" />
 
     <Teleport defer to="#admin-header-actions">
+        <button
+            class="h-10 rounded-xl border border-mist px-4 text-sm font-medium transition hover:border-pine dark:border-white/15 dark:hover:border-sand"
+            type="button"
+            @click="duplicateItem(catalogItem)"
+        >
+            Duplicate
+        </button>
         <Link
             class="inline-flex h-10 items-center rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
             :href="`/backoffice/shop/catalog/${catalogItem.id}/edit`"

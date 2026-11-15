@@ -8,6 +8,7 @@ use App\Models\Business;
 use App\Models\CatalogItemVariant;
 use App\Models\Category;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class ShopCatalog
 {
@@ -149,7 +150,7 @@ class ShopCatalog
             })
             ->with([
                 'catalogItem' => fn ($query) => $query
-                    ->select('id', 'name', 'type', 'category_id', 'brand_id', 'badge', 'has_branch_pricing', 'allows_preorder', 'is_active')
+                    ->select('id', 'name', 'description', 'type', 'category_id', 'brand_id', 'badge', 'has_branch_pricing', 'allows_preorder', 'is_active')
                     ->with([
                         'category:id,name',
                         'brand:id,name,image_path',
@@ -158,13 +159,74 @@ class ShopCatalog
                 'branchPrices' => fn ($query) => $query->where('branch_id', $branch->id),
             ])
             ->get()
-            ->map(fn (CatalogItemVariant $variant): array => $this->product($variant, $branch->id))
+            ->groupBy('catalog_item_id')
+            ->map(fn (Collection $variants): array => $this->groupedProduct($variants, $branch->id))
+            ->sortBy([
+                ['name', 'asc'],
+                ['catalog_item_id', 'asc'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, CatalogItemVariant>  $variants
+     * @return array<string, mixed>
+     */
+    private function groupedProduct(Collection $variants, int $branchId): array
+    {
+        $rows = $variants
+            ->map(fn (CatalogItemVariant $variant): array => $this->product($variant, $branchId))
             ->sortBy([
                 ['name', 'asc'],
                 ['id', 'asc'],
             ])
-            ->values()
-            ->all();
+            ->values();
+        $description = trim((string) $variants->first()?->catalogItem?->description);
+
+        if ($rows->count() === 1) {
+            return [
+                ...$rows->first(),
+                'description' => $description === '' ? null : $description,
+                'variants' => $rows->all(),
+            ];
+        }
+
+        $sortedByPrice = $rows
+            ->sortBy(fn (array $row): float => (float) $row['price'])
+            ->values();
+        $lowest = $sortedByPrice->first();
+        $highest = $sortedByPrice->last();
+        $withImage = $rows->first(fn (array $row): bool => filled($row['image_url']));
+        $inStock = $rows->contains(fn (array $row): bool => $row['in_stock'] === true);
+
+        return [
+            'id' => $variants->first()?->catalog_item_id,
+            'catalog_item_id' => $variants->first()?->catalog_item_id,
+            'name' => $lowest['item_name'],
+            'item_name' => $lowest['item_name'],
+            'variant_name' => null,
+            'description' => $description === '' ? null : $description,
+            'price' => $lowest['price'],
+            'price_label' => $lowest['price'] === $highest['price']
+                ? $lowest['price_label']
+                : $lowest['price_label'].' – '.$highest['price_label'],
+            'image_url' => is_array($withImage) ? $withImage['image_url'] : null,
+            'sku' => null,
+            'barcode' => null,
+            'category_id' => $lowest['category_id'],
+            'category_name' => $lowest['category_name'],
+            'brand_id' => $lowest['brand_id'],
+            'brand_name' => $lowest['brand_name'],
+            'brand_logo_url' => $lowest['brand_logo_url'],
+            'badge' => $lowest['badge'],
+            'is_product' => $lowest['is_product'],
+            'stock' => null,
+            'in_stock' => $inStock,
+            'allows_preorder' => $lowest['allows_preorder'],
+            'stock_label' => $inStock ? 'In Stock' : 'Out of Stock',
+            'variants' => $rows->all(),
+        ];
     }
 
     /**
@@ -193,6 +255,7 @@ class ShopCatalog
 
         return [
             'id' => $variant->id,
+            'catalog_item_id' => $variant->catalog_item_id,
             'name' => $name,
             'item_name' => $itemName,
             'variant_name' => $variantName,

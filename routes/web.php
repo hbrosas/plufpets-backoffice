@@ -280,6 +280,8 @@ Route::prefix('backoffice')->group(function () {
                     ->name('catalog.import.store');
                 Route::post('catalog/bulk', [CatalogItemController::class, 'bulk'])
                     ->name('catalog.bulk');
+                Route::post('catalog/{catalog_item}/duplicate', [CatalogItemController::class, 'duplicate'])
+                    ->name('catalog.duplicate');
                 Route::get('catalog/{catalog_item}/supplies/{supply}/labels', [CatalogItemController::class, 'labels'])
                     ->name('catalog.supplies.labels');
                 Route::resource('catalog', CatalogItemController::class)

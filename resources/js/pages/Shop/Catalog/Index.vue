@@ -120,6 +120,12 @@ function deleteItem(item) {
     });
 }
 
+function duplicateItem(item) {
+    router.post(`/backoffice/shop/catalog/${item.id}/duplicate`, {}, {
+        preserveScroll: true,
+    });
+}
+
 function toggleItem(id, checked) {
     selectedIds.value = checked
         ? [...selectedIds.value, id]
@@ -346,6 +352,9 @@ watch(visibleIds, (ids) => {
                                 <Link class="font-medium text-pine dark:text-sand" :href="`/backoffice/shop/catalog/${item.id}/edit`">
                                     Edit
                                 </Link>
+                                <button class="font-medium text-pine dark:text-sand" type="button" @click="duplicateItem(item)">
+                                    Duplicate
+                                </button>
                                 <button class="font-medium text-danger" type="button" @click="deleteItem(item)">
                                     Delete
                                 </button>

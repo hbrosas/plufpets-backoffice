@@ -162,6 +162,50 @@ class ShopCheckoutTest extends TestCase
             ->assertJsonPath('delivery_instructions', 'Same rider for every branch.');
     }
 
+    public function test_home_lists_one_product_when_it_has_multiple_variants(): void
+    {
+        $branch = Branch::factory()->create(['is_active' => true]);
+        $kibble = CatalogItem::factory()->create([
+            'name' => 'Kibble',
+            'description' => 'Chicken and rice.',
+        ]);
+        $large = CatalogItemVariant::factory()->for($kibble)->create(['name' => 'Large', 'price' => 100]);
+        $small = CatalogItemVariant::factory()->for($kibble)->create(['name' => 'Small', 'price' => 40]);
+        CatalogItemVariant::factory()->for($kibble)->create([
+            'name' => 'Hidden',
+            'price' => 10,
+            'is_active' => false,
+        ]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $large->id,
+            'quantity' => 3,
+        ]);
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $small->id,
+            'quantity' => 0,
+        ]);
+
+        $this->get('/?branch='.$branch->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Site/Home')
+                ->has('products', 1)
+                ->where('products.0.name', 'Kibble')
+                ->where('products.0.description', 'Chicken and rice.')
+                ->where('products.0.price_label', '₱40.00 – ₱100.00')
+                ->where('products.0.in_stock', true)
+                ->where('products.0.stock', null)
+                ->has('products.0.variants', 2)
+                ->where('products.0.variants.0.variant_name', 'Large')
+                ->where('products.0.variants.0.price_label', '₱100.00')
+                ->where('products.0.variants.0.stock', 3)
+                ->where('products.0.variants.1.variant_name', 'Small')
+                ->where('products.0.variants.1.in_stock', false)
+                ->where('products.0.variants.1.allows_preorder', true));
+    }
+
     public function test_hidden_categories_stay_off_the_public_shop(): void
     {
         $branch = Branch::factory()->create(['name' => 'Greenheights', 'is_active' => true]);

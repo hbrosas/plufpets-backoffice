@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\BulkUpdateCatalogItems;
+use App\Actions\DuplicateCatalogItem;
 use App\Actions\SaveCatalogItem;
 use App\Enums\CatalogItemType;
 use App\Http\Requests\BulkUpdateCatalogItemsRequest;
@@ -104,6 +105,15 @@ class CatalogItemController extends Controller
         return redirect()
             ->back()
             ->with('status', $message);
+    }
+
+    public function duplicate(CatalogItem $catalogItem, DuplicateCatalogItem $duplicateCatalogItem): RedirectResponse
+    {
+        $copy = $duplicateCatalogItem->handle($catalogItem);
+
+        return redirect()
+            ->route('shop.catalog.edit', $copy)
+            ->with('status', 'Catalog item duplicated.');
     }
 
     public function create(): Response
