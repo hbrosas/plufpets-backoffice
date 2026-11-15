@@ -58,6 +58,7 @@ const cartOpen = ref(false);
 const cart = ref([]);
 const variantPicker = ref(null);
 const selectedVariantId = ref(null);
+const pickerQuantity = ref(1);
 const pickerImageMissing = ref(false);
 const addedNotice = ref('');
 const logoMissing = ref(false);
@@ -151,6 +152,10 @@ watch(
 
 watch(pickerImage, () => {
     pickerImageMissing.value = false;
+});
+
+watch(selectedVariantId, () => {
+    pickerQuantity.value = 1;
 });
 
 watch(variantPicker, (product) => {
@@ -349,6 +354,15 @@ function openVariantPicker(product) {
 function closeVariantPicker() {
     variantPicker.value = null;
     selectedVariantId.value = null;
+    pickerQuantity.value = 1;
+}
+
+function pickerQuantityLimit(variant) {
+    if (!variant || (variant.is_product && !variant.in_stock && !variant.allows_preorder)) {
+        return 0;
+    }
+
+    return Math.max(0, quantityLimit(variant) - cartQuantity(variant.id));
 }
 
 function closePickerOnEscape(event) {
@@ -358,11 +372,33 @@ function closePickerOnEscape(event) {
 }
 
 function addSelectedVariant() {
-    if (selectedVariant.value === null) {
+    const variant = selectedVariant.value;
+
+    if (variant === null || pickerQuantityLimit(variant) < 1) {
         return;
     }
 
-    addProduct(selectedVariant.value);
+    const quantity = Math.min(Math.max(1, pickerQuantity.value), pickerQuantityLimit(variant));
+    const line = cart.value.find((item) => item.id === variant.id);
+
+    if (line) {
+        line.quantity = Math.min(line.quantity + quantity, lineQuantityLimit(line));
+    } else {
+        cart.value.push({
+            id: variant.id,
+            name: variant.name,
+            price: variant.price,
+            price_label: variant.price_label,
+            image_url: variant.image_url,
+            quantity,
+            stock: variant.stock,
+            is_product: variant.is_product,
+            preorder: canPreorder(variant),
+        });
+    }
+
+    pickerQuantity.value = 1;
+    showAddedNotice(variant.name);
 }
 
 onUnmounted(() => {
@@ -785,10 +821,10 @@ function removeLine(productId) {
                         v-if="pickerImage && !pickerImageMissing"
                         :src="pickerImage"
                         :alt="variantPicker.item_name"
-                        class="h-40 w-full shrink-0 bg-cream object-cover sm:h-48"
+                        class="h-[clamp(7rem,34dvh,20rem)] w-full shrink-0 bg-cream object-contain"
                         @error="pickerImageMissing = true"
                     />
-                    <div v-else class="flex h-40 w-full shrink-0 items-center justify-center bg-cream text-sm text-black/50 sm:h-48">
+                    <div v-else class="flex h-[clamp(7rem,34dvh,20rem)] w-full shrink-0 items-center justify-center bg-cream text-sm text-black/50">
                         No photo
                     </div>
 
@@ -839,40 +875,42 @@ function removeLine(productId) {
                     </div>
                 </div>
 
-                <div class="shrink-0 border-t border-black/10 p-4">
-                    <div
-                        v-if="selectedVariant && cartQuantity(selectedVariant.id) > 0"
-                        class="flex h-11 items-center justify-between rounded-xl border border-black/15 bg-white px-2"
-                    >
+                <div class="flex shrink-0 flex-col gap-2 border-t border-black/10 p-4">
+                    <div class="flex items-center gap-3">
+                        <div class="flex h-11 shrink-0 items-center rounded-xl border border-black/15 bg-white px-1">
+                            <button
+                                type="button"
+                                class="h-8 w-8 rounded-lg text-lg disabled:text-black/30"
+                                aria-label="Decrease quantity"
+                                :disabled="pickerQuantity <= 1"
+                                @click="pickerQuantity = Math.max(1, pickerQuantity - 1)"
+                            >
+                                −
+                            </button>
+                            <span class="w-8 text-center text-sm font-medium">{{ pickerQuantity }}</span>
+                            <button
+                                type="button"
+                                class="h-8 w-8 rounded-lg text-lg disabled:text-black/30"
+                                aria-label="Increase quantity"
+                                :disabled="!selectedVariant || pickerQuantity >= pickerQuantityLimit(selectedVariant)"
+                                @click="pickerQuantity += 1"
+                            >
+                                +
+                            </button>
+                        </div>
                         <button
                             type="button"
-                            class="h-8 w-8 rounded-lg text-lg"
-                            aria-label="Decrease quantity"
-                            @click="changeProductQuantity(selectedVariant, cartQuantity(selectedVariant.id) - 1)"
+                            class="h-11 min-w-0 flex-1 rounded-xl text-sm font-medium disabled:cursor-not-allowed"
+                            :class="selectedVariant?.in_stock ? 'bg-green-600 text-white' : (selectedVariant && canPreorder(selectedVariant) ? 'bg-yellow-400 text-black' : 'bg-black/10 text-black/50')"
+                            :disabled="!selectedVariant || pickerQuantityLimit(selectedVariant) < 1"
+                            @click="addSelectedVariant"
                         >
-                            −
-                        </button>
-                        <span class="text-sm font-medium">{{ cartQuantity(selectedVariant.id) }} in cart</span>
-                        <button
-                            type="button"
-                            class="h-8 w-8 rounded-lg text-lg"
-                            aria-label="Increase quantity"
-                            :disabled="cartQuantity(selectedVariant.id) >= quantityLimit(selectedVariant)"
-                            @click="changeProductQuantity(selectedVariant, cartQuantity(selectedVariant.id) + 1)"
-                        >
-                            +
+                            {{ selectedVariant?.in_stock ? 'Add to cart' : (selectedVariant && canPreorder(selectedVariant) ? 'Preorder' : 'Out of stock') }}
                         </button>
                     </div>
-                    <button
-                        v-else
-                        type="button"
-                        class="h-11 w-full rounded-xl text-sm font-medium disabled:cursor-not-allowed"
-                        :class="selectedVariant?.in_stock ? 'bg-green-600 text-white' : (selectedVariant && canPreorder(selectedVariant) ? 'bg-yellow-400 text-black' : 'bg-black/10 text-black/50')"
-                        :disabled="!selectedVariant || (selectedVariant.is_product && !selectedVariant.in_stock && !selectedVariant.allows_preorder)"
-                        @click="addSelectedVariant"
-                    >
-                        {{ selectedVariant?.in_stock ? 'Add to cart' : (selectedVariant && canPreorder(selectedVariant) ? 'Preorder' : 'Out of stock') }}
-                    </button>
+                    <p v-if="selectedVariant && cartQuantity(selectedVariant.id) > 0" class="text-center text-xs text-black/60">
+                        {{ cartQuantity(selectedVariant.id) }} in cart
+                    </p>
                 </div>
             </section>
         </div>
