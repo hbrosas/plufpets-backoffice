@@ -742,7 +742,7 @@ const customUnitPrice = computed(() => {
     const base = asksForPrice(variant) ? enteredPrice(customPrice.value) : Number(variant.price);
 
     return (base ?? 0) + extra;
-}
+});
 
 function asksForPrice(variant) {
     return Boolean(variant?.ask_price_on_pos) || variant?.price === null || variant?.price === '';
