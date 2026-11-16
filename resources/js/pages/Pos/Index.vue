@@ -256,6 +256,24 @@ function lineAmountLabel(line) {
     return line.is_free ? `-${label}` : label;
 }
 
+function cartLinePriceError() {
+    const invalid = cart.value.some((line) => {
+        const price = Number(line.price);
+
+        return !Number.isFinite(price) || price < 0;
+    });
+
+    return invalid ? 'Enter a price for every item.' : '';
+}
+
+function formErrorText(message) {
+    if (Array.isArray(message)) {
+        return message[0] ?? '';
+    }
+
+    return message ?? '';
+}
+
 const cartSubtotal = computed(() =>
     cart.value.reduce((sum, line) => sum + signedLineTotal(line), 0),
 );
@@ -1283,6 +1301,15 @@ async function charge() {
         return;
     }
 
+    const priceError = cartLinePriceError();
+
+    if (priceError) {
+        checkoutError.value = priceError;
+        chargeOpen.value = true;
+
+        return;
+    }
+
     if (splitCheckout.value && remainingTotal.value > 0.005) {
         checkoutError.value = 'Cover the remaining total before charging.';
         return;
@@ -1338,25 +1365,15 @@ async function charge() {
     saleForm.clearErrors();
 
     try {
-        const preview = await jsonRequest(`${registerPath.value}/sales/preview`, {
+        const saved = await jsonRequest(`${registerPath.value}/sales`, {
             method: 'POST',
             body: payload,
         });
 
         checkoutSuccess.value = {
-            total: preview.checkout_success?.total ?? checkoutSuccess.value.total,
-            change: changeLabel(preview.checkout_success?.change),
+            total: saved.checkout_success?.total ?? checkoutSuccess.value.total,
+            change: changeLabel(saved.checkout_success?.change),
         };
-
-        await printOnReceiptPrinter(preview.receipt, Boolean(preview.open_drawer));
-
-        await jsonRequest(`${registerPath.value}/sales`, {
-            method: 'POST',
-            body: {
-                ...payload,
-                number: preview.number,
-            },
-        });
 
         applySoldQuantities(soldLines);
         cart.value = [];
@@ -1374,23 +1391,25 @@ async function charge() {
             ...registerPartial,
             only: [...registerPartial.only, 'variants'],
         });
+
+        if (receiptPrinter.value && saved.receipt) {
+            try {
+                await printOnReceiptPrinter(saved.receipt, Boolean(saved.open_drawer));
+            } catch (error) {
+                showToast(error instanceof Error ? error.message : 'The sale was saved, but the receipt did not print.');
+            }
+        }
     } catch (error) {
         checkoutSuccess.value = null;
+        checkoutError.value = error instanceof Error ? error.message : 'Could not record this sale.';
 
-        const errors = error?.errors ?? {};
-        const entries = Object.entries(errors);
+        Object.entries(error?.errors ?? {}).forEach(([key, value]) => {
+            const message = Array.isArray(value) ? value[0] : value;
 
-        if (entries.length > 0) {
-            entries.forEach(([key, value]) => {
-                const message = Array.isArray(value) ? value[0] : value;
-
-                if (message) {
-                    saleForm.setError(key, String(message));
-                }
-            });
-        } else {
-            checkoutError.value = error instanceof Error ? error.message : 'Could not record this sale.';
-        }
+            if (message) {
+                saleForm.setError(key, String(message));
+            }
+        });
     } finally {
         charging.value = false;
     }
@@ -1528,15 +1547,29 @@ function openSave() {
         return;
     }
 
+    openOrderError.value = '';
+    openOrderForm.clearErrors();
     openOrderForm.name = activeOpenOrderName.value;
     saveOpen.value = true;
 }
+
+const openOrderError = ref('');
 
 function saveOpenOrder() {
     if (cart.value.length === 0) {
         return;
     }
 
+    const priceError = cartLinePriceError();
+
+    if (priceError) {
+        openOrderError.value = priceError;
+
+        return;
+    }
+
+    openOrderError.value = '';
+    openOrderForm.clearErrors();
     openOrderForm.items = openOrderItems();
 
     const options = {
@@ -1547,7 +1580,19 @@ function saveOpenOrder() {
             activeOpenOrderName.value = '';
             orderStockCredit.value = {};
             saveOpen.value = false;
+            openOrderError.value = '';
             openOrderForm.reset();
+        },
+        onError: (errors) => {
+            if (Object.keys(errors).length === 0) {
+                openOrderError.value = 'Could not save this open order.';
+            }
+        },
+        onHttpException: () => {
+            openOrderError.value = 'Could not save this open order.';
+        },
+        onNetworkError: () => {
+            openOrderError.value = 'Could not save this open order.';
         },
     };
 
@@ -3252,6 +3297,15 @@ onUnmounted(() => {
                     />
                     <p v-if="openOrderForm.errors.name" class="text-sm text-danger">{{ openOrderForm.errors.name }}</p>
                 </div>
+                <p v-if="openOrderError" class="text-sm text-danger">{{ openOrderError }}</p>
+                <p
+                    v-for="(message, key) in openOrderForm.errors"
+                    v-show="key !== 'name'"
+                    :key="key"
+                    class="text-sm text-danger"
+                >
+                    {{ formErrorText(message) }}
+                </p>
                 <button
                     class="h-11 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-70"
                     type="submit"

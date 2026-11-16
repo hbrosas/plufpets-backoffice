@@ -134,6 +134,55 @@ class PosOpenOrderControllerTest extends TestCase
         $this->assertSame([], $order->items[0]['assisted_employee_ids']);
     }
 
+    public function test_open_order_allows_the_same_employee_on_separate_services(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->service()->create(['name' => 'Full groom']))
+            ->create(['name' => 'Standard', 'price' => 1000]);
+        $employee = Employee::factory()->create();
+        $employee->profile()->create(['pay_basis' => 'month']);
+        $payload = $this->itemPayload($variant);
+        $line = $payload['items'][0];
+        $line['is_product'] = false;
+        $line['assigned_employee_ids'] = [$employee->id];
+        $line['assisted_employee_ids'] = [];
+        $payload['items'] = [$line, $line];
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/open-orders", $payload);
+
+        $response->assertRedirect(route('pos.index', $branch));
+        $order = PosOpenOrder::query()->where('branch_id', $branch->id)->firstOrFail();
+        $this->assertSame([$employee->id], $order->items[0]['assigned_employee_ids']);
+        $this->assertSame([$employee->id], $order->items[1]['assigned_employee_ids']);
+    }
+
+    public function test_open_order_rejects_the_same_employee_twice_on_one_service(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $variant = CatalogItemVariant::factory()
+            ->for(CatalogItem::factory()->service()->create(['name' => 'Full groom']))
+            ->create(['name' => 'Standard', 'price' => 1000]);
+        $employee = Employee::factory()->create();
+        $payload = $this->itemPayload($variant);
+        $payload['items'][0]['is_product'] = false;
+        $payload['items'][0]['assigned_employee_ids'] = [$employee->id, $employee->id];
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/open-orders", $payload);
+
+        $response->assertRedirect("/backoffice/pos/register/{$branch->id}");
+        $response->assertSessionHasErrors([
+            'items.0.assigned_employee_ids' => 'Choose each employee once.',
+        ]);
+        $this->assertDatabaseCount('pos_open_orders', 0);
+    }
+
     public function test_register_lists_open_orders_for_the_branch(): void
     {
         $branch = Branch::factory()->create();

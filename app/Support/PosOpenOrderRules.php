@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Closure;
+
 class PosOpenOrderRules
 {
     /**
@@ -24,10 +26,10 @@ class PosOpenOrderRules
             'items.*.modifiers.*.name' => ['required', 'string', 'max:255'],
             'items.*.modifiers.*.option' => ['required', 'string', 'max:255'],
             'items.*.modifiers.*.price' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
-            'items.*.assigned_employee_ids' => ['nullable', 'array'],
-            'items.*.assigned_employee_ids.*' => ['integer', 'distinct', 'exists:employees,id'],
-            'items.*.assisted_employee_ids' => ['nullable', 'array'],
-            'items.*.assisted_employee_ids.*' => ['integer', 'distinct', 'exists:employees,id'],
+            'items.*.assigned_employee_ids' => ['nullable', 'array', self::uniqueEmployeeIds()],
+            'items.*.assigned_employee_ids.*' => ['integer', 'exists:employees,id'],
+            'items.*.assisted_employee_ids' => ['nullable', 'array', self::uniqueEmployeeIds()],
+            'items.*.assisted_employee_ids.*' => ['integer', 'exists:employees,id'],
             'items.*.is_free' => ['sometimes', 'boolean'],
         ];
     }
@@ -42,5 +44,20 @@ class PosOpenOrderRules
             'items.required' => 'Add at least one item.',
             'items.min' => 'Add at least one item.',
         ];
+    }
+
+    private static function uniqueEmployeeIds(): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail): void {
+            if (! is_array($value)) {
+                return;
+            }
+
+            $ids = array_map(intval(...), $value);
+
+            if (count($ids) !== count(array_unique($ids))) {
+                $fail('Choose each employee once.');
+            }
+        };
     }
 }

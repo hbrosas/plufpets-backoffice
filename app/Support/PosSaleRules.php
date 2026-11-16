@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Closure;
 use Illuminate\Validation\Rule;
 
 class PosSaleRules
@@ -19,10 +20,10 @@ class PosSaleRules
             'items.*.modifiers' => ['nullable', 'array'],
             'items.*.modifiers.*.modifier_id' => ['required', 'integer', 'exists:modifiers,id'],
             'items.*.modifiers.*.option' => ['required', 'string', 'max:255'],
-            'items.*.assigned_employee_ids' => ['nullable', 'array'],
-            'items.*.assigned_employee_ids.*' => ['integer', 'distinct', 'exists:employees,id'],
-            'items.*.assisted_employee_ids' => ['nullable', 'array'],
-            'items.*.assisted_employee_ids.*' => ['integer', 'distinct', 'exists:employees,id'],
+            'items.*.assigned_employee_ids' => ['nullable', 'array', self::uniqueEmployeeIds()],
+            'items.*.assigned_employee_ids.*' => ['integer', 'exists:employees,id'],
+            'items.*.assisted_employee_ids' => ['nullable', 'array', self::uniqueEmployeeIds()],
+            'items.*.assisted_employee_ids.*' => ['integer', 'exists:employees,id'],
             'items.*.is_free' => ['sometimes', 'boolean'],
             'items.*.price' => ['nullable', 'numeric', 'min:0', 'decimal:0,2', 'max:999999.99'],
             'payments' => ['present', 'array'],
@@ -50,8 +51,6 @@ class PosSaleRules
             'items.min' => 'Add at least one item.',
             'items.*.assigned_employee_ids.*.exists' => 'Choose an active employee with a record.',
             'items.*.assisted_employee_ids.*.exists' => 'Choose an active employee with a record.',
-            'items.*.assigned_employee_ids.*.distinct' => 'Choose each employee once.',
-            'items.*.assisted_employee_ids.*.distinct' => 'Choose each employee once.',
             'payments.required' => 'Add at least one payment.',
             'payments.min' => 'Add at least one payment.',
             'tax_fee_ids.*.exists' => 'Choose an active tax.',
@@ -59,5 +58,20 @@ class PosSaleRules
             'delivery_schedule_id.integer' => 'Choose a preferred slot.',
             'preferred_on.date_format' => 'Choose a preferred slot.',
         ];
+    }
+
+    private static function uniqueEmployeeIds(): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail): void {
+            if (! is_array($value)) {
+                return;
+            }
+
+            $ids = array_map(intval(...), $value);
+
+            if (count($ids) !== count(array_unique($ids))) {
+                $fail('Choose each employee once.');
+            }
+        };
     }
 }

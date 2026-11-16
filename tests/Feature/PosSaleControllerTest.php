@@ -1413,6 +1413,72 @@ class PosSaleControllerTest extends TestCase
         ]);
     }
 
+    public function test_sale_allows_the_same_employee_on_separate_services(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $service = CatalogItem::factory()->service()->create(['name' => 'Full groom']);
+        $variant = CatalogItemVariant::factory()->for($service)->create(['name' => 'Standard', 'price' => 1000]);
+        $employee = $this->employeeOnService($service, 'Mina Cruz', 10, 0);
+        $payment = PaymentMethod::factory()->create(['is_cash' => false]);
+        $line = [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 1,
+            'assigned_employee_ids' => [$employee->id],
+            'assisted_employee_ids' => [],
+        ];
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [$line, $line],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '2000',
+                    'reference_number' => 'REF-2000',
+                ]],
+            ]);
+
+        $response->assertRedirect(route('pos.index', $branch));
+        $this->assertDatabaseCount('pos_sale_item_commissions', 2);
+        $this->assertDatabaseHas('pos_sale_item_commissions', [
+            'employee_id' => $employee->id,
+            'role' => 'assigned',
+            'amount' => '100.00',
+        ]);
+    }
+
+    public function test_sale_rejects_the_same_employee_twice_on_one_service(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $service = CatalogItem::factory()->service()->create(['name' => 'Full groom']);
+        $variant = CatalogItemVariant::factory()->for($service)->create(['name' => 'Standard', 'price' => 1000]);
+        $employee = $this->employeeOnService($service, 'Mina Cruz', 10, 0);
+        $payment = PaymentMethod::factory()->create(['is_cash' => false]);
+
+        $response = $this->actingAsEmployee()
+            ->from("/backoffice/pos/register/{$branch->id}")
+            ->post("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [[
+                    'catalog_item_variant_id' => $variant->id,
+                    'quantity' => 1,
+                    'assigned_employee_ids' => [$employee->id, $employee->id],
+                ]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '1000',
+                    'reference_number' => 'REF-1000',
+                ]],
+            ]);
+
+        $response->assertRedirect("/backoffice/pos/register/{$branch->id}");
+        $response->assertSessionHasErrors([
+            'items.0.assigned_employee_ids' => 'Choose each employee once.',
+        ]);
+        $this->assertDatabaseCount('pos_sales', 0);
+    }
+
     public function test_only_modifiers_included_in_commission_change_the_share(): void
     {
         $branch = Branch::factory()->create();
