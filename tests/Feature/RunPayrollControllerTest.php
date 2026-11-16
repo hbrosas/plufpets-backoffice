@@ -29,6 +29,7 @@ class RunPayrollControllerTest extends TestCase
         $this->post(route('staff.payroll.prepare'))->assertRedirect(route('login'));
         $this->post(route('staff.payroll.preview'))->assertRedirect(route('login'));
         $this->post(route('staff.payroll.finalize'))->assertRedirect(route('login'));
+        $this->delete(route('staff.payroll.destroy'))->assertRedirect(route('login'));
         $this->get(route('staff.payroll.download-all'))->assertRedirect(route('login'));
     }
 
@@ -40,6 +41,7 @@ class RunPayrollControllerTest extends TestCase
         $this->actingAsEmployee($employee)->post(route('staff.payroll.prepare'))->assertForbidden();
         $this->actingAsEmployee($employee)->post(route('staff.payroll.preview'))->assertForbidden();
         $this->actingAsEmployee($employee)->post(route('staff.payroll.finalize'))->assertForbidden();
+        $this->actingAsEmployee($employee)->delete(route('staff.payroll.destroy'))->assertForbidden();
         $this->actingAsEmployee($employee)->get(route('staff.payroll.download-all'))->assertForbidden();
     }
 
@@ -543,6 +545,39 @@ class RunPayrollControllerTest extends TestCase
         $this->assertSame('1025.00', $latest->net);
         $this->assertSame($minaPayroll->id, $advance->refresh()->deducted_payroll_id);
         $this->assertSame(2, EmployeePayroll::query()->whereBelongsTo($leo)->count());
+    }
+
+    public function test_deleting_the_generated_payroll_removes_only_that_run(): void
+    {
+        $first = EmployeePayroll::factory()->create();
+        $second = EmployeePayroll::factory()->create();
+        $untouched = EmployeePayroll::factory()->create();
+        $advance = PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $first->employee_id,
+            'status' => PayrollFilingStatus::Approved,
+            'deducted_payroll_id' => $first->id,
+        ]);
+
+        $this->actingAsEmployee()
+            ->withSession([
+                'payroll_run' => [
+                    'completed' => [
+                        'employees' => [
+                            ['id' => $first->id],
+                            ['id' => $second->id],
+                        ],
+                    ],
+                ],
+            ])
+            ->delete(route('staff.payroll.destroy'))
+            ->assertRedirect(route('staff.payroll.run'))
+            ->assertSessionHas('status', 'Payroll deleted.')
+            ->assertSessionMissing('payroll_run');
+
+        $this->assertModelMissing($first);
+        $this->assertModelMissing($second);
+        $this->assertModelExists($untouched);
+        $this->assertNull($advance->refresh()->deducted_payroll_id);
     }
 
     private function employeeWithPay(string $name): Employee

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\DeleteEmployeePayrolls;
 use App\Actions\GeneratePayroll;
 use App\Enums\PayrollFilingStatus;
 use App\Enums\PayrollFilingType;
@@ -154,6 +155,24 @@ class RunPayrollController extends Controller
         return redirect()
             ->route('staff.payroll.run')
             ->with('status', 'Payroll finalized.');
+    }
+
+    public function destroy(Request $request, DeleteEmployeePayrolls $deleteEmployeePayrolls): RedirectResponse
+    {
+        $completed = $request->session()->get('payroll_run.completed');
+        $ids = collect(is_array($completed) ? ($completed['employees'] ?? []) : [])
+            ->filter(fn (mixed $employee): bool => is_array($employee))
+            ->map(fn (array $employee): int => (int) ($employee['id'] ?? 0))
+            ->filter(fn (int $id): bool => $id > 0)
+            ->values()
+            ->all();
+
+        $deleteEmployeePayrolls->handle($ids);
+        $request->session()->forget('payroll_run');
+
+        return redirect()
+            ->route('staff.payroll.run')
+            ->with('status', 'Payroll deleted.');
     }
 
     public function download(DownloadPayrollRunRequest $request): SymfonyResponse

@@ -410,6 +410,7 @@ Route::prefix('backoffice')->group(function () {
             Route::get('/staff/payroll/preview', [RunPayrollController::class, 'redirectToRun']);
             Route::post('/staff/payroll/preview', [RunPayrollController::class, 'preview'])->name('staff.payroll.preview');
             Route::post('/staff/payroll/finalize', [RunPayrollController::class, 'finalize'])->name('staff.payroll.finalize');
+            Route::delete('/staff/payroll', [RunPayrollController::class, 'destroy'])->name('staff.payroll.destroy');
             Route::get('/staff/payroll/download', [RunPayrollController::class, 'download'])->name('staff.payroll.download-all');
             Route::get('/staff/holidays', [HolidayController::class, 'index'])->name('staff.holidays.index');
             Route::post('/staff/holidays', [HolidayController::class, 'store'])->name('staff.holidays.store');
@@ -423,6 +424,7 @@ Route::prefix('backoffice')->group(function () {
             Route::post('/staff/{employee}/payroll/finalize', [EmployeePayrollController::class, 'finalize'])->name('staff.payroll.finalize');
             Route::get('/staff/{employee}/payroll/download', [EmployeePayrollController::class, 'download'])->name('staff.payroll.download');
             Route::get('/staff/payrolls/{employeePayroll}/download', [EmployeePayrollController::class, 'downloadFinalized'])->name('staff.payrolls.download');
+            Route::delete('/staff/payrolls/{employeePayroll}', [EmployeePayrollController::class, 'destroy'])->name('staff.payrolls.destroy');
             Route::put('/staff/{employee}', [EmployeeController::class, 'update'])->name('staff.update');
             Route::delete('/staff/{employee}', [EmployeeController::class, 'destroy'])->name('staff.destroy');
         });

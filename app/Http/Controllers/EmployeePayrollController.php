@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\DeleteEmployeePayrolls;
 use App\Actions\GeneratePayroll;
 use App\Http\Requests\GeneratePayrollRequest;
 use App\Models\Business;
 use App\Models\Employee;
 use App\Models\EmployeePayroll;
 use App\Models\PayrollFiling;
+use App\Support\Peso;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -76,6 +79,14 @@ class EmployeePayrollController extends Controller
         );
     }
 
+    public function destroy(Request $request, EmployeePayroll $employeePayroll, DeleteEmployeePayrolls $deleteEmployeePayrolls): RedirectResponse
+    {
+        $deleteEmployeePayrolls->handle([$employeePayroll->id]);
+        $this->removeFromCompletedRun($request, $employeePayroll->id);
+
+        return back()->with('status', 'Payroll deleted.');
+    }
+
     public function downloadFinalized(EmployeePayroll $employeePayroll): Response
     {
         $snapshot = $employeePayroll->snapshot;
@@ -109,6 +120,52 @@ class EmployeePayrollController extends Controller
             'payroll' => $payroll,
             'letterhead' => Business::current()?->letterhead() ?? [],
         ])->download($filename);
+    }
+
+    private function removeFromCompletedRun(Request $request, int $payrollId): void
+    {
+        $completed = $request->session()->get('payroll_run.completed');
+
+        if (! is_array($completed)) {
+            return;
+        }
+
+        $employees = array_values(array_filter(
+            $completed['employees'] ?? [],
+            fn (mixed $employee): bool => is_array($employee) && (int) ($employee['id'] ?? 0) !== $payrollId,
+        ));
+
+        if ($employees === []) {
+            $request->session()->forget('payroll_run');
+
+            return;
+        }
+
+        $total = $this->sumMoney(array_map(
+            fn (array $employee): string => (string) ($employee['net'] ?? '0'),
+            $employees,
+        ));
+        $completed['employees'] = $employees;
+        $completed['total'] = $total;
+        $completed['total_label'] = Peso::format($total);
+        $completed['download_all_url'] = route('staff.payroll.download-all', [
+            'ids' => array_map(fn (array $employee): int => (int) $employee['id'], $employees),
+        ]);
+        $request->session()->put('payroll_run.completed', $completed);
+    }
+
+    /**
+     * @param  array<int, string>  $amounts
+     */
+    private function sumMoney(array $amounts): string
+    {
+        $cents = 0;
+
+        foreach ($amounts as $amount) {
+            $cents += (int) round(((float) $amount) * 100);
+        }
+
+        return number_format($cents / 100, 2, '.', '');
     }
 
     /**

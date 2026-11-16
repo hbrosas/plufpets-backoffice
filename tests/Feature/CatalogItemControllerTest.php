@@ -68,6 +68,38 @@ class CatalogItemControllerTest extends TestCase
             ->where('filters.search', 'groom'));
     }
 
+    public function test_catalog_can_be_filtered_by_category(): void
+    {
+        $food = Category::factory()->create(['name' => 'Food']);
+        $treats = Category::factory()->create(['name' => 'Treats']);
+        CatalogItem::factory()->create(['name' => 'Organic kibble', 'category_id' => $food->id]);
+        CatalogItem::factory()->create(['name' => 'Cat treats', 'category_id' => $treats->id]);
+        CatalogItem::factory()->service()->create(['name' => 'Full groom']);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/shop/catalog?category=Food');
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->has('catalogItems.data', 1)
+            ->where('catalogItems.data.0.name', 'Organic kibble')
+            ->where('filters.category', 'Food'));
+    }
+
+    public function test_catalog_can_be_filtered_to_items_without_a_category(): void
+    {
+        $food = Category::factory()->create(['name' => 'Food']);
+        CatalogItem::factory()->create(['name' => 'Organic kibble', 'category_id' => $food->id]);
+        CatalogItem::factory()->service()->create(['name' => 'Full groom']);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/shop/catalog?type=service&category=__none');
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->has('catalogItems.data', 1)
+            ->where('catalogItems.data.0.name', 'Full groom')
+            ->where('filters.category', '__none'));
+    }
+
     public function test_catalog_can_be_filtered_by_barcode(): void
     {
         $kibble = CatalogItem::factory()->create(['name' => 'Organic kibble']);

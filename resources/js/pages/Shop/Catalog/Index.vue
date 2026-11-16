@@ -77,6 +77,7 @@ const canApply = computed(() => {
 const filters = useForm({
     search: props.filters.search,
     type: props.filters.type,
+    category: props.filters.category,
 });
 
 const importForm = useForm({
@@ -91,8 +92,17 @@ function applyFilters() {
 }
 
 function selectType(type) {
+    if (filters.type === type) {
+        return;
+    }
+
     filters.type = type;
-    applyFilters();
+    filters.get('/backoffice/shop/catalog', {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+        showProgress: false,
+    });
 }
 
 function onFileChange(event) {
@@ -251,6 +261,16 @@ watch(visibleIds, (ids) => {
                 placeholder="Search by name, SKU, or barcode"
                 type="text"
             />
+            <select
+                v-model="filters.category"
+                class="h-11 rounded-xl border border-mist bg-white px-4 text-sm outline-none transition focus:border-pine focus:ring-2 focus:ring-sand/70 sm:w-52 dark:border-white/10 dark:bg-white/5"
+                aria-label="Category"
+                @change="applyFilters"
+            >
+                <option value="">All categories</option>
+                <option value="__none">No category</option>
+                <option v-for="category in categories" :key="category" :value="category">{{ category }}</option>
+            </select>
             <button
                 class="h-11 rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15"
                 type="submit"

@@ -34,11 +34,13 @@ class CatalogItemController extends Controller
         $request->merge([
             'search' => $request->string('search')->trim()->toString() ?: null,
             'type' => $request->string('type')->trim()->toString() ?: CatalogItemType::Product->value,
+            'category' => $request->string('category')->trim()->toString() ?: null,
         ]);
 
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:128'],
             'type' => ['nullable', Rule::enum(CatalogItemType::class)],
+            'category' => ['nullable', 'string', 'max:255'],
         ]);
 
         $catalogItems = CatalogItem::query()
@@ -54,6 +56,15 @@ class CatalogItemController extends Controller
             })
             ->when($filters['type'] ?? null, function ($query, string $type): void {
                 $query->where('type', $type);
+            })
+            ->when($filters['category'] ?? null, function ($query, string $category): void {
+                if ($category === '__none') {
+                    $query->whereNull('category_id');
+
+                    return;
+                }
+
+                $query->whereHas('category', fn ($categories) => $categories->where('name', $category));
             })
             ->orderBy('name')
             ->orderBy('id')
@@ -76,6 +87,7 @@ class CatalogItemController extends Controller
             'filters' => [
                 'search' => $filters['search'] ?? '',
                 'type' => $filters['type'] ?? '',
+                'category' => $filters['category'] ?? '',
             ],
             'types' => $this->typeOptions(),
             'categories' => Category::query()->orderBy('name')->pluck('name')->all(),

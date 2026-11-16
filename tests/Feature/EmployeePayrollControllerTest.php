@@ -29,10 +29,12 @@ class EmployeePayrollControllerTest extends TestCase
     public function test_guest_is_redirected_from_payroll(): void
     {
         $employee = Employee::factory()->create();
+        $payroll = EmployeePayroll::factory()->create(['employee_id' => $employee->id]);
 
         $this->post("/backoffice/staff/{$employee->id}/payroll")->assertRedirect(route('login'));
         $this->post("/backoffice/staff/{$employee->id}/payroll/finalize")->assertRedirect(route('login'));
         $this->get("/backoffice/staff/{$employee->id}/payroll/download")->assertRedirect(route('login'));
+        $this->delete("/backoffice/staff/payrolls/{$payroll->id}")->assertRedirect(route('login'));
     }
 
     public function test_employee_without_staff_access_cannot_generate_payroll(): void
@@ -45,6 +47,12 @@ class EmployeePayrollControllerTest extends TestCase
 
         $this->actingAsEmployee($employee)
             ->get("/backoffice/staff/{$employee->id}/payroll/download?".http_build_query($this->hours()))
+            ->assertForbidden();
+
+        $payroll = EmployeePayroll::factory()->create(['employee_id' => $employee->id]);
+
+        $this->actingAsEmployee($employee)
+            ->delete("/backoffice/staff/payrolls/{$payroll->id}")
             ->assertForbidden();
     }
 
@@ -697,6 +705,49 @@ class EmployeePayrollControllerTest extends TestCase
                 ->where('payroll.deductions.1.amount', '500.00')
                 ->where('payroll.cash_advance_ids', [$approved->id])
                 ->where('payroll.net', '7192.31'));
+    }
+
+    public function test_deleting_a_payroll_releases_its_cash_advance(): void
+    {
+        $employee = Employee::factory()->create();
+        $payroll = EmployeePayroll::factory()->create([
+            'employee_id' => $employee->id,
+            'net' => '100.00',
+        ]);
+        $kept = EmployeePayroll::factory()->create(['net' => '50.00']);
+        $advance = PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $employee->id,
+            'status' => PayrollFilingStatus::Approved,
+            'deducted_payroll_id' => $payroll->id,
+        ]);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/staff/payroll')
+            ->withSession([
+                'payroll_run' => [
+                    'completed' => [
+                        'period_label' => 'Oct 1 – Oct 15, 2026',
+                        'total' => '150.00',
+                        'total_label' => '₱150.00',
+                        'employees' => [
+                            ['id' => $payroll->id, 'name' => 'Mina Cruz', 'net' => '100.00'],
+                            ['id' => $kept->id, 'name' => 'Leo Santos', 'net' => '50.00'],
+                        ],
+                    ],
+                ],
+            ])
+            ->delete("/backoffice/staff/payrolls/{$payroll->id}")
+            ->assertRedirect('/backoffice/staff/payroll')
+            ->assertSessionHas('status', 'Payroll deleted.')
+            ->assertSessionHas('payroll_run', function (array $run) use ($kept): bool {
+                return count($run['completed']['employees']) === 1
+                    && $run['completed']['employees'][0]['id'] === $kept->id
+                    && $run['completed']['total'] === '50.00';
+            });
+
+        $this->assertModelMissing($payroll);
+        $this->assertModelExists($kept);
+        $this->assertNull($advance->refresh()->deducted_payroll_id);
     }
 
     public function test_finalized_cash_advance_is_not_deducted_on_the_next_payslip(): void

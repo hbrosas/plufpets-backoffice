@@ -1,5 +1,5 @@
 <script setup>
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import { formatPeso } from '../../formatPeso';
 import AdminLayout from '../../layouts/AdminLayout.vue';
@@ -119,6 +119,18 @@ function formatDate(value) {
 
 function submit() {
     form.put(`/backoffice/staff/${props.staff.id}/record`, {
+        preserveScroll: true,
+    });
+}
+
+function deletePayroll(payroll) {
+    const period = `${formatDate(payroll.period_start)} – ${formatDate(payroll.period_end)}`;
+
+    if (!window.confirm(`Delete the payroll for ${period}? Cash advances deducted on it can be deducted again.`)) {
+        return;
+    }
+
+    router.delete(`/backoffice/staff/payrolls/${payroll.id}`, {
         preserveScroll: true,
     });
 }
@@ -525,6 +537,9 @@ function submit() {
                             <td class="px-4 py-3 font-medium">{{ formatPeso(payroll.net) }}</td>
                             <td class="px-4 py-3 text-right">
                                 <a class="font-medium text-pine dark:text-sand" :href="`/backoffice/staff/payrolls/${payroll.id}/download`">Download</a>
+                                <button class="ml-3 font-medium text-danger" type="button" @click="deletePayroll(payroll)">
+                                    Delete
+                                </button>
                             </td>
                         </tr>
                     </tbody>

@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
@@ -278,6 +278,24 @@ function addAdjustment(index) {
 
 function removeAdjustment(employeeIndex, index) {
     runForm.employees[employeeIndex].adjustments.splice(index, 1);
+}
+
+function deletePayroll(employee) {
+    if (!window.confirm(`Delete ${employee.name}'s payroll? Cash advances deducted on it can be deducted again.`)) {
+        return;
+    }
+
+    router.delete(`/backoffice/staff/payrolls/${employee.id}`, {
+        preserveScroll: true,
+    });
+}
+
+function deleteGeneratedPayroll() {
+    if (!window.confirm('Delete this payroll? The saved payslips are removed, and cash advances deducted on them can be deducted again.')) {
+        return;
+    }
+
+    router.delete('/backoffice/staff/payroll');
 }
 
 function openStep(id) {
@@ -562,7 +580,12 @@ function openStep(id) {
                     <h2 class="text-lg font-semibold">Payroll saved</h2>
                     <p class="mt-1 text-sm text-ink/60 dark:text-foam/60">{{ completed.period_label }}. These payslips are on each employee's My Payroll page.</p>
                 </div>
-                <a class="inline-flex h-11 items-center rounded-xl bg-pine px-5 text-sm font-medium text-foam" :href="completed.download_all_url">Download all</a>
+                <div class="flex flex-wrap gap-3">
+                    <button class="h-11 rounded-xl border border-danger/30 px-5 text-sm font-medium text-danger" type="button" @click="deleteGeneratedPayroll">
+                        Delete payroll
+                    </button>
+                    <a class="inline-flex h-11 items-center rounded-xl bg-pine px-5 text-sm font-medium text-foam" :href="completed.download_all_url">Download all</a>
+                </div>
             </div>
             <div class="mt-6 overflow-x-auto">
                 <table class="w-full min-w-[40rem] text-left text-sm">
@@ -586,6 +609,9 @@ function openStep(id) {
                             <td class="px-3 py-3 text-right font-medium">{{ employee.net_label }}</td>
                             <td class="px-3 py-3 text-right">
                                 <a class="font-medium text-pine dark:text-sand" :href="employee.download_url">Download</a>
+                                <button class="ml-3 font-medium text-danger" type="button" @click="deletePayroll(employee)">
+                                    Delete
+                                </button>
                             </td>
                         </tr>
                     </tbody>
