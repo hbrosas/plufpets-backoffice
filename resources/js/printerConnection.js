@@ -108,15 +108,218 @@ export async function requestBluetoothIdentity() {
     };
 }
 
+const sessionId = globalThis.crypto?.randomUUID?.() ?? `session-${Date.now()}`;
+const printerChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('plufpets-printer-sessions') : null;
+const ownedSerial = new Map();
+const ownedBluetooth = new Map();
+const pendingReplies = new Map();
+const watchedBluetooth = new WeakSet();
 const serialQueues = new WeakMap();
 const serialBaudRates = new WeakMap();
+const bluetoothCharacteristics = new WeakMap();
 
-function enqueueSerial(port, task) {
-    const previous = serialQueues.get(port) ?? Promise.resolve();
+function serialDeviceKey(printer) {
+    return `serial:${printer.usb_vendor_id ?? ''}:${printer.usb_product_id ?? ''}:${printer.usb_serial_number ?? ''}`;
+}
+
+function bluetoothDeviceKey(printer, device = null) {
+    return `bluetooth:${printer?.bluetooth_id || device?.id || ''}`;
+}
+
+function enqueuePort(queues, key, task) {
+    const previous = queues.get(key) ?? Promise.resolve();
     const next = previous.catch(() => {}).then(task);
-    serialQueues.set(port, next);
+    queues.set(key, next);
 
     return next;
+}
+
+function enqueueSerial(port, task) {
+    return enqueuePort(serialQueues, port, task);
+}
+
+const bluetoothQueues = new WeakMap();
+
+function enqueueBluetooth(device, task) {
+    return enqueuePort(bluetoothQueues, device, task);
+}
+
+function printerLock(deviceKey, task) {
+    if (!navigator.locks?.request) {
+        return task();
+    }
+
+    return navigator.locks.request(`plufpets-printer:${deviceKey}`, task);
+}
+
+function waitForPrinterReply(id, timeoutMs) {
+    return new Promise((resolve) => {
+        const timer = window.setTimeout(() => {
+            pendingReplies.delete(id);
+            resolve(null);
+        }, timeoutMs);
+
+        pendingReplies.set(id, {
+            resolve: (data) => {
+                window.clearTimeout(timer);
+                resolve(data);
+            },
+            timer,
+        });
+    });
+}
+
+function newPrinterRequestId() {
+    return `${sessionId}:${globalThis.crypto?.randomUUID?.() ?? Date.now()}`;
+}
+
+if (printerChannel) {
+    printerChannel.addEventListener('message', (event) => {
+        const data = event.data;
+
+        if (!data || data.sessionId === sessionId) {
+            return;
+        }
+
+        if (data.type === 'who-owns') {
+            const owns = ownedSerial.has(data.deviceKey) || ownedBluetooth.has(data.deviceKey);
+
+            if (owns) {
+                printerChannel.postMessage({
+                    type: 'owner',
+                    deviceKey: data.deviceKey,
+                    requestId: data.requestId,
+                    sessionId,
+                });
+            }
+
+            return;
+        }
+
+        if (data.type === 'print') {
+            handleRemotePrint(data);
+
+            return;
+        }
+
+        if (data.type !== 'owner' && data.type !== 'printed') {
+            return;
+        }
+
+        const pending = pendingReplies.get(data.requestId);
+
+        if (!pending) {
+            return;
+        }
+
+        pendingReplies.delete(data.requestId);
+        pending.resolve(data);
+    });
+}
+
+async function anotherSessionOwns(deviceKey) {
+    if (!printerChannel) {
+        return false;
+    }
+
+    const requestId = newPrinterRequestId();
+    printerChannel.postMessage({ type: 'who-owns', deviceKey, requestId, sessionId });
+    const reply = await waitForPrinterReply(requestId, 300);
+
+    return reply?.type === 'owner';
+}
+
+async function forwardPrint(deviceKey, bytes) {
+    const requestId = newPrinterRequestId();
+    printerChannel.postMessage({ type: 'print', deviceKey, requestId, sessionId, bytes });
+    const reply = await waitForPrinterReply(requestId, 10000);
+
+    if (!reply?.ok) {
+        throw new Error(reply?.message || 'The register that has this printer did not finish printing.');
+    }
+}
+
+async function handleRemotePrint(data) {
+    try {
+        const serial = ownedSerial.get(data.deviceKey);
+        const device = ownedBluetooth.get(data.deviceKey);
+
+        if (serial) {
+            await writeOwnedSerial(serial, data.bytes);
+        } else if (device) {
+            await writeBluetoothLocal(device, data.bytes);
+        } else {
+            throw new PrinterUnavailableError('No printer is connected.');
+        }
+
+        printerChannel?.postMessage({ type: 'printed', requestId: data.requestId, ok: true, sessionId });
+    } catch (error) {
+        const serial = ownedSerial.get(data.deviceKey);
+
+        if (serial && !serial.port.writable && !serial.port.readable) {
+            ownedSerial.delete(data.deviceKey);
+        }
+
+        printerChannel?.postMessage({
+            type: 'printed',
+            requestId: data.requestId,
+            ok: false,
+            sessionId,
+            message: error instanceof Error ? error.message : 'Could not print.',
+        });
+    }
+}
+
+if (serialSupported()) {
+    navigator.serial.addEventListener('disconnect', (event) => {
+        for (const [key, owned] of ownedSerial) {
+            if (owned.port === event.target) {
+                ownedSerial.delete(key);
+                serialBaudRates.delete(owned.port);
+            }
+        }
+    });
+}
+
+function portMatchesPrinter(printer, port) {
+    const info = port.getInfo();
+
+    if (info.usbVendorId !== printer.usb_vendor_id || info.usbProductId !== printer.usb_product_id) {
+        return false;
+    }
+
+    if (printer.usb_serial_number && info.serialNumber && info.serialNumber !== printer.usb_serial_number) {
+        return false;
+    }
+
+    return true;
+}
+
+async function selectSerialPort(printer, allowPrompt) {
+    const ports = await navigator.serial.getPorts();
+    const matches = ports.filter((port) => portMatchesPrinter(printer, port) && port.connected !== false);
+
+    if (matches.length === 1) {
+        return matches[0];
+    }
+
+    const opened = matches.find((port) => port.writable);
+
+    if (opened) {
+        return opened;
+    }
+
+    const connected = matches.filter((port) => port.connected === true);
+
+    if (connected.length === 1) {
+        return connected[0];
+    }
+
+    if (!allowPrompt) {
+        throw new PrinterUnavailableError('No printer is connected.');
+    }
+
+    return navigator.serial.requestPort();
 }
 
 async function closeSerialPort(port) {
@@ -160,6 +363,54 @@ async function writeSerialPort(port, bytes) {
     }
 }
 
+async function writeOwnedSerial(owned, bytes) {
+    await enqueueSerial(owned.port, async () => {
+        await openSerialPort(owned.port, owned.baudRate);
+
+        try {
+            await writeSerialPort(owned.port, bytes);
+        } catch (error) {
+            if (owned.port.writable) {
+                throw error;
+            }
+
+            await closeSerialPort(owned.port);
+            await openSerialPort(owned.port, owned.baudRate);
+            await writeSerialPort(owned.port, bytes);
+        }
+    });
+}
+
+async function claimSerial(printer, bytes, allowPrompt) {
+    const deviceKey = serialDeviceKey(printer);
+    const baudRate = Number(printer.baud_rate) || 9600;
+    const port = await selectSerialPort(printer, allowPrompt);
+
+    await enqueueSerial(port, async () => {
+        try {
+            await openSerialPort(port, baudRate);
+            await writeSerialPort(port, bytes);
+        } catch (error) {
+            if (port.writable) {
+                ownedSerial.set(deviceKey, { port, baudRate });
+                throw error;
+            }
+
+            if (await anotherSessionOwns(deviceKey)) {
+                await forwardPrint(deviceKey, bytes);
+
+                return;
+            }
+
+            await closeSerialPort(port);
+            await openSerialPort(port, baudRate);
+            await writeSerialPort(port, bytes);
+        }
+
+        ownedSerial.set(deviceKey, { port, baudRate });
+    });
+}
+
 async function printSerial(printer, bytes, allowPrompt = true) {
     if (!serialSupported()) {
         if (!allowPrompt) {
@@ -169,33 +420,37 @@ async function printSerial(printer, bytes, allowPrompt = true) {
         throw new Error('USB serial printers need Chrome or Edge on this register.');
     }
 
-    const ports = await navigator.serial.getPorts();
-    let port = ports.find((candidate) => {
-        const info = candidate.getInfo();
+    const deviceKey = serialDeviceKey(printer);
+    const owned = ownedSerial.get(deviceKey);
 
-        return info.usbVendorId === printer.usb_vendor_id && info.usbProductId === printer.usb_product_id;
-    });
+    if (owned) {
+        await writeOwnedSerial(owned, bytes);
 
-    if (!port) {
-        if (!allowPrompt) {
-            throw new PrinterUnavailableError('No printer is connected.');
-        }
-
-        port = await navigator.serial.requestPort();
+        return;
     }
 
-    const baudRate = Number(printer.baud_rate) || 9600;
+    if (await anotherSessionOwns(deviceKey)) {
+        await forwardPrint(deviceKey, bytes);
 
-    await enqueueSerial(port, async () => {
-        await openSerialPort(port, baudRate);
+        return;
+    }
 
-        try {
-            await writeSerialPort(port, bytes);
-        } catch {
-            await closeSerialPort(port);
-            await openSerialPort(port, baudRate);
-            await writeSerialPort(port, bytes);
+    await printerLock(deviceKey, async () => {
+        const claimed = ownedSerial.get(deviceKey);
+
+        if (claimed) {
+            await writeOwnedSerial(claimed, bytes);
+
+            return;
         }
+
+        if (await anotherSessionOwns(deviceKey)) {
+            await forwardPrint(deviceKey, bytes);
+
+            return;
+        }
+
+        await claimSerial(printer, bytes, allowPrompt);
     });
 }
 
@@ -301,14 +556,44 @@ function resolveBluetoothDevice(printer, allowPrompt) {
     });
 }
 
-const bluetoothQueues = new WeakMap();
+function watchBluetooth(device, keys) {
+    if (watchedBluetooth.has(device)) {
+        return;
+    }
 
-function enqueueBluetooth(device, task) {
-    const previous = bluetoothQueues.get(device) ?? Promise.resolve();
-    const next = previous.catch(() => {}).then(task);
-    bluetoothQueues.set(device, next);
+    watchedBluetooth.add(device);
+    device.addEventListener('gattserverdisconnected', () => {
+        bluetoothCharacteristics.delete(device);
+        keys.forEach((key) => {
+            if (ownedBluetooth.get(key) === device) {
+                ownedBluetooth.delete(key);
+            }
+        });
+    });
+}
 
-    return next;
+function claimBluetooth(printer, device) {
+    const keys = new Set([bluetoothDeviceKey(printer, device), `bluetooth:${device.id}`]);
+
+    keys.forEach((key) => {
+        if (key !== 'bluetooth:') {
+            ownedBluetooth.set(key, device);
+        }
+    });
+    watchBluetooth(device, keys);
+}
+
+async function characteristicFor(device, server) {
+    const cached = bluetoothCharacteristics.get(device);
+
+    if (cached && device.gatt?.connected) {
+        return cached;
+    }
+
+    const characteristic = await writableCharacteristic(server);
+    bluetoothCharacteristics.set(device, characteristic);
+
+    return characteristic;
 }
 
 async function connectedBluetoothServer(device) {
@@ -319,25 +604,60 @@ async function connectedBluetoothServer(device) {
     return device.gatt.connect();
 }
 
-async function writeBluetooth(device, bytes) {
+async function writeBluetoothLocal(device, bytes) {
     await enqueueBluetooth(device, async () => {
         const server = await connectedBluetoothServer(device);
 
         try {
-            await writeChunks(await writableCharacteristic(server), bytes);
+            await writeChunks(await characteristicFor(device, server), bytes);
         } catch (error) {
+            bluetoothCharacteristics.delete(device);
+
             if (device.gatt?.connected) {
                 throw error;
             }
 
             const reconnected = await device.gatt.connect();
-            await writeChunks(await writableCharacteristic(reconnected), bytes);
+            await writeChunks(await characteristicFor(device, reconnected), bytes);
         }
     });
 }
 
 async function printBluetooth(printer, bytes, allowPrompt) {
-    await writeBluetooth(await resolveBluetoothDevice(printer, allowPrompt), bytes);
+    const deviceKey = bluetoothDeviceKey(printer);
+    const owned = ownedBluetooth.get(deviceKey);
+
+    if (owned) {
+        await writeBluetoothLocal(owned, bytes);
+
+        return;
+    }
+
+    if (await anotherSessionOwns(deviceKey)) {
+        await forwardPrint(deviceKey, bytes);
+
+        return;
+    }
+
+    await printerLock(deviceKey, async () => {
+        const claimed = ownedBluetooth.get(deviceKey);
+
+        if (claimed) {
+            await writeBluetoothLocal(claimed, bytes);
+
+            return;
+        }
+
+        if (await anotherSessionOwns(deviceKey)) {
+            await forwardPrint(deviceKey, bytes);
+
+            return;
+        }
+
+        const device = await resolveBluetoothDevice(printer, allowPrompt);
+        claimBluetooth(printer, device);
+        await writeBluetoothLocal(device, bytes);
+    });
 }
 
 export async function ensurePrinterConnection(printer) {
@@ -373,11 +693,7 @@ export async function ensurePrinterConnection(printer) {
     }
 
     const ports = await navigator.serial.getPorts();
-    const matched = ports.some((candidate) => {
-        const info = candidate.getInfo();
-
-        return info.usbVendorId === printer.usb_vendor_id && info.usbProductId === printer.usb_product_id;
-    });
+    const matched = ports.some((candidate) => portMatchesPrinter(printer, candidate));
 
     if (!matched) {
         await navigator.serial.requestPort();
@@ -390,6 +706,10 @@ export function beginAssignedPrint(printer) {
     }
 
     if (printer.connection === 'bluetooth') {
+        if (ownedBluetooth.has(bluetoothDeviceKey(printer)) || bluetoothDevices.has(printer.bluetooth_id)) {
+            return Promise.resolve(null);
+        }
+
         return resolveBluetoothDevice(printer, true);
     }
 
@@ -406,17 +726,8 @@ export async function finishAssignedPrint(printer, text, session) {
         return;
     }
 
-    const bytes = encodeEscPos(text);
-    const device = await session;
-
-    if (printer.connection === 'bluetooth') {
-        await writeBluetooth(device, bytes);
-        return;
-    }
-
-    if (printer.connection === 'serial') {
-        await printSerial(printer, bytes);
-    }
+    await session;
+    await sendToPrinter(printer, encodeEscPos(text), true);
 }
 
 async function sendToPrinter(printer, bytes, allowPrompt) {
