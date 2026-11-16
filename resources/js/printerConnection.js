@@ -108,6 +108,58 @@ export async function requestBluetoothIdentity() {
     };
 }
 
+const serialQueues = new WeakMap();
+const serialBaudRates = new WeakMap();
+
+function enqueueSerial(port, task) {
+    const previous = serialQueues.get(port) ?? Promise.resolve();
+    const next = previous.catch(() => {}).then(task);
+    serialQueues.set(port, next);
+
+    return next;
+}
+
+async function closeSerialPort(port) {
+    serialBaudRates.delete(port);
+
+    if (!port.readable && !port.writable) {
+        return;
+    }
+
+    try {
+        await port.close();
+    } catch {
+        // The port may already be closing after the device dropped.
+    }
+}
+
+async function openSerialPort(port, baudRate) {
+    const openBaudRate = serialBaudRates.get(port);
+
+    if (port.writable && (openBaudRate === undefined || openBaudRate === baudRate)) {
+        serialBaudRates.set(port, baudRate);
+
+        return;
+    }
+
+    if (port.readable || port.writable) {
+        await closeSerialPort(port);
+    }
+
+    await port.open({ baudRate });
+    serialBaudRates.set(port, baudRate);
+}
+
+async function writeSerialPort(port, bytes) {
+    const writer = port.writable.getWriter();
+
+    try {
+        await writer.write(bytes);
+    } finally {
+        writer.releaseLock();
+    }
+}
+
 async function printSerial(printer, bytes, allowPrompt = true) {
     if (!serialSupported()) {
         if (!allowPrompt) {
@@ -132,15 +184,19 @@ async function printSerial(printer, bytes, allowPrompt = true) {
         port = await navigator.serial.requestPort();
     }
 
-    await port.open({ baudRate: Number(printer.baud_rate) || 9600 });
+    const baudRate = Number(printer.baud_rate) || 9600;
 
-    try {
-        const writer = port.writable.getWriter();
-        await writer.write(bytes);
-        writer.releaseLock();
-    } finally {
-        await port.close();
-    }
+    await enqueueSerial(port, async () => {
+        await openSerialPort(port, baudRate);
+
+        try {
+            await writeSerialPort(port, bytes);
+        } catch {
+            await closeSerialPort(port);
+            await openSerialPort(port, baudRate);
+            await writeSerialPort(port, bytes);
+        }
+    });
 }
 
 async function writableCharacteristic(server) {
@@ -245,14 +301,39 @@ function resolveBluetoothDevice(printer, allowPrompt) {
     });
 }
 
-async function writeBluetooth(device, bytes) {
-    const server = await device.gatt.connect();
+const bluetoothQueues = new WeakMap();
 
-    try {
-        await writeChunks(await writableCharacteristic(server), bytes);
-    } finally {
-        server.disconnect();
+function enqueueBluetooth(device, task) {
+    const previous = bluetoothQueues.get(device) ?? Promise.resolve();
+    const next = previous.catch(() => {}).then(task);
+    bluetoothQueues.set(device, next);
+
+    return next;
+}
+
+async function connectedBluetoothServer(device) {
+    if (device.gatt?.connected) {
+        return device.gatt;
     }
+
+    return device.gatt.connect();
+}
+
+async function writeBluetooth(device, bytes) {
+    await enqueueBluetooth(device, async () => {
+        const server = await connectedBluetoothServer(device);
+
+        try {
+            await writeChunks(await writableCharacteristic(server), bytes);
+        } catch (error) {
+            if (device.gatt?.connected) {
+                throw error;
+            }
+
+            const reconnected = await device.gatt.connect();
+            await writeChunks(await writableCharacteristic(reconnected), bytes);
+        }
+    });
 }
 
 async function printBluetooth(printer, bytes, allowPrompt) {
