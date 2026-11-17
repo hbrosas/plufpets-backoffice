@@ -15,6 +15,7 @@ import {
     printReceipt,
     PrinterUnavailableError,
     printSerialTest,
+    reconnectSavedPrinter,
     requestBluetoothIdentity,
     requestSerialIdentity,
 } from '../../printerConnection';
@@ -447,6 +448,22 @@ function usesPairedDevice(printer) {
     return printer.connection === 'bluetooth' || printer.connection === 'serial';
 }
 
+async function restorePrinterConnections() {
+    const printers = branchPrinters.value.filter((printer) => usesPairedDevice(printer) && printer.is_identified);
+
+    await Promise.all(printers.map(async (printer) => {
+        try {
+            await reconnectSavedPrinter(printer);
+        } catch {
+            // The saved device stays on the printer. Connect asks only when the browser no longer has it.
+        }
+    }));
+}
+
+watch(branchPrinters, () => {
+    restorePrinterConnections();
+}, { immediate: true });
+
 async function connectBranchPrinter(printer) {
     printerNotice.value = '';
     connectingPrinterId.value = printer.id;
@@ -455,6 +472,20 @@ async function connectBranchPrinter(printer) {
         window.open(printer.test_href, '_blank', 'noopener');
         connectingPrinterId.value = null;
         return;
+    }
+
+    if (printer.is_identified) {
+        try {
+            const restored = await reconnectSavedPrinter(printer);
+
+            if (restored) {
+                printerNotice.value = `Connected ${printer.device_name || printer.name}.`;
+                connectingPrinterId.value = null;
+                return;
+            }
+        } catch {
+            // The saved device is no longer permitted, so ask the browser once.
+        }
     }
 
     try {

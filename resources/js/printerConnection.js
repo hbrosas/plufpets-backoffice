@@ -315,11 +315,72 @@ async function selectSerialPort(printer, allowPrompt) {
         return connected[0];
     }
 
-    if (!allowPrompt) {
+    if (!allowPrompt || (printer.usb_vendor_id && printer.usb_product_id)) {
         throw new PrinterUnavailableError('No printer is connected.');
     }
 
     return navigator.serial.requestPort();
+}
+
+export async function reconnectSavedPrinter(printer) {
+    if (!printer || printer.connection === 'browser') {
+        return false;
+    }
+
+    if (printer.connection === 'bluetooth') {
+        if (!printer.bluetooth_id) {
+            return false;
+        }
+
+        const owned = ownedBluetooth.get(bluetoothDeviceKey(printer));
+
+        if (owned?.gatt?.connected) {
+            return true;
+        }
+
+        const device = await savedBluetoothDevice(printer);
+
+        if (!device) {
+            return false;
+        }
+
+        claimBluetooth(printer, device);
+
+        if (!device.gatt?.connected) {
+            await device.gatt.connect();
+        }
+
+        return true;
+    }
+
+    if (printer.connection !== 'serial' || !printer.usb_vendor_id || !printer.usb_product_id) {
+        return false;
+    }
+
+    const deviceKey = serialDeviceKey(printer);
+    const owned = ownedSerial.get(deviceKey);
+
+    if (owned?.port?.writable) {
+        return true;
+    }
+
+    let port;
+
+    try {
+        port = await selectSerialPort(printer, false);
+    } catch (error) {
+        if (error instanceof PrinterUnavailableError) {
+            return false;
+        }
+
+        throw error;
+    }
+
+    const baudRate = Number(printer.baud_rate) || 9600;
+    await openSerialPort(port, baudRate);
+    ownedSerial.set(deviceKey, { port, baudRate });
+
+    return true;
 }
 
 async function closeSerialPort(port) {
@@ -505,8 +566,10 @@ function rememberBluetoothDevice(device, printer = null) {
     return device;
 }
 
+let bluetoothDevicesReady = Promise.resolve();
+
 if (typeof navigator !== 'undefined' && navigator.bluetooth && typeof navigator.bluetooth.getDevices === 'function') {
-    navigator.bluetooth
+    bluetoothDevicesReady = navigator.bluetooth
         .getDevices()
         .then((devices) => {
             devices.forEach((device) => rememberBluetoothDevice(device));
@@ -515,6 +578,8 @@ if (typeof navigator !== 'undefined' && navigator.bluetooth && typeof navigator.
 }
 
 async function savedBluetoothDevice(printer) {
+    await bluetoothDevicesReady;
+
     const cached = bluetoothDevices.get(printer.bluetooth_id);
 
     if (cached) {
@@ -543,7 +608,7 @@ function resolveBluetoothDevice(printer, allowPrompt) {
             return device;
         }
 
-        if (!allowPrompt) {
+        if (!allowPrompt || printer.bluetooth_id) {
             return Promise.reject(new PrinterUnavailableError('No printer is connected.'));
         }
 

@@ -5,6 +5,7 @@ import AdminLayout from '../../../layouts/AdminLayout.vue';
 import {
     printBluetoothTest,
     printSerialTest,
+    reconnectSavedPrinter,
     requestBluetoothIdentity,
     requestSerialIdentity,
 } from '../../../printerConnection';
@@ -177,6 +178,17 @@ async function connectPrinter(printer) {
     if (!usesPairedDevice(printer)) {
         window.open(printer.test_href, '_blank', 'noopener');
         return;
+    }
+
+    if (printer.is_identified) {
+        try {
+            if (await reconnectSavedPrinter(printer)) {
+                printerNotice.value = `Connected ${printer.device_name || printer.name}.`;
+                return;
+            }
+        } catch {
+            // The saved device is no longer permitted, so ask the browser once.
+        }
     }
 
     try {
