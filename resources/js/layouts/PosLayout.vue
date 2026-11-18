@@ -1,7 +1,6 @@
 <script setup>
 import { Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
-import FlashToast from '../components/FlashToast.vue';
 import PosSmsControls from '../components/PosSmsControls.vue';
 import { hidePosChrome, hideSendText } from '../posChrome';
 
@@ -42,7 +41,6 @@ function toggleMenu() {
 
 <template>
     <div class="admin-shell flex h-dvh flex-col overflow-hidden bg-cream text-black">
-        <FlashToast />
         <header
             class="z-30 flex shrink-0 flex-wrap items-center gap-2 border-b border-mist bg-foam/90 px-3 py-2 backdrop-blur-md sm:gap-3 sm:px-4 sm:py-3 lg:px-6 dark:border-white/10 dark:bg-ink/90"
         >

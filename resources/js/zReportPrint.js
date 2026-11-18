@@ -31,7 +31,7 @@ async function printZReport() {
             return;
         }
 
-        showToast(error instanceof Error ? error.message : 'Could not print on the assigned printer.');
+        showToast(error instanceof Error ? error.message : 'Could not print on the assigned printer.', { tone: 'error' });
     }
 }
 

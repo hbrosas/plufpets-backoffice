@@ -1,5 +1,5 @@
 <script setup>
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import CountBadge from '../../../components/CountBadge.vue';
 import ShopOrderView from '../../../components/ShopOrderView.vue';
@@ -32,8 +32,6 @@ const props = defineProps({
     },
 });
 
-const page = usePage();
-const flash = computed(() => page.props.flash ?? {});
 const preordersOpen = ref(false);
 const schedulesOpen = ref(false);
 const statusTab = ref(props.statuses[0]?.value ?? '');
@@ -153,10 +151,6 @@ function openAssignedOrder(assigned) {
     </Teleport>
 
     <div class="flex min-h-0 w-full flex-1 flex-col gap-4">
-        <p v-if="flash.status" class="shrink-0 rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
-            {{ flash.status }}
-        </p>
-
         <div class="grid min-h-0 flex-1 grid-rows-[minmax(16rem,0.8fr)_minmax(0,1.2fr)] gap-4 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:grid-rows-1">
             <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5" aria-labelledby="order-list-heading">
                 <h2 id="order-list-heading" class="border-b border-mist px-4 py-3 text-sm font-medium dark:border-white/10">Order</h2>

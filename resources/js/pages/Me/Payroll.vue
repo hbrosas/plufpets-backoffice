@@ -1,5 +1,5 @@
 <script setup>
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AdminLayout from '../../layouts/AdminLayout.vue';
 
@@ -26,8 +26,6 @@ defineProps({
     },
 });
 
-const page = usePage();
-const flash = computed(() => page.props.flash ?? {});
 const tab = ref('payslips');
 const filingType = ref(null);
 const form = useForm({
@@ -122,9 +120,6 @@ function withdraw(filing) {
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <p v-if="flash.status" class="rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
-            {{ flash.status }}
-        </p>
         <p v-if="!account" class="rounded-xl border border-mist bg-white px-4 py-3 text-sm dark:border-white/10 dark:bg-white/5">
             Sign in with your employee account to file payroll.
         </p>

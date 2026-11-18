@@ -1,9 +1,9 @@
-import { createApp, h } from 'vue';
+import { createApp, Fragment, h } from 'vue';
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
+import FlashToast from './components/FlashToast.vue';
 import FullscreenButton from './components/FullscreenButton.vue';
 import PwaInstallPrompt from './components/PwaInstallPrompt.vue';
-import { mountToastHost } from './toast';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Employee Portal';
 const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
@@ -23,10 +23,13 @@ createInertiaApp({
             import.meta.glob('./pages/**/*.vue'),
         ),
     setup({ el, App, props, plugin }) {
-        createApp({ render: () => h(App, props) }).use(plugin).mount(el);
+        createApp({
+            render: () => h(Fragment, [h(App, props), h(FlashToast)]),
+        })
+            .use(plugin)
+            .mount(el);
         mountPwaInstallPrompt();
         mountFullscreenButton();
-        mountToastHost();
     },
     progress: {
         color: '#053b63',

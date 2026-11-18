@@ -123,6 +123,131 @@ class CategoryControllerTest extends TestCase
         ]);
     }
 
+    public function test_guest_is_redirected_from_bulk_category_update(): void
+    {
+        $this->post('/backoffice/shop/categories/bulk')->assertRedirect(route('login'));
+    }
+
+    public function test_bulk_category_update_requires_a_selection_and_action(): void
+    {
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/categories/bulk', []);
+
+        $response->assertRedirect('/backoffice/shop/catalog-meta');
+        $response->assertSessionHasErrors([
+            'ids' => 'Choose a category.',
+            'action' => 'Choose an action.',
+        ]);
+    }
+
+    public function test_bulk_update_rejects_an_unknown_category(): void
+    {
+        $posCategory = PosCategory::factory()->create();
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/categories/bulk', [
+            'ids' => [999],
+            'action' => 'pos_category',
+            'pos_category_id' => $posCategory->id,
+        ]);
+
+        $response->assertRedirect('/backoffice/shop/catalog-meta');
+        $response->assertSessionHasErrors([
+            'ids.0' => 'Choose a category from the list.',
+        ]);
+    }
+
+    public function test_bulk_pos_category_is_required(): void
+    {
+        $category = Category::factory()->create();
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/categories/bulk', [
+            'ids' => [$category->id],
+            'action' => 'pos_category',
+        ]);
+
+        $response->assertRedirect('/backoffice/shop/catalog-meta');
+        $response->assertSessionHasErrors([
+            'pos_category_id' => 'Choose a POS category.',
+        ]);
+        $this->assertSame($category->pos_category_id, $category->fresh()->pos_category_id);
+    }
+
+    public function test_bulk_pos_category_must_exist(): void
+    {
+        $category = Category::factory()->create();
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/categories/bulk', [
+            'ids' => [$category->id],
+            'action' => 'pos_category',
+            'pos_category_id' => 999,
+        ]);
+
+        $response->assertRedirect('/backoffice/shop/catalog-meta');
+        $response->assertSessionHasErrors([
+            'pos_category_id' => 'Choose a POS category.',
+        ]);
+        $this->assertSame($category->pos_category_id, $category->fresh()->pos_category_id);
+    }
+
+    public function test_bulk_visibility_requires_a_choice(): void
+    {
+        $category = Category::factory()->create(['show_on_shop' => true]);
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/categories/bulk', [
+            'ids' => [$category->id],
+            'action' => 'visibility',
+        ]);
+
+        $response->assertRedirect('/backoffice/shop/catalog-meta');
+        $response->assertSessionHasErrors([
+            'show_on_shop' => 'Choose public shop visibility.',
+        ]);
+        $this->assertTrue($category->fresh()->show_on_shop);
+    }
+
+    public function test_selected_categories_can_change_pos_category(): void
+    {
+        $retail = PosCategory::factory()->create(['name' => 'Retail']);
+        $services = PosCategory::factory()->create(['name' => 'Services']);
+        $first = Category::factory()->create(['name' => 'Food', 'pos_category_id' => $retail->id]);
+        $second = Category::factory()->create(['name' => 'Treats', 'pos_category_id' => $retail->id]);
+        $untouched = Category::factory()->create(['name' => 'Grooming', 'pos_category_id' => $retail->id]);
+
+        $response = $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/categories/bulk', [
+            'ids' => [$first->id, $second->id],
+            'action' => 'pos_category',
+            'pos_category_id' => $services->id,
+        ]);
+
+        $response->assertRedirect('/backoffice/shop/catalog-meta');
+        $response->assertSessionHas('status', 'POS category updated.');
+        $this->assertSame($services->id, $first->fresh()->pos_category_id);
+        $this->assertSame($services->id, $second->fresh()->pos_category_id);
+        $this->assertSame($retail->id, $untouched->fresh()->pos_category_id);
+    }
+
+    public function test_selected_categories_can_change_public_shop_visibility(): void
+    {
+        $first = Category::factory()->create(['name' => 'Food', 'show_on_shop' => true]);
+        $second = Category::factory()->create(['name' => 'Treats', 'show_on_shop' => false]);
+        $untouched = Category::factory()->create(['name' => 'Grooming', 'show_on_shop' => true]);
+
+        $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/categories/bulk', [
+            'ids' => [$first->id, $second->id],
+            'action' => 'visibility',
+            'show_on_shop' => false,
+        ])->assertSessionHas('status', 'Public shop visibility updated.');
+
+        $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/categories/bulk', [
+            'ids' => [$first->id],
+            'action' => 'visibility',
+            'show_on_shop' => true,
+        ])->assertSessionHas('status', 'Public shop visibility updated.');
+
+        $this->assertTrue($first->fresh()->show_on_shop);
+        $this->assertFalse($second->fresh()->show_on_shop);
+        $this->assertTrue($untouched->fresh()->show_on_shop);
+    }
+
     public function test_category_can_be_deleted(): void
     {
         $category = Category::factory()->create(['name' => 'Food']);

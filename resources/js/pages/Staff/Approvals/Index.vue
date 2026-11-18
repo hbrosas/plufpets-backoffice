@@ -1,6 +1,6 @@
 <script setup>
-import { Head, router, usePage } from '@inertiajs/vue3';
-import { computed, reactive } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
+import { reactive } from 'vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
 defineOptions({
@@ -22,8 +22,6 @@ const props = defineProps({
     },
 });
 
-const page = usePage();
-const flash = computed(() => page.props.flash ?? {});
 const notes = reactive({});
 
 function selectTab(tab) {
@@ -42,10 +40,6 @@ function review(filing, status) {
     <Head title="Filed Requests" />
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <p v-if="flash.status" class="rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
-            {{ flash.status }}
-        </p>
-
         <Teleport defer to="#admin-header-tabs">
         <div class="flex w-max gap-2" role="tablist" aria-label="Filing status">
             <button

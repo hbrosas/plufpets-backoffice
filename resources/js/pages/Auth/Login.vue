@@ -17,9 +17,6 @@ const employeeNumberMaxLength = 10;
 const pinMaxLength = 8;
 const digitKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
-const formError = computed(() => form.errors.employee_number || form.errors.pin || '');
-const status = computed(() => page.props.flash?.status ?? '');
-
 const canSignIn = computed(
     () => form.employee_number.length > 0 && form.pin.length >= 4 && !form.processing,
 );
@@ -113,22 +110,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
                     <h1 class="text-2xl font-medium">Sign in</h1>
                 </div>
             </div>
-
-            <p
-                v-if="status"
-                class="rounded-2xl border border-mist bg-white px-4 py-3 text-center text-sm dark:border-white/10 dark:bg-white/5"
-                role="status"
-            >
-                {{ status }}
-            </p>
-
-            <p
-                v-if="formError"
-                class="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-center text-sm text-danger"
-                role="alert"
-            >
-                {{ formError }}
-            </p>
 
             <div class="grid items-stretch gap-6 sm:grid-cols-2 sm:gap-8">
                 <div class="flex h-full flex-col gap-3">

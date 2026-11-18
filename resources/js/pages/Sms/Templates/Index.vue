@@ -1,6 +1,6 @@
 <script setup>
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
 defineOptions({
@@ -18,8 +18,6 @@ const props = defineProps({
     },
 });
 
-const page = usePage();
-const flash = computed(() => page.props.flash ?? {});
 const tab = ref('pos');
 const editingId = ref(null);
 const templateForm = useForm({
@@ -82,10 +80,6 @@ function saveDeliveryTemplate(template) {
     <Head title="SMS Templates" />
 
     <div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
-        <p v-if="flash.status" class="rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
-            {{ flash.status }}
-        </p>
-
         <Teleport defer to="#admin-header-tabs">
         <div class="flex w-max gap-2" role="tablist" aria-label="SMS templates">
             <button

@@ -39,7 +39,7 @@ async function printZReport() {
                 : 'Sent Z-Report to the assigned printer.',
         );
     } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Could not print on the assigned printer.');
+        showToast(error instanceof Error ? error.message : 'Could not print on the assigned printer.', { tone: 'error' });
     } finally {
         printing.value = false;
     }

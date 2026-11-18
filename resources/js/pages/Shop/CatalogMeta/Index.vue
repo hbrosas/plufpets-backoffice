@@ -24,11 +24,35 @@ const flash = computed(() => page.props.flash ?? {});
 
 const categoryModalOpen = ref(false);
 const editingCategory = ref(null);
+const selectedCategoryIds = ref([]);
+const categoryDialog = ref(null);
+const posCategoryId = ref('');
+const shopVisibility = ref(null);
 const posCategories = computed(() => page.props.posCategories ?? []);
 const categoryForm = useForm({
     name: '',
     pos_category_id: '',
     show_on_shop: true,
+});
+const categoryBulkForm = useForm({
+    ids: [],
+    action: '',
+    pos_category_id: '',
+    show_on_shop: true,
+});
+
+const allCategoriesChecked = computed(() => props.categories.length > 0 && props.categories.every((category) => selectedCategoryIds.value.includes(category.id)));
+const selectedCategories = computed(() => props.categories.filter((category) => selectedCategoryIds.value.includes(category.id)));
+const canApplyCategoryBulk = computed(() => {
+    if (categoryDialog.value === 'pos_category') {
+        return posCategoryId.value !== '';
+    }
+
+    if (categoryDialog.value === 'visibility') {
+        return shopVisibility.value !== null;
+    }
+
+    return false;
 });
 
 const brandModalOpen = ref(false);
@@ -87,6 +111,55 @@ function deleteCategory(category) {
     router.delete(`/backoffice/shop/categories/${category.id}`, {
         preserveScroll: true,
     });
+}
+
+function toggleCategory(id, checked) {
+    selectedCategoryIds.value = checked
+        ? [...selectedCategoryIds.value, id]
+        : selectedCategoryIds.value.filter((selectedId) => selectedId !== id);
+}
+
+function toggleAllCategories(event) {
+    selectedCategoryIds.value = event.target.checked ? props.categories.map((category) => category.id) : [];
+}
+
+function openCategoryDialog(action) {
+    categoryDialog.value = action;
+    posCategoryId.value = '';
+    shopVisibility.value = null;
+    categoryBulkForm.clearErrors();
+}
+
+function closeCategoryDialog() {
+    categoryDialog.value = null;
+    categoryBulkForm.clearErrors();
+}
+
+function submitCategoryBulk() {
+    categoryBulkForm
+        .transform(() => {
+            const payload = {
+                ids: selectedCategoryIds.value,
+                action: categoryDialog.value,
+            };
+
+            if (categoryDialog.value === 'pos_category') {
+                payload.pos_category_id = posCategoryId.value;
+            }
+
+            if (categoryDialog.value === 'visibility') {
+                payload.show_on_shop = shopVisibility.value;
+            }
+
+            return payload;
+        })
+        .post('/backoffice/shop/categories/bulk', {
+            preserveScroll: true,
+            onSuccess: () => {
+                selectedCategoryIds.value = [];
+                closeCategoryDialog();
+            },
+        });
 }
 
 function openCreateBrand() {
@@ -213,10 +286,29 @@ function submitImport() {
                         Upload CSV
                     </button>
                 </div>
+                <div v-if="selectedCategoryIds.length > 0" class="flex flex-wrap items-center gap-2">
+                    <p class="text-sm font-medium">{{ selectedCategoryIds.length }} selected</p>
+                    <button class="h-10 rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15" type="button" @click="openCategoryDialog('pos_category')">
+                        POS category
+                    </button>
+                    <button class="h-10 rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15" type="button" @click="openCategoryDialog('visibility')">
+                        Public shop
+                    </button>
+                </div>
                 <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
                     <table class="w-full text-left text-sm">
                         <thead class="text-ink/50 dark:text-foam/50">
                             <tr class="border-b border-mist dark:border-white/10">
+                                <th class="w-12 px-4 py-3 font-medium">
+                                    <input
+                                        class="h-4 w-4 accent-pine"
+                                        type="checkbox"
+                                        :checked="allCategoriesChecked"
+                                        :disabled="categories.length === 0"
+                                        aria-label="Select all categories"
+                                        @change="toggleAllCategories"
+                                    />
+                                </th>
                                 <th class="px-4 py-3 font-medium">Name</th>
                                 <th class="px-4 py-3 font-medium">POS category</th>
                                 <th class="px-4 py-3 font-medium">Items</th>
@@ -226,13 +318,22 @@ function submitImport() {
                         </thead>
                         <tbody>
                             <tr v-if="categories.length === 0">
-                                <td class="px-4 py-8 text-ink/60 dark:text-foam/60" colspan="5">No categories yet.</td>
+                                <td class="px-4 py-8 text-ink/60 dark:text-foam/60" colspan="6">No categories yet.</td>
                             </tr>
                             <tr
                                 v-for="category in categories"
                                 :key="category.id"
                                 class="border-b border-mist last:border-b-0 dark:border-white/10"
                             >
+                                <td class="px-4 py-3">
+                                    <input
+                                        class="h-4 w-4 accent-pine"
+                                        type="checkbox"
+                                        :checked="selectedCategoryIds.includes(category.id)"
+                                        :aria-label="`Select ${category.name}`"
+                                        @change="toggleCategory(category.id, $event.target.checked)"
+                                    />
+                                </td>
                                 <td class="px-4 py-3 font-medium">{{ category.name }}</td>
                                 <td class="px-4 py-3">{{ category.pos_category_name }}</td>
                                 <td class="px-4 py-3">{{ category.item_count }}</td>
@@ -306,6 +407,61 @@ function submitImport() {
                 </div>
             </section>
         </div>
+    </div>
+
+    <div v-if="categoryDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
+        <form class="flex w-full max-w-md flex-col gap-4 rounded-2xl bg-foam p-6 dark:bg-ink" @submit.prevent="submitCategoryBulk">
+            <div class="flex items-start justify-between gap-4">
+                <h2 class="text-lg font-medium">
+                    {{ categoryDialog === 'pos_category' ? 'POS category' : 'Public shop' }}
+                </h2>
+                <button class="text-sm font-medium" type="button" @click="closeCategoryDialog">Close</button>
+            </div>
+            <p class="text-sm text-ink/70 dark:text-foam/70">
+                {{ selectedCategories.map((category) => category.name).join(', ') }}
+            </p>
+
+            <div v-if="categoryDialog === 'pos_category'" class="flex flex-col gap-2">
+                <label class="text-sm font-medium" for="bulk-pos-category">POS category</label>
+                <select
+                    id="bulk-pos-category"
+                    v-model="posCategoryId"
+                    class="h-11 rounded-xl border border-mist bg-white pr-11 pl-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
+                >
+                    <option value="" disabled>Choose a POS category</option>
+                    <option v-for="posCategory in posCategories" :key="posCategory.id" :value="posCategory.id">
+                        {{ posCategory.name }}
+                    </option>
+                </select>
+                <p v-if="categoryBulkForm.errors.pos_category_id" class="text-sm text-danger">
+                    {{ categoryBulkForm.errors.pos_category_id }}
+                </p>
+            </div>
+
+            <fieldset v-else class="flex flex-col gap-3">
+                <legend class="text-sm font-medium">Public shop</legend>
+                <label class="flex items-center gap-3 text-sm">
+                    <input v-model="shopVisibility" class="h-4 w-4 accent-pine" type="radio" :value="true" />
+                    Shown
+                </label>
+                <label class="flex items-center gap-3 text-sm">
+                    <input v-model="shopVisibility" class="h-4 w-4 accent-pine" type="radio" :value="false" />
+                    Hidden
+                </label>
+                <p v-if="categoryBulkForm.errors.show_on_shop" class="text-sm text-danger">
+                    {{ categoryBulkForm.errors.show_on_shop }}
+                </p>
+            </fieldset>
+            <p v-if="categoryBulkForm.errors.ids" class="text-sm text-danger">{{ categoryBulkForm.errors.ids }}</p>
+
+            <button
+                class="h-11 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-70"
+                type="submit"
+                :disabled="categoryBulkForm.processing || !canApplyCategoryBulk"
+            >
+                {{ categoryBulkForm.processing ? 'Saving…' : 'Apply' }}
+            </button>
+        </form>
     </div>
 
     <div v-if="categoryModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">

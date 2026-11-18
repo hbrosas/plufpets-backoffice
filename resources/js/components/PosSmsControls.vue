@@ -112,7 +112,7 @@ async function sendSms() {
     } catch (error) {
         errors.value = error.errors ?? {};
         panel.value = 'compose';
-        showToast(error instanceof Error ? error.message : 'Could not send the text.');
+        showToast(error instanceof Error ? error.message : 'Could not send the text.', { tone: 'error' });
     } finally {
         sending.value = false;
     }
@@ -125,7 +125,7 @@ async function loadTemplates() {
         const response = await jsonRequest('/backoffice/pos/sms/templates');
         templates.value = response.templates ?? [];
     } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Could not load templates.');
+        showToast(error instanceof Error ? error.message : 'Could not load templates.', { tone: 'error' });
     } finally {
         loading.value = false;
     }
@@ -145,7 +145,7 @@ async function loadHistory({ silent = false } = {}) {
         const response = await jsonRequest(`/backoffice/pos/register/${branchId.value}/sms/history`);
         history.value = response.messages ?? [];
     } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Could not load history.');
+        showToast(error instanceof Error ? error.message : 'Could not load history.', { tone: 'error' });
     } finally {
         loading.value = false;
     }
@@ -176,7 +176,7 @@ async function resendSms(row) {
         showToast(response.status || 'Text resent.');
         await loadHistory({ silent: true });
     } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Could not resend the text.');
+        showToast(error instanceof Error ? error.message : 'Could not resend the text.', { tone: 'error' });
     } finally {
         resendingId.value = null;
     }
@@ -212,7 +212,7 @@ async function saveTemplate() {
         await loadTemplates();
     } catch (error) {
         templateErrors.value = error.errors ?? {};
-        showToast(error instanceof Error ? error.message : 'Could not save the template.');
+        showToast(error instanceof Error ? error.message : 'Could not save the template.', { tone: 'error' });
     }
 }
 
@@ -231,7 +231,7 @@ async function deleteTemplate(template) {
         showToast(response.status);
         await loadTemplates();
     } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Could not delete the template.');
+        showToast(error instanceof Error ? error.message : 'Could not delete the template.', { tone: 'error' });
     }
 }
 

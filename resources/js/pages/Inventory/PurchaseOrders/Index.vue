@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import PurchaseOrderView from '../../../components/PurchaseOrderView.vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
@@ -23,8 +23,6 @@ const props = defineProps({
     },
 });
 
-const page = usePage();
-const flash = computed(() => page.props.flash ?? {});
 const statusTab = ref(props.filters.tab);
 const selectedOrderId = ref(null);
 const visibleOrders = computed(() => props.purchaseOrders.filter((order) => order.status === statusTab.value));
@@ -74,10 +72,6 @@ function selectOrder(order) {
     </Teleport>
 
     <div class="flex min-h-0 w-full flex-1 flex-col gap-4">
-        <p v-if="flash.status" class="shrink-0 rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
-            {{ flash.status }}
-        </p>
-
         <div class="grid min-h-0 flex-1 grid-rows-[minmax(16rem,0.8fr)_minmax(0,1.2fr)] gap-4 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:grid-rows-1">
             <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5" aria-labelledby="purchase-order-list-heading">
                 <h2 id="purchase-order-list-heading" class="border-b border-mist px-4 py-3 text-sm font-medium dark:border-white/10">Purchase Orders</h2>

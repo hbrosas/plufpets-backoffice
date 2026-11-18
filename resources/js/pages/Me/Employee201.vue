@@ -1,6 +1,5 @@
 <script setup>
-import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, useForm } from '@inertiajs/vue3';
 import AdminLayout from '../../layouts/AdminLayout.vue';
 
 defineOptions({
@@ -16,8 +15,6 @@ const props = defineProps({
     employmentStatuses: { type: Array, required: true },
 });
 
-const page = usePage();
-const flash = computed(() => page.props.flash ?? {});
 const form = useForm({
     first_name: props.profile?.first_name ?? '',
     middle_name: props.profile?.middle_name ?? '',
@@ -59,9 +56,6 @@ function submit() {
     <Head title="My Employee 201" />
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <p v-if="flash.status" class="rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
-            {{ flash.status }}
-        </p>
         <p v-if="!account" class="rounded-xl border border-mist bg-white px-4 py-3 text-sm dark:border-white/10 dark:bg-white/5">
             Sign in with your employee account to update your 201 file.
         </p>

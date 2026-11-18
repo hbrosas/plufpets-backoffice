@@ -552,7 +552,7 @@ async function kickCashDrawer() {
     try {
         await openAssignedDrawer(receiptPrinter.value, false);
     } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.', { tone: 'warning' });
+        showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.', { tone: 'error' });
     }
 }
 
@@ -587,10 +587,28 @@ async function openDrawer(prompt = false) {
         }
     } catch (error) {
         if (prompt) {
-            showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.');
+            showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.', { tone: 'error' });
         }
     } finally {
         openingDrawer.value = false;
+    }
+}
+
+async function openDrawerForCount() {
+    const printer = receiptPrinter.value;
+
+    if (!printer || typeof window === 'undefined') {
+        return;
+    }
+
+    try {
+        await openAssignedDrawer(printer, false);
+    } catch (error) {
+        if (error instanceof PrinterUnavailableError) {
+            return;
+        }
+
+        showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.', { tone: 'error' });
     }
 }
 
@@ -614,7 +632,7 @@ async function openCashDrawer({ record = false } = {}) {
             await recordDrawerOpen();
         }
     } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.');
+        showToast(error instanceof Error ? error.message : 'Could not open the cash drawer.', { tone: 'error' });
     } finally {
         openingDrawer.value = false;
     }
@@ -630,8 +648,6 @@ async function openShift() {
     openingShift = true;
 
     try {
-        await openCashDrawer();
-
         openForm.post(`${registerPath.value}/shifts`, {
             preserveScroll: true,
             showProgress: false,
@@ -643,8 +659,18 @@ async function openShift() {
 
 function beginCloseShift() {
     closeOpen.value = true;
-    openCashDrawer();
+    openDrawerForCount();
 }
+
+watch(
+    () => Boolean(props.shift),
+    (open) => {
+        if (!open) {
+            openDrawerForCount();
+        }
+    },
+    { immediate: true },
+);
 
 function hasModifiers(variant) {
     return (variant.modifiers ?? []).length > 0;
@@ -926,60 +952,157 @@ function variantIsAvailable(variant) {
     return !(variant.is_product && liveQuantity(variant) !== null && liveQuantity(variant) < 1);
 }
 
-function onBarcode(value) {
-    const code = value.trim();
+function cleanBarcode(value) {
+    return String(value ?? '').replace(/[\u0000-\u001F\u007F]/g, '').trim();
+}
 
+function findVariantByBarcode(code) {
     if (code === '') {
+        return null;
+    }
+
+    return props.variants.find((variant) => cleanBarcode(variant.barcode) === code) ?? null;
+}
+
+function onBarcode(value) {
+    const code = cleanBarcode(value);
+
+    if (code === '' || !props.shift) {
         return;
     }
 
     search.value = code;
 
-    const match = props.variants.find((variant) => variant.barcode && variant.barcode === code);
+    const match = findVariantByBarcode(code);
 
     if (match && variantIsAvailable(match)) {
         addVariant(match);
     }
 
+    if (customizeOpen.value) {
+        return;
+    }
+
     requestAnimationFrame(() => {
         const input = document.getElementById('pos-search');
 
-        if (input instanceof HTMLInputElement && document.activeElement === input) {
-            input.select();
+        if (!(input instanceof HTMLInputElement)) {
+            return;
         }
+
+        input.focus({ preventScroll: true });
+        input.select();
     });
 }
 
+const scannerGapMs = 180;
 let scanBuffer = '';
 let lastScanKeyAt = 0;
+let scanMaxGap = 0;
+let scanTarget = null;
+let valueBeforeScan = null;
+let armTimer = 0;
 
 function resetScanBuffer() {
     scanBuffer = '';
     lastScanKeyAt = 0;
+    scanMaxGap = 0;
+    scanTarget = null;
+    valueBeforeScan = null;
+}
+
+function editableValue(target) {
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        return target.value;
+    }
+
+    return null;
+}
+
+function isTextEntry(target) {
+    return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+}
+
+function restoreScanTarget() {
+    const target = scanTarget;
+
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) || valueBeforeScan === null) {
+        return;
+    }
+
+    if (target.value === valueBeforeScan) {
+        return;
+    }
+
+    const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+
+    if (!setter) {
+        return;
+    }
+
+    setter.call(target, valueBeforeScan);
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function armScanner() {
+    if (!props.shift) {
+        return;
+    }
+
+    const active = document.activeElement;
+
+    if (active instanceof HTMLElement && active.closest('input, textarea, select, [contenteditable="true"]')) {
+        return;
+    }
+
+    const input = document.getElementById('pos-search');
+
+    if (!(input instanceof HTMLInputElement) || document.activeElement === input) {
+        return;
+    }
+
+    input.focus({ preventScroll: true });
+}
+
+function scheduleArmScanner() {
+    window.clearTimeout(armTimer);
+    armTimer = window.setTimeout(armScanner, 0);
 }
 
 function onBackgroundScan(event) {
-    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
+    if (!props.shift || event.isComposing || event.repeat || event.ctrlKey || event.metaKey || event.altKey) {
         return;
     }
 
     const target = event.target;
 
-    if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]')) {
-        return;
-    }
+    if (event.key === 'Enter' || event.key === 'Tab' || event.key === 'NumpadEnter') {
+        const code = cleanBarcode(scanBuffer);
+        const recent = lastScanKeyAt > 0 && Date.now() - lastScanKeyAt <= scannerGapMs;
+        const match = findVariantByBarcode(code);
+        const searchField = target instanceof HTMLElement && target.id === 'pos-search';
+        const inOtherField = isTextEntry(target) && !searchField;
+        const fieldCode = cleanBarcode(editableValue(target) ?? '');
+        const coversField = !searchField || code === fieldCode || Boolean(match);
+        const isScan = recent && coversField && code !== '' && (
+            (match && code.length >= 3 && scanMaxGap <= scannerGapMs)
+            || (!inOtherField && code.length >= 4 && scanMaxGap <= scannerGapMs)
+            || (inOtherField && !match && code.length >= 8 && scanMaxGap <= 80)
+        );
 
-    if (event.key === 'Enter') {
-        const code = scanBuffer.trim();
-        const recent = lastScanKeyAt > 0 && Date.now() - lastScanKeyAt <= 100;
-        const known = props.variants.some((variant) => variant.barcode && variant.barcode === code);
-
-        resetScanBuffer();
-
-        if (code !== '' && recent && (known || code.length >= 4)) {
+        if (isScan) {
             event.preventDefault();
+            event.stopPropagation();
+
+            if (inOtherField) {
+                restoreScanTarget();
+            }
+
             onBarcode(code);
         }
+
+        resetScanBuffer();
 
         return;
     }
@@ -989,9 +1112,15 @@ function onBackgroundScan(event) {
     }
 
     const now = Date.now();
+    const gap = scanBuffer === '' || scanTarget !== target ? scannerGapMs + 1 : now - lastScanKeyAt;
 
-    if (scanBuffer !== '' && now - lastScanKeyAt > 100) {
+    if (scanBuffer === '' || scanTarget !== target || gap > scannerGapMs) {
         scanBuffer = '';
+        scanMaxGap = 0;
+        scanTarget = target;
+        valueBeforeScan = editableValue(target);
+    } else {
+        scanMaxGap = Math.max(scanMaxGap, gap);
     }
 
     lastScanKeyAt = now;
@@ -1427,7 +1556,7 @@ async function charge() {
             try {
                 await printOnReceiptPrinter(saved.receipt, Boolean(saved.open_drawer));
             } catch (error) {
-                showToast(error instanceof Error ? error.message : 'The sale was saved, but the receipt did not print.');
+                showToast(error instanceof Error ? error.message : 'The sale was saved, but the receipt did not print.', { tone: 'error' });
             }
         }
     } catch (error) {
@@ -1483,7 +1612,7 @@ async function reprintReceipt(transaction) {
 
         await printOnReceiptPrinter(payload.receipt, false);
     } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Could not reprint the receipt.');
+        showToast(error instanceof Error ? error.message : 'Could not reprint the receipt.', { tone: 'error' });
     } finally {
         reprintingSaleId.value = null;
     }
@@ -1493,7 +1622,7 @@ function beginHotelSale(stay) {
     const cartId = stay.cart?.open_order_id ?? null;
 
     if (cart.value.length > 0 && activeOpenOrderId.value !== cartId) {
-        showToast('Clear the cart before opening this guest cart.');
+        showToast('Clear the cart before opening this guest cart.', { tone: 'warning' });
 
         return;
     }
@@ -1688,7 +1817,7 @@ function removeOpenOrder(order) {
         },
         onError: () => {
             hiddenOpenOrderIds.value = hiddenOpenOrderIds.value.filter((id) => id !== order.id);
-            showToast('Could not remove this open order.');
+            showToast('Could not remove this open order.', { tone: 'error' });
         },
         onCancel: () => {
             router.reload({
@@ -1729,8 +1858,6 @@ async function submitClose() {
     closeForm.clearErrors();
     closeForm.processing = true;
 
-    await openCashDrawer();
-
     try {
         const closed = await jsonRequest(`${registerPath.value}/shifts/${props.shift.id}/close`, {
             method: 'POST',
@@ -1770,15 +1897,28 @@ async function submitClose() {
 
                 if (message) {
                     closeForm.setError(key, String(message));
+                    showToast(String(message), { tone: 'error' });
                 }
             });
         } else {
-            showToast(error instanceof Error ? error.message : 'Could not close this shift.');
+            showToast(error instanceof Error ? error.message : 'Could not close this shift.', { tone: 'error' });
         }
     } finally {
         closeForm.processing = false;
     }
 }
+
+watch(checkoutError, (message) => {
+    if (message) {
+        showToast(message, { tone: 'error' });
+    }
+});
+
+watch(openOrderError, (message) => {
+    if (message) {
+        showToast(message, { tone: 'error' });
+    }
+});
 
 watch(
     () => flash.value.open_drawer,
@@ -1933,7 +2073,69 @@ async function loadOnlineOrders() {
     }
 }
 
+const refreshing = ref(false);
+
+function refreshRegister() {
+    if (refreshing.value) {
+        return;
+    }
+
+    refreshing.value = true;
+    const orders = loadOnlineOrders();
+
+    router.reload({
+        preserveScroll: true,
+        preserveState: true,
+        preserveUrl: true,
+        showProgress: false,
+        only: [
+            'shift',
+            'categories',
+            'variants',
+            'paymentMethods',
+            'deliveryMethods',
+            'deliverySchedules',
+            'taxFees',
+            'todayTransactions',
+            'todayTransactionsTotal',
+            'printers',
+            'openOrders',
+            'hotelStays',
+            'hotelOptions',
+            'assignableEmployees',
+        ],
+        onSuccess: () => {
+            cart.value.forEach((line) => {
+                if (line.is_free) {
+                    return;
+                }
+
+                const variant = props.variants.find((row) => row.id === line.id);
+
+                if (variant) {
+                    line.available = liveQuantity(variant);
+                }
+            });
+        },
+        onFinish: () => {
+            orders.finally(() => {
+                refreshing.value = false;
+            });
+        },
+    });
+}
+
 const viewedOnlineOrder = computed(() => onlineOrders.value.find((order) => order.id === viewedOnlineOrderId.value) ?? null);
+
+function onlineOrderVariant(line) {
+    const variant = String(line?.variant_name ?? '').trim();
+
+    if (variant === '' || variant.toLowerCase() === 'default') {
+        return '';
+    }
+
+    return variant;
+}
 
 const visibleOnlineOrders = computed(() => onlineOrders.value.filter((order) => order.status === onlineOrderTab.value));
 
@@ -2100,12 +2302,26 @@ async function createSaleFromOnlineOrder(order) {
     router.reload({ ...registerPartial });
 }
 
+watch(
+    () => props.shift,
+    (shift) => {
+        if (shift) {
+            nextTick(() => scheduleArmScanner());
+        }
+    },
+    { immediate: true },
+);
+
 onMounted(() => {
-    window.addEventListener('keydown', onBackgroundScan);
+    window.addEventListener('keydown', onBackgroundScan, true);
+    window.addEventListener('focusout', scheduleArmScanner);
+    scheduleArmScanner();
 });
 
 onUnmounted(() => {
-    window.removeEventListener('keydown', onBackgroundScan);
+    window.removeEventListener('keydown', onBackgroundScan, true);
+    window.removeEventListener('focusout', scheduleArmScanner);
+    window.clearTimeout(armTimer);
     window.clearInterval(shopOrderTimer);
     hidePosChrome.value = false;
     hideSendText.value = false;
@@ -2126,6 +2342,19 @@ onUnmounted(() => {
     </Teleport>
 
     <Teleport defer to="#admin-header-actions">
+        <button
+            class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-mist disabled:opacity-70 dark:border-white/15"
+            type="button"
+            aria-label="Refresh"
+            :disabled="refreshing"
+            @click="refreshRegister"
+        >
+            <svg class="h-4 w-4" :class="refreshing ? 'animate-spin' : ''" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M16.2 10a6.2 6.2 0 0 1-10.7 4.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                <path d="M3.8 10a6.2 6.2 0 0 1 10.7-4.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                <path d="M16.2 4.2v3.6h-3.6M3.8 15.8v-3.6h3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+        </button>
         <button
             class="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-mist px-3 text-sm font-medium whitespace-nowrap dark:border-white/15"
             type="button"
@@ -3218,7 +3447,7 @@ onUnmounted(() => {
     </div>
 
     <div v-if="viewedOnlineOrder" class="fixed inset-0 z-[60] flex items-center justify-center bg-ink/50 px-4">
-        <div class="flex max-h-[90dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-foam p-6 dark:bg-ink">
+        <div class="flex max-h-[90dvh] w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-2xl bg-foam p-6 dark:bg-ink">
             <div class="flex items-start justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-medium">{{ viewedOnlineOrder.number }}</h2>
@@ -3244,9 +3473,32 @@ onUnmounted(() => {
                 <p class="font-medium">{{ viewedOnlineOrder.customer }}</p>
                 <p v-if="viewedOnlineOrder.phone" class="text-ink/70 dark:text-foam/70">{{ viewedOnlineOrder.phone }}</p>
             </div>
-            <div v-if="viewedOnlineOrder.items.length" class="flex flex-col gap-1 text-sm">
-                <p class="font-medium">Items</p>
-                <p v-for="item in viewedOnlineOrder.items" :key="item">{{ item }}</p>
+            <div v-if="(viewedOnlineOrder.lines ?? []).length" class="overflow-hidden rounded-xl border border-mist text-sm dark:border-white/10">
+                <table class="w-full text-left">
+                    <thead class="text-ink/50 dark:text-foam/50">
+                        <tr class="border-b border-mist dark:border-white/10">
+                            <th class="px-3 py-2 font-medium">Item</th>
+                            <th class="px-3 py-2 font-medium">Variant</th>
+                            <th class="px-3 py-2 text-right font-medium">Qty</th>
+                            <th class="px-3 py-2 text-right font-medium">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            v-for="(line, index) in viewedOnlineOrder.lines"
+                            :key="`${line.catalog_item_variant_id}-${index}`"
+                            class="border-b border-mist last:border-b-0 dark:border-white/10"
+                        >
+                            <td class="px-3 py-2">
+                                {{ line.product_name }}
+                                <span v-if="line.preorder" class="text-ember"> · Preorder</span>
+                            </td>
+                            <td class="px-3 py-2">{{ onlineOrderVariant(line) || '—' }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums">{{ line.quantity }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums">{{ formatPeso(Number(line.price) * Number(line.quantity)) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
             <div v-if="viewedOnlineOrder.delivery || viewedOnlineOrder.payment" class="flex flex-col gap-1 text-sm">
                 <p v-if="viewedOnlineOrder.delivery">{{ viewedOnlineOrder.delivery }}</p>

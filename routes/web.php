@@ -300,6 +300,7 @@ Route::prefix('backoffice')->group(function () {
                 Route::post('brands/import', [BrandImportController::class, 'store'])
                     ->middleware('throttle:catalog-import')
                     ->name('brands.import.store');
+                Route::post('categories/bulk', [CategoryController::class, 'bulk'])->name('categories.bulk');
                 Route::post('categories', [CategoryController::class, 'store'])->name('categories.store');
                 Route::put('categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
                 Route::delete('categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');

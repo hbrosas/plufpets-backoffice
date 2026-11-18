@@ -1,7 +1,6 @@
 <script setup>
 import { Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import FlashToast from '../components/FlashToast.vue';
 
 const page = usePage();
 const appName = computed(() => page.props.appName);
@@ -412,7 +411,6 @@ watch(
 
 <template>
     <div class="admin-shell min-h-screen bg-cream text-black xl:flex">
-        <FlashToast />
         <div
             v-if="sidebarOpen"
             class="fixed inset-0 z-40 bg-black/40 xl:hidden"

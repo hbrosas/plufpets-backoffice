@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
 
@@ -26,8 +26,6 @@ const props = defineProps({
     },
 });
 
-const page = usePage();
-const flash = computed(() => page.props.flash ?? {});
 const steps = [
     { id: 1, label: 'Period' },
     { id: 2, label: 'Attendance' },
@@ -92,7 +90,6 @@ const weeks = computed(() => {
 
     return rows;
 });
-const runErrors = computed(() => [...new Set(Object.values(runForm.errors).filter(Boolean))]);
 
 watch(() => props.prepared, (prepared) => {
     if (!prepared || props.preview || props.completed) {
@@ -333,13 +330,6 @@ function openStep(id) {
             >
                 Start over
             </Link>
-        </div>
-
-        <p v-if="flash.status" class="rounded-xl border border-pine/20 bg-foam px-4 py-3 text-sm text-pine dark:border-sand/30 dark:bg-ink dark:text-sand">
-            {{ flash.status }}
-        </p>
-        <div v-if="runErrors.length > 0" class="rounded-xl border border-danger/30 bg-white px-4 py-3 text-sm text-danger dark:bg-white/5">
-            <p v-for="message in runErrors" :key="message">{{ message }}</p>
         </div>
 
         <section v-if="step === 1" class="rounded-2xl border border-mist bg-white p-4 sm:p-6 dark:border-white/10 dark:bg-white/5">
