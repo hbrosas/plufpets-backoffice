@@ -29,7 +29,7 @@ class DashboardPulse
      *     drawer: list<array{cashier: string, branch: string, cash_in: string, cash_out: string, opens: int, flagged: bool}>,
      *     open_shifts: list<array{branch: string, opened_by: string, opened_at: string, starting_cash: string}>,
      *     variances: list<array{branch: string, closed_by: string, variance: string, direction: string}>,
-     *     categories: list<array{name: string, transactions: int, amount: float, total: string, hours: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string}>}>
+     *     categories: list<array{name: string, transactions: int, amount: float, total: string, hours: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>
      * }
      */
     public function today(): array
@@ -317,7 +317,7 @@ class DashboardPulse
     }
 
     /**
-     * @return list<array{name: string, transactions: int, amount: float, total: string, hours: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string}>}>
+     * @return list<array{name: string, transactions: int, amount: float, total: string, hours: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>
      */
     private function categories(ReportPeriod $period): array
     {
@@ -326,6 +326,7 @@ class DashboardPulse
             ->leftJoin('catalog_item_variants', 'catalog_item_variants.id', '=', 'pos_sale_items.catalog_item_variant_id')
             ->leftJoin('catalog_items', 'catalog_items.id', '=', 'catalog_item_variants.catalog_item_id')
             ->leftJoin('categories', 'categories.id', '=', 'catalog_items.category_id')
+            ->leftJoin('branches', 'branches.id', '=', 'pos_sales.branch_id')
             ->whereNull('pos_sales.refunded_at')
             ->whereBetween('pos_sales.sold_at', [$period->from, $period->to])
             ->get([
@@ -335,10 +336,12 @@ class DashboardPulse
                 'pos_sales.sold_at',
                 'catalog_items.name as catalog_name',
                 'categories.name as category',
+                'branches.name as branch',
             ])
             ->each(function (PosSaleItem $item): void {
                 $item->setAttribute('category', $item->getAttribute('category') ?: 'Uncategorized');
                 $item->setAttribute('product', $item->getAttribute('catalog_name') ?: ($item->getAttribute('product') ?: 'Unknown product'));
+                $item->setAttribute('branch', $item->getAttribute('branch') ?: 'Unknown branch');
             });
 
         return $items
@@ -362,6 +365,7 @@ class DashboardPulse
                                 'transactions' => $itemRows->pluck('pos_sale_id')->unique()->count(),
                                 'amount' => $itemAmount,
                                 'total' => Peso::format($itemAmount),
+                                'branches' => $this->itemBranches($itemRows),
                             ];
                         })
                         ->sortBy([
@@ -375,6 +379,35 @@ class DashboardPulse
             ->sortBy([
                 ['amount', 'desc'],
                 ['name', 'asc'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, PosSaleItem>  $rows
+     * @return list<array{name: string, transactions: int, total: string}>
+     */
+    private function itemBranches(Collection $rows): array
+    {
+        return $rows
+            ->groupBy('branch')
+            ->map(function (Collection $branchRows, string $branch): array {
+                return [
+                    'name' => $branch,
+                    'transactions' => $branchRows->pluck('pos_sale_id')->unique()->count(),
+                    'amount' => round((float) $branchRows->sum('line_total'), 2),
+                    'total' => Peso::format($branchRows->sum('line_total')),
+                ];
+            })
+            ->sortBy([
+                ['amount', 'desc'],
+                ['name', 'asc'],
+            ])
+            ->map(fn (array $branch): array => [
+                'name' => $branch['name'],
+                'transactions' => $branch['transactions'],
+                'total' => $branch['total'],
             ])
             ->values()
             ->all();

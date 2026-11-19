@@ -74,8 +74,10 @@ class DashboardControllerTest extends TestCase
     {
         $this->travelTo(CarbonImmutable::parse('2026-06-15 04:00:00', 'UTC'));
 
-        $branch = Branch::factory()->create();
-        $shift = PosShift::factory()->create(['branch_id' => $branch->id]);
+        $greenheights = Branch::factory()->create(['name' => 'Greenheights']);
+        $sanPedro = Branch::factory()->create(['name' => 'San Pedro']);
+        $shift = PosShift::factory()->create(['branch_id' => $greenheights->id]);
+        $sanPedroShift = PosShift::factory()->create(['branch_id' => $sanPedro->id]);
         $grooming = Category::factory()->create(['name' => 'Grooming']);
         $food = Category::factory()->create(['name' => 'Food']);
         $fullGroom = CatalogItem::factory()->create(['name' => 'Full groom', 'category_id' => $grooming->id]);
@@ -83,26 +85,26 @@ class DashboardControllerTest extends TestCase
         $kibble = CatalogItem::factory()->create(['name' => 'Kibble', 'category_id' => $food->id]);
         $walkIn = CatalogItem::factory()->create(['name' => 'Walk-in extra']);
         $firstSale = PosSale::factory()->create([
-            'branch_id' => $branch->id,
+            'branch_id' => $greenheights->id,
             'pos_shift_id' => $shift->id,
             'sold_at' => CarbonImmutable::parse('2026-06-15 02:00:00', 'UTC'),
             'total' => 500,
         ]);
         $secondSale = PosSale::factory()->create([
-            'branch_id' => $branch->id,
-            'pos_shift_id' => $shift->id,
+            'branch_id' => $sanPedro->id,
+            'pos_shift_id' => $sanPedroShift->id,
             'sold_at' => CarbonImmutable::parse('2026-06-15 03:00:00', 'UTC'),
             'total' => 150,
         ]);
         $refundedSale = PosSale::factory()->create([
-            'branch_id' => $branch->id,
+            'branch_id' => $greenheights->id,
             'pos_shift_id' => $shift->id,
             'sold_at' => CarbonImmutable::parse('2026-06-15 03:30:00', 'UTC'),
             'refunded_at' => CarbonImmutable::parse('2026-06-15 03:40:00', 'UTC'),
             'total' => 999,
         ]);
         $yesterday = PosSale::factory()->create([
-            'branch_id' => $branch->id,
+            'branch_id' => $greenheights->id,
             'pos_shift_id' => $shift->id,
             'sold_at' => CarbonImmutable::parse('2026-06-14 02:00:00', 'UTC'),
             'total' => 999,
@@ -158,9 +160,17 @@ class DashboardControllerTest extends TestCase
                 ->where('pulse.categories.0.items.0.name', 'Full groom')
                 ->where('pulse.categories.0.items.0.transactions', 2)
                 ->where('pulse.categories.0.items.0.total', '₱400.00')
+                ->where('pulse.categories.0.items.0.branches.0.name', 'Greenheights')
+                ->where('pulse.categories.0.items.0.branches.0.transactions', 1)
+                ->where('pulse.categories.0.items.0.branches.0.total', '₱300.00')
+                ->where('pulse.categories.0.items.0.branches.1.name', 'San Pedro')
+                ->where('pulse.categories.0.items.0.branches.1.transactions', 1)
+                ->where('pulse.categories.0.items.0.branches.1.total', '₱100.00')
                 ->where('pulse.categories.0.items.1.name', 'Nail trim')
                 ->where('pulse.categories.0.items.1.transactions', 1)
                 ->where('pulse.categories.0.items.1.total', '₱50.00')
+                ->where('pulse.categories.0.items.1.branches.0.name', 'San Pedro')
+                ->where('pulse.categories.0.items.1.branches.0.total', '₱50.00')
                 ->where('pulse.categories.1.name', 'Food')
                 ->where('pulse.categories.1.transactions', 1)
                 ->where('pulse.categories.1.total', '₱200.00')

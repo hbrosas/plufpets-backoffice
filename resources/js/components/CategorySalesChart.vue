@@ -123,14 +123,21 @@ function transactionLabel(count) {
                         <span>Transactions</span>
                         <span>Sales</span>
                     </div>
-                    <div
-                        v-for="item in category.items"
-                        :key="item.name"
-                        class="grid grid-cols-[minmax(0,1fr)_7rem_7rem] gap-3 text-sm"
-                    >
-                        <span class="truncate font-medium">{{ item.name }}</span>
-                        <span>{{ item.transactions }}</span>
-                        <span>{{ item.total }}</span>
+                    <div v-for="item in category.items" :key="item.name" class="flex flex-col gap-1">
+                        <div class="grid grid-cols-[minmax(0,1fr)_7rem_7rem] gap-3 text-sm">
+                            <span class="truncate font-medium">{{ item.name }}</span>
+                            <span>{{ item.transactions }}</span>
+                            <span>{{ item.total }}</span>
+                        </div>
+                        <div
+                            v-for="branch in item.branches"
+                            :key="`${item.name}-${branch.name}`"
+                            class="grid grid-cols-[minmax(0,1fr)_7rem_7rem] gap-3 text-xs text-ink/55 dark:text-foam/50"
+                        >
+                            <span class="truncate">{{ branch.name }}</span>
+                            <span>{{ branch.transactions }}</span>
+                            <span>{{ branch.total }}</span>
+                        </div>
                     </div>
                 </div>
             </article>
