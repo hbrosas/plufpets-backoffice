@@ -214,13 +214,123 @@ class HotelControllerTest extends TestCase
                 ->where('stays.0.branch_name', 'North')
                 ->where('stays.0.checked_in_label', 'Nov 9, 2026 10:00 AM')
                 ->where('stays.0.checkout_label', 'Nov 11, 2026')
+                ->where('stays.0.checked_out_label', '')
                 ->where('stays.0.payments_available_label', '₱0.00')
+                ->where('filters.tab', 'current')
+                ->missing('checkedOutStays')
                 ->where('branches', fn ($branches) => $branches->contains(
                     fn ($branch) => $branch['name'] === 'North',
                 ))
                 ->where('podTypes', fn ($podTypes) => $podTypes->contains(
                     fn ($type) => $type['name'] === 'Small dog' && $type['is_active'] === true,
                 )));
+    }
+
+    public function test_checked_out_guests_are_listed_newest_first(): void
+    {
+        $branch = Branch::factory()->create(['name' => 'North']);
+        $podType = HotelPodType::factory()->create(['name' => 'Crate']);
+        HotelStay::factory()->create([
+            'branch_id' => $branch->id,
+            'client_name' => 'Mina Cruz',
+            'hotel_pod_type_id' => $podType->id,
+        ]);
+        HotelStay::factory()->checkedOut()->create([
+            'branch_id' => $branch->id,
+            'client_name' => 'Early Guest',
+            'hotel_pod_type_id' => $podType->id,
+            'checked_out_at' => '2026-06-15 03:00:00',
+            'checked_out_by_name' => 'Hazel Brosas',
+            'checked_out_by_employee_number' => '10001',
+        ]);
+        HotelStay::factory()->checkedOut()->create([
+            'branch_id' => $branch->id,
+            'client_name' => 'Late Guest',
+            'hotel_pod_type_id' => $podType->id,
+            'checked_out_at' => '2026-06-15 10:00:00',
+            'checked_out_by_name' => 'Robin Santiago',
+            'checked_out_by_employee_number' => '10002',
+        ]);
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/hotel?tab=checked-out')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Hotel/Index')
+                ->missing('stays')
+                ->has('checkedOutStays', 2)
+                ->where('filters.tab', 'checked-out')
+                ->where('filters.from', '')
+                ->where('filters.to', '')
+                ->where('checkedOutStays.0.client_name', 'Late Guest')
+                ->where('checkedOutStays.0.checked_out_label', 'Jun 15, 2026 6:00 PM')
+                ->where('checkedOutStays.0.checked_out_by', 'Robin Santiago · #10002')
+                ->where('checkedOutStays.0.branch_name', 'North')
+                ->where('checkedOutStays.0.pod_type_label', 'Crate')
+                ->where('checkedOutStays.1.client_name', 'Early Guest')
+                ->where('checkedOutStays.1.checked_out_by', 'Hazel Brosas · #10001'));
+    }
+
+    public function test_checked_out_guests_can_be_filtered_by_checkout_date(): void
+    {
+        $branch = Branch::factory()->create();
+        $podType = HotelPodType::factory()->create();
+        HotelStay::factory()->checkedOut()->create([
+            'branch_id' => $branch->id,
+            'client_name' => 'Midnight Guest',
+            'hotel_pod_type_id' => $podType->id,
+            'checked_out_at' => '2026-06-14 16:00:00',
+        ]);
+        HotelStay::factory()->checkedOut()->create([
+            'branch_id' => $branch->id,
+            'client_name' => 'Day Guest',
+            'hotel_pod_type_id' => $podType->id,
+            'checked_out_at' => '2026-06-15 10:00:00',
+        ]);
+        HotelStay::factory()->checkedOut()->create([
+            'branch_id' => $branch->id,
+            'client_name' => 'Next Day Guest',
+            'hotel_pod_type_id' => $podType->id,
+            'checked_out_at' => '2026-06-15 16:00:00',
+        ]);
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/hotel?tab=checked-out&from=2026-06-15&to=2026-06-15')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.from', '2026-06-15')
+                ->where('filters.to', '2026-06-15')
+                ->has('checkedOutStays', 2)
+                ->where('checkedOutStays.0.client_name', 'Day Guest')
+                ->where('checkedOutStays.1.client_name', 'Midnight Guest'));
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/hotel?tab=checked-out&from=2026-06-16&to=2026-06-15')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.from', '2026-06-15')
+                ->where('filters.to', '2026-06-16')
+                ->has('checkedOutStays', 3)
+                ->where('checkedOutStays.0.client_name', 'Next Day Guest'));
+    }
+
+    public function test_checked_out_tab_reloads_without_the_rest_of_the_page(): void
+    {
+        $this->actingAsEmployee()
+            ->withHeaders([
+                'X-Inertia-Partial-Component' => 'Hotel/Index',
+                'X-Inertia-Partial-Data' => 'checkedOutStays,filters',
+            ])
+            ->get('/backoffice/hotel?tab=checked-out')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('checkedOutStays')
+                ->where('filters.tab', 'checked-out')
+                ->missing('stays')
+                ->missing('options')
+                ->missing('branches')
+                ->missing('paymentMethods')
+                ->missing('podTypes'));
     }
 
     public function test_guest_cannot_check_a_guest_in_from_the_backoffice(): void

@@ -14,9 +14,13 @@ const props = defineProps({
     branches: { type: Array, default: () => [] },
     paymentMethods: { type: Array, default: () => [] },
     registerPath: { type: String, default: '' },
+    checkedOut: { type: Boolean, default: false },
+    dateFrom: { type: String, default: '' },
+    dateTo: { type: String, default: '' },
+    loading: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['close', 'sell', 'drawer']);
+const emit = defineEmits(['close', 'sell', 'drawer', 'filter']);
 
 const selectedId = ref(null);
 const checkingIn = ref(false);
@@ -66,6 +70,13 @@ const paymentForm = useForm({
 const checkoutForm = useForm({});
 
 const selectedStay = computed(() => props.stays.find((stay) => stay.id === selectedId.value) ?? null);
+const emptyLabel = computed(() => {
+    if (!props.checkedOut) {
+        return 'No guests are checked in.';
+    }
+
+    return props.dateFrom || props.dateTo ? 'No guests checked out in this range.' : 'No guests checked out.';
+});
 const showCheckIn = computed(() => checkingIn.value && !selectedStay.value);
 const today = computed(() => {
     const date = new Date();
@@ -134,6 +145,15 @@ function startCheckIn() {
     checkingIn.value = true;
     paymentOpen.value = false;
     refreshCheckedInLabel();
+}
+
+function applyDateFilter(event, key) {
+    const value = event.target.value;
+
+    emit('filter', {
+        from: key === 'from' ? value : props.dateFrom,
+        to: key === 'to' ? value : props.dateTo,
+    });
 }
 
 function selectStay(stay) {
@@ -286,8 +306,29 @@ defineExpose({
             <div class="grid h-full min-h-0 flex-1 grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
                 <aside class="flex h-full min-h-0 flex-col overflow-hidden border-r border-mist dark:border-white/10">
                     <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 py-4">
-                        <p class="shrink-0 text-xs font-medium text-ink/55 dark:text-foam/55">Checked in</p>
-                        <p v-if="stays.length === 0" class="text-sm text-ink/55 dark:text-foam/55">No guests are checked in.</p>
+                        <p class="shrink-0 text-xs font-medium text-ink/55 dark:text-foam/55">{{ checkedOut ? 'Checked out' : 'Checked in' }}</p>
+                        <div v-if="checkedOut" class="flex shrink-0 flex-col gap-2">
+                            <label class="flex flex-col gap-1 text-xs font-medium text-ink/55 dark:text-foam/55">
+                                From
+                                <input
+                                    class="h-10 rounded-xl border border-mist bg-white px-3 text-sm text-ink dark:border-white/10 dark:bg-white/5 dark:text-foam"
+                                    type="date"
+                                    :value="dateFrom"
+                                    @change="applyDateFilter($event, 'from')"
+                                />
+                            </label>
+                            <label class="flex flex-col gap-1 text-xs font-medium text-ink/55 dark:text-foam/55">
+                                To
+                                <input
+                                    class="h-10 rounded-xl border border-mist bg-white px-3 text-sm text-ink dark:border-white/10 dark:bg-white/5 dark:text-foam"
+                                    type="date"
+                                    :value="dateTo"
+                                    @change="applyDateFilter($event, 'to')"
+                                />
+                            </label>
+                        </div>
+                        <p v-if="loading && stays.length === 0" class="text-sm text-ink/55 dark:text-foam/55">Loading guests…</p>
+                        <p v-else-if="stays.length === 0" class="text-sm text-ink/55 dark:text-foam/55">{{ emptyLabel }}</p>
                         <ul v-else class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
                             <li v-for="stay in stays" :key="stay.id">
                                 <button
@@ -299,6 +340,9 @@ defineExpose({
                                     <p class="truncate text-sm font-medium">{{ stay.client_name }}</p>
                                     <p class="truncate text-xs" :class="selectedStay?.id === stay.id ? 'text-foam/80' : 'text-ink/55 dark:text-foam/55'">
                                         {{ stay.pet_names }}
+                                    </p>
+                                    <p v-if="stay.checked_out_label" class="truncate text-xs" :class="selectedStay?.id === stay.id ? 'text-foam/80' : 'text-ink/55 dark:text-foam/55'">
+                                        {{ stay.checked_out_label }}
                                     </p>
                                     <p v-if="embedded" class="truncate text-xs" :class="selectedStay?.id === stay.id ? 'text-foam/80' : 'text-ink/55 dark:text-foam/55'">
                                         {{ stay.branch_name }}
@@ -476,7 +520,9 @@ defineExpose({
                         <div class="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
                             <p><span class="text-ink/55 dark:text-foam/55">Branch</span><br>{{ selectedStay.branch_name }}</p>
                             <p><span class="text-ink/55 dark:text-foam/55">Check in</span><br>{{ selectedStay.checked_in_label }}</p>
-                            <p><span class="text-ink/55 dark:text-foam/55">Check out</span><br>{{ selectedStay.checkout_label }}</p>
+                            <p><span class="text-ink/55 dark:text-foam/55">{{ selectedStay.checked_out_label ? 'Scheduled check out' : 'Check out' }}</span><br>{{ selectedStay.checkout_label }}</p>
+                            <p v-if="selectedStay.checked_out_label"><span class="text-ink/55 dark:text-foam/55">Checked out</span><br>{{ selectedStay.checked_out_label }}</p>
+                            <p v-if="selectedStay.checked_out_by"><span class="text-ink/55 dark:text-foam/55">Checked out by</span><br>{{ selectedStay.checked_out_by }}</p>
                             <p><span class="text-ink/55 dark:text-foam/55">Pod</span><br>{{ selectedStay.pod_type_label }}</p>
                         </div>
                         <article v-for="pet in selectedStay.pets" :key="pet.id" class="flex flex-col gap-2 rounded-2xl border border-mist p-4 text-sm dark:border-white/10">
@@ -529,7 +575,7 @@ defineExpose({
                             </ul>
                         </div>
                     </div>
-                    <div v-if="!embedded" class="shrink-0 border-t border-mist p-4 dark:border-white/10">
+                    <div v-if="!embedded && !selectedStay.checked_out_label" class="shrink-0 border-t border-mist p-4 dark:border-white/10">
                         <form v-if="paymentOpen" class="flex flex-col gap-3" @submit.prevent="submitPayment">
                             <p class="text-sm font-medium">Add Payment</p>
                             <label class="flex flex-col gap-1 text-sm">

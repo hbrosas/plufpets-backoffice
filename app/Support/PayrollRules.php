@@ -2,8 +2,11 @@
 
 namespace App\Support;
 
+use App\Enums\PayrollFilingStatus;
+use App\Enums\PayrollFilingType;
 use App\Models\Employee;
 use App\Models\Holiday;
+use App\Models\PayrollFiling;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -219,6 +222,7 @@ class PayrollRules
         $rows = is_array($data['employees'] ?? null) ? $data['employees'] : [];
         $ids = [];
         $holidayIds = [];
+        $cashAdvanceIds = [];
 
         foreach ($rows as $row) {
             if (! is_array($row)) {
@@ -229,6 +233,10 @@ class PayrollRules
 
             foreach ($row['worked_holiday_ids'] ?? [] as $id) {
                 $holidayIds[] = (int) $id;
+            }
+
+            foreach ($row['cash_advance_ids'] ?? [] as $id) {
+                $cashAdvanceIds[] = (int) $id;
             }
         }
 
@@ -244,6 +252,15 @@ class PayrollRules
                 ->pluck('id')
                 ->map(fn (mixed $id): int => (int) $id)
                 ->all();
+        $openCashAdvances = $cashAdvanceIds === []
+            ? collect()
+            : PayrollFiling::query()
+                ->whereKey(array_values(array_unique($cashAdvanceIds)))
+                ->where('type', PayrollFilingType::CashAdvance)
+                ->where('status', PayrollFilingStatus::Approved)
+                ->whereNull('deducted_payroll_id')
+                ->get()
+                ->keyBy('id');
 
         foreach ($rows as $index => $row) {
             if (! is_array($row)) {
@@ -278,6 +295,30 @@ class PayrollRules
 
             if (array_intersect($chosen, $outside) !== []) {
                 $validator->errors()->add("employees.$index.worked_holiday_ids", 'Choose a holiday inside this payroll period.');
+            }
+
+            if (! array_key_exists('cash_advance_ids', $row) || $validator->errors()->has("employees.$index.cash_advance_ids")) {
+                continue;
+            }
+
+            $chosenAdvances = array_map(intval(...), $row['cash_advance_ids']);
+
+            if (count($chosenAdvances) !== count(array_unique($chosenAdvances))) {
+                $validator->errors()->add("employees.$index.cash_advance_ids", 'Each cash advance can only be selected once.');
+
+                continue;
+            }
+
+            foreach ($chosenAdvances as $advanceId) {
+                $advance = $openCashAdvances->get($advanceId);
+
+                if (! $advance instanceof PayrollFiling
+                    || (int) $advance->employee_id !== (int) ($row['id'] ?? 0)
+                    || $advance->starts_on->toDateString() > $end->toDateString()) {
+                    $validator->errors()->add("employees.$index.cash_advance_ids", 'Choose an open cash advance for this employee.');
+
+                    break;
+                }
             }
         }
     }

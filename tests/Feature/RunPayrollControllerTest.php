@@ -547,6 +547,111 @@ class RunPayrollControllerTest extends TestCase
         $this->assertSame(2, EmployeePayroll::query()->whereBelongsTo($leo)->count());
     }
 
+    public function test_only_checked_cash_advances_are_deducted_and_removed_from_later_runs(): void
+    {
+        $mina = $this->employeeWithPay('Mina Cruz');
+        $leo = $this->employeeWithPay('Leo Santos');
+        $checked = PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $mina->id,
+            'status' => PayrollFilingStatus::Approved,
+            'starts_on' => '2026-11-03',
+            'amount' => '200.00',
+            'reason' => 'Medicine',
+        ]);
+        $leftOpen = PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $mina->id,
+            'status' => PayrollFilingStatus::Approved,
+            'starts_on' => '2026-11-03',
+            'amount' => '80.00',
+            'reason' => 'Fare',
+        ]);
+        $someoneElses = PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $leo->id,
+            'status' => PayrollFilingStatus::Approved,
+            'starts_on' => '2026-11-03',
+            'amount' => '40.00',
+            'reason' => 'Fare',
+        ]);
+        $attendance = $this->attendance($mina);
+        $attendance['cash_advance_ids'] = [$checked->id];
+
+        $this->actingAsEmployee()
+            ->post(route('staff.payroll.preview'), [
+                'period_start' => '2026-11-03',
+                'period_end' => '2026-11-04',
+                'deduct_government' => false,
+                'employees' => [$attendance],
+            ])
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('preview.employees.0.net', '800.00')
+                ->where('preview.draft.0.cash_advance_ids', [$checked->id]));
+
+        $none = $this->attendance($mina);
+        $none['cash_advance_ids'] = [];
+
+        $this->actingAsEmployee()
+            ->post(route('staff.payroll.preview'), [
+                'period_start' => '2026-11-03',
+                'period_end' => '2026-11-04',
+                'deduct_government' => false,
+                'employees' => [$none],
+            ])
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('preview.employees.0.net', '1000.00')
+                ->where('preview.draft.0.cash_advance_ids', []));
+
+        $this->actingAsEmployee()
+            ->from(route('staff.payroll.run'))
+            ->post(route('staff.payroll.preview'), [
+                'period_start' => '2026-11-03',
+                'period_end' => '2026-11-04',
+                'employees' => [[
+                    ...$this->attendance($mina),
+                    'cash_advance_ids' => [$someoneElses->id],
+                ]],
+            ])
+            ->assertRedirect(route('staff.payroll.run'))
+            ->assertSessionHasErrors([
+                'employees.0.cash_advance_ids' => 'Choose an open cash advance for this employee.',
+            ]);
+
+        $this->actingAsEmployee()
+            ->post(route('staff.payroll.finalize'), [
+                'period_start' => '2026-11-03',
+                'period_end' => '2026-11-04',
+                'deduct_government' => false,
+                'employees' => [$attendance],
+            ])
+            ->assertRedirect(route('staff.payroll.run'))
+            ->assertSessionHas('status', 'Payroll finalized.');
+
+        $payroll = EmployeePayroll::query()->whereBelongsTo($mina)->firstOrFail();
+        $this->assertSame('800.00', $payroll->net);
+        $this->assertSame($payroll->id, $checked->refresh()->deducted_payroll_id);
+        $this->assertNull($leftOpen->refresh()->deducted_payroll_id);
+
+        $this->actingAsEmployee()
+            ->followingRedirects()
+            ->post(route('staff.payroll.prepare'), [
+                'period_start' => '2026-11-03',
+                'period_end' => '2026-11-04',
+                'deduct_government' => false,
+                'employee_ids' => [$mina->id],
+            ])
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('prepared.employees.0.cash_advances', [
+                    [
+                        'id' => $leftOpen->id,
+                        'reason' => 'Fare',
+                        'amount' => '80.00',
+                        'amount_label' => '₱80.00',
+                    ],
+                ]));
+    }
+
     public function test_deleting_the_generated_payroll_removes_only_that_run(): void
     {
         $first = EmployeePayroll::factory()->create();

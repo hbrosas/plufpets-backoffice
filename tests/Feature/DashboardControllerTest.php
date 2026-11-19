@@ -372,7 +372,11 @@ class DashboardControllerTest extends TestCase
                 ->where('branchOrders.0.name', 'Greenheights')
                 ->where('branchOrders.0.pos_href', route('pos.index', $greenheights))
                 ->where('branchOrders.0.sales_label', '₱0.00')
-                ->where('branchOrders.0.cash_label', '₱0.00')
+                ->where('branchOrders.0.sales_payments', [])
+                ->where('branchOrders.0.start_cash.amount_label', '—')
+                ->where('branchOrders.0.start_cash.counts', [])
+                ->where('branchOrders.0.close_cash.amount_label', '—')
+                ->where('branchOrders.0.close_cash.counts', [])
                 ->where('branchOrders.0.activities', [])
                 ->has('branchOrders.0.open', 1)
                 ->where('branchOrders.0.open.0.name', 'Walk-in hold')
@@ -511,7 +515,16 @@ class DashboardControllerTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('branchOrders.0.name', 'Greenheights')
                 ->where('branchOrders.0.sales_label', '₱280.00')
-                ->where('branchOrders.0.cash_label', '₱1,330.00')
+                ->where('branchOrders.0.sales_payments', [
+                    ['name' => 'Cash', 'amount_label' => '₱200.00'],
+                    ['name' => 'Card', 'amount_label' => '₱80.00'],
+                ])
+                ->where('branchOrders.0.start_cash.title', 'Start Cash')
+                ->where('branchOrders.0.start_cash.amount_label', '₱1,000.00')
+                ->where('branchOrders.0.start_cash.fields.0.value', 'Hazel Brosas · #10001')
+                ->where('branchOrders.0.start_cash.counts', [])
+                ->where('branchOrders.0.close_cash.amount_label', '—')
+                ->where('branchOrders.0.close_cash.counts', [])
                 ->has('branchOrders.0.activities', 7)
                 ->where('branchOrders.0.activities.0.title', 'Refund')
                 ->where('branchOrders.0.activities.0.amount_label', '-₱40.00')
@@ -523,7 +536,19 @@ class DashboardControllerTest extends TestCase
                 ->where('branchOrders.0.activities.1.amount_label', '-₱20.00')
                 ->where('branchOrders.1.name', 'San Pedro')
                 ->where('branchOrders.1.sales_label', '₱60.00')
-                ->where('branchOrders.1.cash_label', '₱480.00')
+                ->where('branchOrders.1.sales_payments', [
+                    ['name' => 'Cash', 'amount_label' => '₱60.00'],
+                ])
+                ->where('branchOrders.1.start_cash.amount_label', '₱500.00')
+                ->where('branchOrders.1.start_cash.counts', [
+                    ['denomination' => '₱500.00', 'quantity' => 1, 'total' => '₱500.00'],
+                ])
+                ->where('branchOrders.1.close_cash.amount_label', '₱480.00')
+                ->where('branchOrders.1.close_cash.fields.0.label', 'Closed by')
+                ->where('branchOrders.1.close_cash.fields.0.value', 'Robin Santiago · #10001')
+                ->where('branchOrders.1.close_cash.counts', [
+                    ['denomination' => '₱200.00', 'quantity' => 2, 'total' => '₱400.00'],
+                ])
                 ->where('branchOrders.1.activities.0.title', 'Closing cash')
                 ->where('branchOrders.1.activities.0.amount_label', '₱480.00')
                 ->where('branchOrders.1.activities.0.counts', [
@@ -609,6 +634,101 @@ class DashboardControllerTest extends TestCase
                             fn (array $field): bool => $field['label'] === 'Client' && $field['value'] === 'Mina Cruz',
                         ),
                 ) && $rows->doesntContain(fn ($row) => $row['title'] === 'Cash in')));
+    }
+
+    public function test_shift_activity_lists_hotel_check_in_and_check_out(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-06-15 04:00:00', 'UTC'));
+
+        $branch = Branch::factory()->create(['name' => 'Greenheights']);
+        $viewer = $this->employeeWith(['dashboard.view', 'sales.view']);
+        $pod = HotelPodType::query()->where('name', 'Suite')->firstOrFail();
+        $shift = PosShift::factory()->create([
+            'branch_id' => $branch->id,
+            'opened_at' => CarbonImmutable::parse('2026-06-15 01:00:00', 'UTC'),
+        ]);
+        $stay = HotelStay::factory()->create([
+            'branch_id' => $branch->id,
+            'pos_shift_id' => $shift->id,
+            'hotel_pod_type_id' => $pod->id,
+            'client_name' => 'Mina Cruz',
+            'contact_number' => '09171234567',
+            'address' => '12 Rizal St',
+            'checked_in_at' => CarbonImmutable::parse('2026-06-15 01:30:00', 'UTC'),
+            'checkout_on' => '2026-06-16',
+            'checked_in_by_name' => 'Hazel Brosas',
+            'checked_in_by_employee_number' => '10001',
+            'checked_out_at' => CarbonImmutable::parse('2026-06-15 03:30:00', 'UTC'),
+            'checked_out_by_name' => 'Robin Santiago',
+            'checked_out_by_employee_number' => '10002',
+        ]);
+        HotelStayPet::factory()->create([
+            'hotel_stay_id' => $stay->id,
+            'name' => 'Mochi',
+            'breed' => 'Aspin',
+        ]);
+        $earlierShift = PosShift::factory()->closed()->create([
+            'branch_id' => $branch->id,
+            'opened_at' => CarbonImmutable::parse('2026-06-14 01:00:00', 'UTC'),
+            'closed_at' => CarbonImmutable::parse('2026-06-14 10:00:00', 'UTC'),
+        ]);
+        HotelStay::factory()->create([
+            'branch_id' => $branch->id,
+            'pos_shift_id' => $earlierShift->id,
+            'hotel_pod_type_id' => $pod->id,
+            'client_name' => 'Leo Santos',
+            'checked_in_at' => CarbonImmutable::parse('2026-06-14 02:00:00', 'UTC'),
+            'checked_out_at' => CarbonImmutable::parse('2026-06-15 02:00:00', 'UTC'),
+            'checked_out_by_name' => 'Hazel Brosas',
+            'checked_out_by_employee_number' => '10001',
+        ]);
+
+        $this->actingAsEmployee($viewer)
+            ->get('/backoffice/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('branchOrders.0.activities', fn ($rows) => $rows->contains(
+                    fn ($row) => $row['title'] === 'Hotel check-in'
+                        && $row['detail'] === 'Mina Cruz · Mochi · Suite · Jun 15, 2026 – Jun 16, 2026'
+                        && $row['time'] === 'Jun 15, 9:30 AM'
+                        && $row['amount_label'] === ''
+                        && collect($row['fields'])->contains(
+                            fn (array $field): bool => $field['label'] === 'Pets' && $field['value'] === 'Mochi · Aspin · Male',
+                        )
+                        && collect($row['fields'])->contains(
+                            fn (array $field): bool => $field['label'] === 'Contact' && $field['value'] === '09171234567',
+                        )
+                        && collect($row['fields'])->contains(
+                            fn (array $field): bool => $field['label'] === 'Address' && $field['value'] === '12 Rizal St',
+                        )
+                        && collect($row['fields'])->contains(
+                            fn (array $field): bool => $field['label'] === 'Pod' && $field['value'] === 'Suite',
+                        )
+                        && collect($row['fields'])->contains(
+                            fn (array $field): bool => $field['label'] === 'Stay dates' && $field['value'] === 'Jun 15, 2026 – Jun 16, 2026',
+                        )
+                        && collect($row['fields'])->contains(
+                            fn (array $field): bool => $field['label'] === 'Checked in by' && $field['value'] === 'Hazel Brosas · #10001',
+                        ),
+                ) && $rows->contains(
+                    fn ($row) => $row['title'] === 'Hotel check-out'
+                        && $row['detail'] === 'Mina Cruz · Mochi · Suite · Jun 15, 2026 – Jun 16, 2026'
+                        && $row['time'] === 'Jun 15, 11:30 AM'
+                        && collect($row['fields'])->contains(
+                            fn (array $field): bool => $field['label'] === 'Checked out by' && $field['value'] === 'Robin Santiago · #10002',
+                        )
+                        && collect($row['fields'])->doesntContain(
+                            fn (array $field): bool => $field['label'] === 'Address',
+                        ),
+                ) && $rows->contains(
+                    fn ($row) => $row['title'] === 'Hotel check-out'
+                        && $row['detail'] === 'Leo Santos · Suite · Jun 14, 2026 – Jun 16, 2026'
+                        && collect($row['fields'])->contains(
+                            fn (array $field): bool => $field['label'] === 'Stay dates' && $field['value'] === 'Jun 14, 2026 – Jun 16, 2026',
+                        ),
+                ) && $rows->doesntContain(
+                    fn ($row) => $row['title'] === 'Hotel check-in' && str_contains($row['detail'], 'Leo Santos'),
+                )));
     }
 
     public function test_shift_activity_transaction_includes_the_receipt_details(): void

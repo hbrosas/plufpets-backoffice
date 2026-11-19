@@ -15,24 +15,55 @@ use App\Models\HotelStay;
 use App\Models\PaymentMethod;
 use App\Models\PosShift;
 use App\Support\EmployeeSession;
+use App\Support\ReportPeriod;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class HotelController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $tab = $request->string('tab')->toString() === 'checked-out' ? 'checked-out' : 'current';
+        $from = $this->filterDate($request->string('from')->toString());
+        $to = $this->filterDate($request->string('to')->toString());
+
+        if ($from !== null && $to !== null && $from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        $current = fn (): array => $this->stayList(
+            HotelStay::query()->checkedIn()->orderByDesc('checked_in_at')->orderByDesc('id'),
+        );
+        $checkedOut = fn (): array => $this->stayList(
+            HotelStay::query()
+                ->checkedOut()
+                ->when($from !== null, fn (Builder $query): Builder => $query->where(
+                    'checked_out_at',
+                    '>=',
+                    CarbonImmutable::parse($from, ReportPeriod::ZONE)->startOfDay()->utc(),
+                ))
+                ->when($to !== null, fn (Builder $query): Builder => $query->where(
+                    'checked_out_at',
+                    '<=',
+                    CarbonImmutable::parse($to, ReportPeriod::ZONE)->endOfDay()->utc(),
+                ))
+                ->orderByDesc('checked_out_at')
+                ->orderByDesc('id'),
+        );
+
         return Inertia::render('Hotel/Index', [
-            'stays' => HotelStay::query()
-                ->with(['pets', 'payments', 'sales', 'podType', 'branch', 'guestCart'])
-                ->checkedIn()
-                ->orderByDesc('checked_in_at')
-                ->orderByDesc('id')
-                ->get()
-                ->map(fn (HotelStay $stay): array => $stay->toRegisterPayload())
-                ->all(),
+            'stays' => $tab === 'current' ? $current : Inertia::optional($current),
+            'checkedOutStays' => $tab === 'checked-out' ? $checkedOut : Inertia::optional($checkedOut),
+            'filters' => [
+                'tab' => $tab,
+                'from' => $from ?? '',
+                'to' => $to ?? '',
+            ],
             'options' => [
                 'pod_types' => HotelPodType::query()
                     ->where('is_active', true)
@@ -152,6 +183,34 @@ class HotelController extends Controller
         return redirect()
             ->route('hotel.index')
             ->with('status', 'Checked out '.$stay->client_name.'.');
+    }
+
+    /**
+     * @param  Builder<HotelStay>  $query
+     * @return list<array<string, mixed>>
+     */
+    private function stayList(Builder $query): array
+    {
+        return $query
+            ->with(['pets', 'payments', 'sales', 'podType', 'branch', 'guestCart'])
+            ->get()
+            ->map(fn (HotelStay $stay): array => $stay->toRegisterPayload())
+            ->all();
+    }
+
+    private function filterDate(string $value): ?string
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) !== 1) {
+            return null;
+        }
+
+        $date = CarbonImmutable::createFromFormat('!Y-m-d', $value, ReportPeriod::ZONE);
+
+        if ($date === false || $date->format('Y-m-d') !== $value) {
+            return null;
+        }
+
+        return $value;
     }
 
     private function stayBranch(HotelStay $stay): Branch

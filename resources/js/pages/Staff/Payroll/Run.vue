@@ -38,6 +38,12 @@ const fieldClass = 'h-11 w-full rounded-xl border border-mist bg-white px-4 text
 
 function attendanceRows() {
     const source = props.preview?.draft ?? props.prepared?.employees ?? [];
+    const openAdvances = new Map(
+        (props.prepared?.employees ?? []).map((employee) => [
+            employee.id,
+            (employee.cash_advances ?? []).map((advance) => advance.id),
+        ]),
+    );
 
     return source.map((employee) => ({
         id: employee.id,
@@ -48,6 +54,9 @@ function attendanceRows() {
         worked_holiday_ids: [...(employee.worked_holiday_ids ?? [])],
         worked_dates: [...(employee.worked_dates ?? [])],
         adjustments: (employee.adjustments ?? []).map((item) => ({ ...item })),
+        cash_advance_ids: Array.isArray(employee.cash_advance_ids)
+            ? [...employee.cash_advance_ids]
+            : [...(openAdvances.get(employee.id) ?? [])],
     }));
 }
 
@@ -146,7 +155,7 @@ watch(() => runForm.errors, (errors) => {
         return;
     }
 
-    if (keys.some((key) => key.includes('adjustments') || key.includes('.id'))) {
+    if (keys.some((key) => key.includes('adjustments') || key.includes('cash_advance') || key.includes('.id'))) {
         step.value = 3;
     }
 }, { deep: true });
@@ -183,6 +192,15 @@ function finalize() {
     runForm.post('/backoffice/staff/payroll/finalize', {
         preserveScroll: true,
     });
+}
+
+function checkedAdvanceTotal(employee) {
+    const selected = new Set((employee.cash_advance_ids ?? []).map(Number));
+    const total = employeeDetails(employee.id).cash_advances
+        .filter((advance) => selected.has(advance.id))
+        .reduce((sum, advance) => sum + Number(advance.amount), 0);
+
+    return `₱${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function employeeDetails(id) {
@@ -484,16 +502,28 @@ function openStep(id) {
                         </ul>
                         <p class="mt-2 text-sm font-medium">{{ employeeDetails(employee.id).commission_total }}</p>
                     </div>
-                    <div>
+                    <div class="flex flex-col gap-2">
                         <h3 class="text-sm font-medium">Computed cash advances</h3>
-                        <p v-if="employeeDetails(employee.id).cash_advances.length === 0" class="mt-2 text-sm text-ink/60 dark:text-foam/60">No open cash advances.</p>
-                        <ul v-else class="mt-2 flex flex-col gap-1 text-sm">
-                            <li v-for="advance in employeeDetails(employee.id).cash_advances" :key="advance.id" class="flex justify-between gap-3">
-                                <span>{{ advance.reason || 'Cash advance' }}</span>
+                        <p class="text-sm text-ink/60 dark:text-foam/60">Checked advances are deducted on this payroll and leave the open list.</p>
+                        <p v-if="employeeDetails(employee.id).cash_advances.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No open cash advances.</p>
+                        <ul v-else class="flex flex-col gap-2 text-sm">
+                            <li v-for="advance in employeeDetails(employee.id).cash_advances" :key="advance.id" class="flex items-center justify-between gap-3">
+                                <label class="flex items-center gap-2">
+                                    <input
+                                        v-model="employee.cash_advance_ids"
+                                        class="h-4 w-4 accent-pine"
+                                        type="checkbox"
+                                        :value="advance.id"
+                                    />
+                                    <span>{{ advance.reason || 'Cash advance' }}</span>
+                                </label>
                                 <span>{{ advance.amount_label }}</span>
                             </li>
                         </ul>
-                        <p class="mt-2 text-sm font-medium">{{ employeeDetails(employee.id).cash_advance_total }}</p>
+                        <p v-if="runForm.errors[`employees.${index}.cash_advance_ids`]" class="text-sm text-danger">
+                            {{ runForm.errors[`employees.${index}.cash_advance_ids`] }}
+                        </p>
+                        <p class="text-sm font-medium">{{ checkedAdvanceTotal(employee) }}</p>
                     </div>
                 </div>
                 <div class="mt-6 flex flex-col gap-3">

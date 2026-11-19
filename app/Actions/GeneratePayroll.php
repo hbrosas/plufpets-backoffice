@@ -61,7 +61,8 @@ class GeneratePayroll
      *     late_hours: string,
      *     overtime_hours: string,
      *     deduct_government: bool|int|string,
-     *     worked_holiday_ids?: list<int|string>
+     *     worked_holiday_ids?: list<int|string>,
+     *     cash_advance_ids?: list<int|string>
      * }  $input
      * @return array<string, mixed>
      */
@@ -233,8 +234,15 @@ class GeneratePayroll
         }
 
         $cashAdvanceIds = [];
+        $selectedCashAdvances = array_key_exists('cash_advance_ids', $input)
+            ? array_map(intval(...), $input['cash_advance_ids'])
+            : null;
 
         foreach ($this->cashAdvances($employee, $input['period_end']) as $filing) {
+            if ($selectedCashAdvances !== null && ! in_array($filing->id, $selectedCashAdvances, true)) {
+                continue;
+            }
+
             $amountCents = $this->cents((float) $filing->amount);
             $amount = $this->fromCents($amountCents);
             $deductions[] = $this->earning(
@@ -277,7 +285,7 @@ class GeneratePayroll
     /**
      * Attendance defaults and computed additions for a payroll run.
      * Overnight nights come from approved overnight filings whose start falls in the period.
-     * Cash advances use the same open approved filings that payroll deducts.
+     * Cash advances are the open approved filings. A run deducts only the ones it checks.
      *
      * @param  Collection<int, Employee>  $employees
      * @return array<int, array{

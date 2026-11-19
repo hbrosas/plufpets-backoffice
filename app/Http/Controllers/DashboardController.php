@@ -11,8 +11,8 @@ use App\Http\Requests\CommissionPeriodRequest;
 use App\Models\Branch;
 use App\Models\Holiday;
 use App\Models\HotelStay;
+use App\Models\HotelStayPet;
 use App\Models\PayrollFiling;
-use App\Models\PosCashMovement;
 use App\Models\PosOpenOrder;
 use App\Models\PosSale;
 use App\Models\PosShift;
@@ -24,6 +24,7 @@ use App\Support\PosSaleDetails;
 use App\Support\ReportPeriod;
 use App\Support\ShopReports;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -131,7 +132,8 @@ class DashboardController extends Controller
      *     name: string,
      *     pos_href: string|null,
      *     sales_label: string,
-     *     cash_label: string,
+     *     start_cash: array{title: string, time: string, amount_label: string, receipt: null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>},
+     *     close_cash: array{title: string, time: string, amount_label: string, receipt: null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>},
      *     activities: list<array{key: string, title: string, detail: string, time: string, amount_label: string, receipt: array<string, mixed>|null, fields: list<array{label: string, value: string}>}>,
      *     open: list<array<string, mixed>>,
      *     online: list<array<string, mixed>>
@@ -175,39 +177,50 @@ class DashboardController extends Controller
             })
             ->get()
             ->groupBy('branch_id');
+        $stays = HotelStay::query()
+            ->with(['pets', 'podType:id,name'])
+            ->where(function ($query) use ($shifts, $today): void {
+                $query->whereIn('pos_shift_id', $shifts->flatten()->pluck('id'))
+                    ->orWhereBetween('checked_out_at', [$today->from, $today->to]);
+            })
+            ->get()
+            ->groupBy('branch_id');
 
         return Branch::query()
             ->orderBy('name')
             ->orderBy('id')
             ->get(['id', 'name', 'is_active'])
             ->filter(fn (Branch $branch): bool => $branch->is_active || $orders->has($branch->id))
-            ->map(function (Branch $branch) use ($orders, $shifts, $today, $canOpenPos, $canOpenShopOrder): array {
+            ->map(function (Branch $branch) use ($orders, $shifts, $stays, $today, $canOpenPos, $canOpenShopOrder): array {
                 /** @var Collection<int, PosOpenOrder> $rows */
                 $rows = $orders->get($branch->id, collect());
                 /** @var Collection<int, PosShift> $branchShifts */
                 $branchShifts = $shifts->get($branch->id, collect());
+                /** @var Collection<int, HotelStay> $branchStays */
+                $branchStays = $stays->get($branch->id, collect());
                 $openShift = $branchShifts->first(fn (PosShift $shift): bool => $shift->isOpen());
                 $latestClosed = $branchShifts
                     ->filter(fn (PosShift $shift): bool => $shift->closed_at !== null)
                     ->sortByDesc(fn (PosShift $shift) => $shift->closed_at?->getTimestamp() ?? 0)
                     ->first();
-                $sales = $branchShifts
+                $todaySales = $branchShifts
                     ->flatMap(fn (PosShift $shift) => $shift->sales)
                     ->filter(fn (PosSale $sale): bool => $sale->refunded_at === null
                         && $sale->sold_at !== null
                         && $sale->sold_at->between($today->from, $today->to))
-                    ->sum(fn (PosSale $sale): float => (float) $sale->total);
-                $cash = $openShift !== null
-                    ? $this->expectedCash($openShift)
-                    : (float) ($latestClosed?->counted_cash ?? 0);
+                    ->values();
+                $sales = $todaySales->sum(fn (PosSale $sale): float => (float) $sale->total);
+                $cashShift = $openShift ?? $latestClosed;
 
                 return [
                     'id' => $branch->id,
                     'name' => $branch->name,
                     'pos_href' => $canOpenPos ? route('pos.index', $branch) : null,
                     'sales_label' => Peso::format($sales),
-                    'cash_label' => Peso::format($cash),
-                    'activities' => $this->shiftActivities($branchShifts),
+                    'sales_payments' => $this->salesPayments($todaySales),
+                    'start_cash' => $this->cashSummary($cashShift, PosDenominationCountType::Opening),
+                    'close_cash' => $this->cashSummary($cashShift, PosDenominationCountType::Closing),
+                    'activities' => $this->shiftActivities($branchShifts, $branchStays, $today),
                     'open' => $rows
                         ->filter(fn (PosOpenOrder $order): bool => $order->pos_sale_id === null
                             && $order->hotel_stay_id === null
@@ -227,32 +240,89 @@ class DashboardController extends Controller
             ->all();
     }
 
-    private function expectedCash(PosShift $shift): float
+    /**
+     * @param  Collection<int, PosSale>  $sales
+     * @return list<array{name: string, amount_label: string}>
+     */
+    private function salesPayments(Collection $sales): array
     {
-        $cashSales = $shift->sales
-            ->filter(fn (PosSale $sale): bool => $sale->refunded_at === null)
-            ->sum(function (PosSale $sale): float {
+        return $sales
+            ->flatMap(function (PosSale $sale): array {
                 if ($sale->payments->isNotEmpty()) {
-                    return (float) $sale->payments->where('is_cash', true)->sum(fn ($payment): float => (float) $payment->amount);
+                    return $sale->payments
+                        ->map(fn ($payment): array => [
+                            'name' => trim((string) $payment->payment_method_name),
+                            'amount' => (float) $payment->amount,
+                        ])
+                        ->filter(fn (array $row): bool => $row['name'] !== '')
+                        ->all();
                 }
 
-                return $sale->is_cash ? (float) $sale->total : 0.0;
-            });
-        $cashIn = $shift->cashMovements
-            ->where('type', PosCashMovementType::CashIn)
-            ->sum(fn (PosCashMovement $movement): float => (float) $movement->amount);
-        $cashOut = $shift->cashMovements
-            ->where('type', PosCashMovementType::CashOut)
-            ->sum(fn (PosCashMovement $movement): float => (float) $movement->amount);
+                $name = trim((string) $sale->payment_method_name);
 
-        return (float) $shift->starting_cash + (float) $cashSales + (float) $cashIn - (float) $cashOut;
+                if ($name === '') {
+                    return [];
+                }
+
+                return [[
+                    'name' => $name,
+                    'amount' => (float) $sale->total,
+                ]];
+            })
+            ->groupBy('name')
+            ->map(fn (Collection $rows, string $name): array => [
+                'name' => $name,
+                'amount' => (float) $rows->sum('amount'),
+            ])
+            ->sortBy([
+                ['amount', 'desc'],
+                ['name', 'asc'],
+            ])
+            ->map(fn (array $row): array => [
+                'name' => $row['name'],
+                'amount_label' => Peso::format($row['amount']),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{title: string, time: string, amount_label: string, receipt: null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>}
+     */
+    private function cashSummary(?PosShift $shift, PosDenominationCountType $type): array
+    {
+        $closing = $type === PosDenominationCountType::Closing;
+        $counted = $shift !== null && $shift->closed_at !== null;
+        $amount = match (true) {
+            $shift === null => null,
+            $closing && ! $counted => null,
+            $closing => $shift->counted_cash,
+            default => $shift->starting_cash,
+        };
+        $at = $closing ? $shift?->closed_at : $shift?->opened_at;
+
+        return [
+            'title' => $closing ? 'Close Cash' : 'Start Cash',
+            'time' => $at === null
+                ? ''
+                : CarbonImmutable::parse($at)->timezone(ReportPeriod::ZONE)->format('M j, g:i A'),
+            'amount_label' => $amount === null ? '—' : Peso::format($amount),
+            'receipt' => null,
+            'fields' => $this->activityFields($closing ? [
+                ['label' => 'Closed by', 'value' => $counted ? $this->personLabel($shift->closed_by_name, $shift->closed_by_employee_number) : null],
+            ] : [
+                ['label' => 'Opened by', 'value' => $shift === null ? null : $this->personLabel($shift->opened_by_name, $shift->opened_by_employee_number)],
+            ]),
+            'counts' => $shift === null || ($closing && ! $counted) ? [] : $this->cashCount($shift, $type),
+        ];
     }
 
     /**
      * @param  Collection<int, PosShift>  $shifts
+     * @param  Collection<int, HotelStay>  $stays
      * @return list<array{key: string, title: string, detail: string, time: string, amount_label: string, receipt: array<string, mixed>|null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>|null}>
      */
-    private function shiftActivities(Collection $shifts): array
+    private function shiftActivities(Collection $shifts, Collection $stays, ReportPeriod $today): array
     {
         $rows = collect();
         $hotelCashMovementIds = $shifts
@@ -353,6 +423,23 @@ class DashboardController extends Controller
             }
         }
 
+        $loadedShiftIds = $shifts->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
+
+        foreach ($stays as $stay) {
+            $onLoadedShift = in_array((int) $stay->pos_shift_id, $loadedShiftIds, true);
+
+            if ($onLoadedShift) {
+                $rows->push($this->hotelStayActivity($stay, false));
+            }
+
+            $checkedOutToday = $stay->checked_out_at !== null
+                && $stay->checked_out_at->between($today->from, $today->to);
+
+            if ($stay->checked_out_at !== null && ($onLoadedShift || $checkedOutToday)) {
+                $rows->push($this->hotelStayActivity($stay, true));
+            }
+        }
+
         return $rows
             ->sortByDesc(fn (array $row): int => $row['at']?->getTimestamp() ?? 0)
             ->map(function (array $row): array {
@@ -366,6 +453,58 @@ class DashboardController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array{key: string, title: string, detail: string, at: CarbonInterface|null, amount_label: string, receipt: null, fields: list<array{label: string, value: string}>, counts: null}
+     */
+    private function hotelStayActivity(HotelStay $stay, bool $checkout): array
+    {
+        $pets = $stay->pets
+            ->map(fn (HotelStayPet $pet): string => collect([$pet->name, $pet->breed, $pet->gender->label()])
+                ->filter(fn (?string $part): bool => $part !== null && $part !== '')
+                ->implode(' · '))
+            ->implode(', ');
+
+        return [
+            'key' => ($checkout ? 'hotel-checkout-' : 'hotel-checkin-').$stay->id,
+            'title' => $checkout ? 'Hotel check-out' : 'Hotel check-in',
+            'detail' => collect([$stay->client_name, $stay->pets->pluck('name')->filter()->join(', '), $stay->podType?->name, $this->stayDateLabel($stay)])
+                ->filter(fn (?string $part): bool => $part !== null && $part !== '')
+                ->implode(' · '),
+            'at' => $checkout ? $stay->checked_out_at : $stay->checked_in_at,
+            'amount_label' => '',
+            'receipt' => null,
+            'fields' => $this->activityFields([
+                ['label' => 'Client', 'value' => $stay->client_name],
+                ['label' => 'Contact', 'value' => $stay->contact_number],
+                ['label' => 'Address', 'value' => $checkout ? null : $stay->address],
+                ['label' => 'Pod', 'value' => $stay->podType?->name],
+                ['label' => 'Pets', 'value' => $pets !== '' ? $pets : null],
+                ['label' => 'Stay dates', 'value' => $this->stayDateLabel($stay)],
+                ['label' => $checkout ? 'Checked out by' : 'Checked in by', 'value' => $this->personLabel(
+                    $checkout ? $stay->checked_out_by_name : $stay->checked_in_by_name,
+                    $checkout ? $stay->checked_out_by_employee_number : $stay->checked_in_by_employee_number,
+                )],
+            ]),
+            'counts' => null,
+        ];
+    }
+
+    private function stayDateLabel(HotelStay $stay): ?string
+    {
+        $checkedIn = $stay->checked_in_at?->timezone(ReportPeriod::ZONE)->format('M j, Y');
+        $checkout = $stay->checkout_on?->format('M j, Y');
+        $dates = array_values(array_filter(
+            [$checkedIn, $checkout],
+            fn (?string $date): bool => $date !== null && $date !== '',
+        ));
+
+        return match (count($dates)) {
+            0 => null,
+            1 => $dates[0],
+            default => $dates[0].' – '.$dates[1],
+        };
     }
 
     /**

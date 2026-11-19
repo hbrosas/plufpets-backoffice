@@ -310,15 +310,22 @@ function reviewRequest(filing, status) {
                         <h3 class="text-lg font-medium">{{ branch.name }}</h3>
                         <Link v-if="branch.pos_href" :href="branch.pos_href" class="text-sm font-medium text-pine dark:text-sand">Open register</Link>
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                         <div class="flex flex-col gap-1">
                             <p class="text-sm text-ink/60 dark:text-foam/60">Current sales</p>
                             <p class="text-2xl font-medium">{{ branch.sales_label }}</p>
+                            <p v-if="branch.sales_payments.length > 0" class="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-ink/55 dark:text-foam/50">
+                                <span v-for="payment in branch.sales_payments" :key="payment.name">{{ payment.name }} {{ payment.amount_label }}</span>
+                            </p>
                         </div>
-                        <div class="flex flex-col gap-1">
-                            <p class="text-sm text-ink/60 dark:text-foam/60">Current cash</p>
-                            <p class="text-2xl font-medium">{{ branch.cash_label }}</p>
-                        </div>
+                        <button class="flex flex-col gap-1 text-left" type="button" @click="selectedActivity = branch.start_cash">
+                            <span class="text-sm text-ink/60 dark:text-foam/60">Start Cash</span>
+                            <span class="text-2xl font-medium">{{ branch.start_cash.amount_label }}</span>
+                        </button>
+                        <button class="flex flex-col gap-1 text-left" type="button" @click="selectedActivity = branch.close_cash">
+                            <span class="text-sm text-ink/60 dark:text-foam/60">Close Cash</span>
+                            <span class="text-2xl font-medium">{{ branch.close_cash.amount_label }}</span>
+                        </button>
                     </div>
                     <div class="flex flex-col gap-3">
                         <div class="flex flex-wrap gap-2" role="tablist" :aria-label="`${branch.name} activities`">
@@ -379,7 +386,7 @@ function reviewRequest(filing, status) {
                                 >
                                     <span class="flex items-start justify-between gap-3">
                                         <span class="font-medium">{{ activity.title }}</span>
-                                        <span class="shrink-0 font-medium" :class="activity.amount_label.startsWith('-') ? 'text-danger' : ''">{{ activity.amount_label }}</span>
+                                        <span v-if="activity.amount_label" class="shrink-0 font-medium" :class="activity.amount_label.startsWith('-') ? 'text-danger' : ''">{{ activity.amount_label }}</span>
                                     </span>
                                     <span v-if="activity.detail" class="text-ink/60 dark:text-foam/60">{{ activity.detail }}</span>
                                     <span v-if="activity.time" class="text-xs text-ink/50 dark:text-foam/50">{{ activity.time }}</span>
@@ -559,7 +566,7 @@ function reviewRequest(filing, status) {
                 <ReceiptView :receipt="selectedActivity.receipt" :can-refund="false" :can-waive="false" :show-title="false" />
             </template>
             <template v-else>
-                <p class="text-2xl font-medium" :class="selectedActivity.amount_label.startsWith('-') ? 'text-danger' : ''">{{ selectedActivity.amount_label }}</p>
+                <p v-if="selectedActivity.amount_label" class="text-2xl font-medium" :class="selectedActivity.amount_label.startsWith('-') ? 'text-danger' : ''">{{ selectedActivity.amount_label }}</p>
                 <dl v-if="selectedActivity.fields.length > 0" class="grid gap-3 text-sm sm:grid-cols-2">
                     <div v-for="field in selectedActivity.fields" :key="field.label" class="flex flex-col gap-0.5">
                         <dt class="text-ink/55 dark:text-foam/50">{{ field.label }}</dt>

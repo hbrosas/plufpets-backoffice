@@ -464,20 +464,26 @@ class RunPayrollController extends Controller
             $profile = $employee?->profile;
             abort_if($employee === null || $profile === null, 404);
 
+            $input = [
+                'period_start' => $this->date($validated['period_start']),
+                'period_end' => $this->date($validated['period_end']),
+                'days_worked' => (string) $row['days_worked'],
+                'late_hours' => (string) $row['late_hours'],
+                'overtime_hours' => (string) $row['overtime_hours'],
+                'overnight_nights' => (string) $row['overnight_nights'],
+                'deduct_government' => filter_var($validated['deduct_government'], FILTER_VALIDATE_BOOLEAN),
+                'worked_holiday_ids' => $row['worked_holiday_ids'] ?? [],
+                'adjustments' => $row['adjustments'] ?? [],
+            ];
+
+            if (array_key_exists('cash_advance_ids', $row)) {
+                $input['cash_advance_ids'] = $row['cash_advance_ids'];
+            }
+
             $built[] = [
                 'employee' => $employee,
                 'profile' => $profile,
-                'payroll' => $generatePayroll->handle($employee, $profile, [
-                    'period_start' => $this->date($validated['period_start']),
-                    'period_end' => $this->date($validated['period_end']),
-                    'days_worked' => (string) $row['days_worked'],
-                    'late_hours' => (string) $row['late_hours'],
-                    'overtime_hours' => (string) $row['overtime_hours'],
-                    'overnight_nights' => (string) $row['overnight_nights'],
-                    'deduct_government' => filter_var($validated['deduct_government'], FILTER_VALIDATE_BOOLEAN),
-                    'worked_holiday_ids' => $row['worked_holiday_ids'] ?? [],
-                    'adjustments' => $row['adjustments'] ?? [],
-                ]),
+                'payroll' => $generatePayroll->handle($employee, $profile, $input),
             ];
         }
 
@@ -500,6 +506,10 @@ class RunPayrollController extends Controller
                 'worked_holiday_ids' => array_map(intval(...), $row['worked_holiday_ids'] ?? []),
                 'adjustments' => array_values($row['adjustments'] ?? []),
             ];
+
+            if (array_key_exists('cash_advance_ids', $row)) {
+                $draft['cash_advance_ids'] = array_map(intval(...), $row['cash_advance_ids']);
+            }
 
             if (is_array($row['worked_dates'] ?? null)) {
                 $draft['worked_dates'] = array_values($row['worked_dates']);

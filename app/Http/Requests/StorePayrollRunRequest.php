@@ -69,6 +69,13 @@ class StorePayrollRunRequest extends FormRequest
                 $preparedRow['worked_dates'] = array_values($employee['worked_dates']);
             }
 
+            if (array_key_exists('cash_advance_ids', $employee)) {
+                $ids = $employee['cash_advance_ids'];
+                $preparedRow['cash_advance_ids'] = is_array($ids)
+                    ? array_values(array_map(intval(...), $ids))
+                    : [];
+            }
+
             $prepared[] = $preparedRow;
         }
 
@@ -103,6 +110,8 @@ class StorePayrollRunRequest extends FormRequest
         $rules['employees.*.worked_holiday_ids.*'] = ['integer', 'exists:holidays,id'];
         $rules['employees.*.worked_dates'] = ['sometimes', 'array', 'max:31'];
         $rules['employees.*.worked_dates.*'] = ['date', 'after_or_equal:period_start', 'before_or_equal:period_end'];
+        $rules['employees.*.cash_advance_ids'] = ['sometimes', 'array'];
+        $rules['employees.*.cash_advance_ids.*'] = ['integer'];
 
         return $rules;
     }
@@ -129,6 +138,8 @@ class StorePayrollRunRequest extends FormRequest
             'employees.*.worked_dates.*.date' => 'Choose a day inside this payroll period.',
             'employees.*.worked_dates.*.after_or_equal' => 'Choose a day inside this payroll period.',
             'employees.*.worked_dates.*.before_or_equal' => 'Choose a day inside this payroll period.',
+            'employees.*.cash_advance_ids.array' => 'Choose an open cash advance for this employee.',
+            'employees.*.cash_advance_ids.*.integer' => 'Choose an open cash advance for this employee.',
         ];
 
         foreach (PayrollRules::messages() as $key => $message) {

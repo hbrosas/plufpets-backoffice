@@ -57,6 +57,16 @@ class HotelStay extends Model
     }
 
     /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    #[Scope]
+    protected function checkedOut(Builder $query): Builder
+    {
+        return $query->whereNotNull('checked_out_at');
+    }
+
+    /**
      * @return BelongsTo<Branch, $this>
      */
     public function branch(): BelongsTo
@@ -135,6 +145,7 @@ class HotelStay extends Model
         $this->loadMissing(['pets', 'payments', 'sales', 'podType', 'branch', 'guestCart']);
 
         $checkedIn = $this->checked_in_at?->timezone(ReportPeriod::ZONE);
+        $checkedOut = $this->checked_out_at?->timezone(ReportPeriod::ZONE);
         $available = $this->availablePayment();
 
         return [
@@ -147,6 +158,8 @@ class HotelStay extends Model
             'checked_in_label' => $checkedIn?->format('M j, Y g:i A') ?? '',
             'checkout_on' => $this->checkout_on?->toDateString() ?? '',
             'checkout_label' => $this->checkout_on?->format('M j, Y') ?? '',
+            'checked_out_label' => $checkedOut?->format('M j, Y g:i A') ?? '',
+            'checked_out_by' => $this->checkedOutByLabel(),
             'pod_type_label' => $this->podType?->name ?? '',
             'pet_names' => $this->pets->pluck('name')->join(', '),
             'pets' => $this->pets->map(fn (HotelStayPet $pet): array => $pet->toRegisterPayload())->all(),
@@ -171,6 +184,18 @@ class HotelStay extends Model
             ])->all(),
             'cart' => $this->guestCartPayload(),
         ];
+    }
+
+    private function checkedOutByLabel(): string
+    {
+        $name = trim((string) $this->checked_out_by_name);
+        $number = trim((string) $this->checked_out_by_employee_number);
+
+        if ($name === '') {
+            return $number === '' ? '' : '#'.$number;
+        }
+
+        return $number === '' ? $name : $name.' · #'.$number;
     }
 
     /**

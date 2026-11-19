@@ -8,15 +8,24 @@ defineOptions({
     layout: AdminLayout,
 });
 
-defineProps({
-    stays: { type: Array, required: true },
+const props = defineProps({
+    stays: { type: Array, default: null },
+    checkedOutStays: { type: Array, default: null },
+    filters: { type: Object, required: true },
     options: { type: Object, required: true },
     branches: { type: Array, required: true },
     paymentMethods: { type: Array, required: true },
     podTypes: { type: Array, required: true },
 });
 
+const tabs = [
+    { value: 'current', label: 'Current Guests' },
+    { value: 'checked-out', label: 'Checked Out Guests' },
+];
+
 const hotel = ref(null);
+const tab = ref(props.filters.tab === 'checked-out' ? 'checked-out' : 'current');
+const loadingGuests = ref(false);
 const page = usePage();
 const podTypeError = computed(() => page.props.errors?.pod_type ?? '');
 const modalOpen = ref(false);
@@ -25,6 +34,105 @@ const form = useForm({
     name: '',
     is_active: true,
 });
+
+const activeStays = computed(() => (tab.value === 'checked-out' ? props.checkedOutStays : props.stays) ?? []);
+const guestsLoading = computed(() => loadingGuests.value || (tab.value === 'checked-out' ? props.checkedOutStays === null : props.stays === null));
+
+function hotelQuery(nextTab = tab.value, dates = {}) {
+    const query = { tab: nextTab };
+
+    if (nextTab !== 'checked-out') {
+        return query;
+    }
+
+    const from = dates.from ?? props.filters.from ?? '';
+    const to = dates.to ?? props.filters.to ?? '';
+
+    if (from) {
+        query.from = from;
+    }
+
+    if (to) {
+        query.to = to;
+    }
+
+    return query;
+}
+
+function rememberTab() {
+    const params = new URLSearchParams();
+    const query = hotelQuery();
+
+    if (query.tab === 'checked-out') {
+        params.set('tab', query.tab);
+    }
+
+    if (query.from) {
+        params.set('from', query.from);
+    }
+
+    if (query.to) {
+        params.set('to', query.to);
+    }
+
+    const search = params.toString();
+
+    window.history.replaceState(window.history.state, '', `/backoffice/hotel${search ? `?${search}` : ''}`);
+}
+
+function loadGuests(nextTab, dates = {}, onSuccess = null) {
+    loadingGuests.value = true;
+
+    router.get('/backoffice/hotel', hotelQuery(nextTab, dates), {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+        only: nextTab === 'checked-out' ? ['checkedOutStays', 'filters'] : ['stays', 'filters'],
+        onSuccess: () => onSuccess?.(),
+        onFinish: () => {
+            loadingGuests.value = false;
+        },
+    });
+}
+
+function selectTab(next) {
+    if (next === tab.value) {
+        return;
+    }
+
+    tab.value = next;
+    const loaded = next === 'checked-out' ? props.checkedOutStays !== null : props.stays !== null;
+
+    if (loaded) {
+        rememberTab();
+
+        return;
+    }
+
+    loadGuests(next);
+}
+
+function applyDates(dates) {
+    loadGuests('checked-out', dates);
+}
+
+function checkIn() {
+    const start = () => hotel.value?.startCheckIn();
+
+    if (tab.value !== 'current') {
+        tab.value = 'current';
+
+        if (props.stays === null) {
+            loadGuests('current', {}, start);
+
+            return;
+        }
+
+        rememberTab();
+    }
+
+    start();
+}
 
 function openPodTypes() {
     editingPodType.value = null;
@@ -87,8 +195,25 @@ function remove(podType) {
 <template>
     <Head title="Manage Hotel" />
 
+    <Teleport defer to="#admin-header-tabs">
+        <div class="flex w-max gap-2" role="tablist" aria-label="Hotel guests">
+            <button
+                v-for="item in tabs"
+                :key="item.value"
+                class="h-10 shrink-0 rounded-xl px-4 text-sm font-medium whitespace-nowrap"
+                :class="tab === item.value ? 'bg-pine text-foam' : 'border border-mist bg-white dark:border-white/15 dark:bg-transparent'"
+                type="button"
+                role="tab"
+                :aria-selected="tab === item.value"
+                @click="selectTab(item.value)"
+            >
+                {{ item.label }}
+            </button>
+        </div>
+    </Teleport>
+
     <Teleport defer to="#admin-header-actions">
-        <button class="h-10 rounded-xl border border-black/15 px-4 text-sm font-medium" type="button" @click="hotel?.startCheckIn()">
+        <button class="h-10 rounded-xl border border-black/15 px-4 text-sm font-medium" type="button" @click="checkIn">
             Check In
         </button>
         <button class="h-10 rounded-xl bg-pine px-4 text-sm font-medium text-foam" type="button" @click="openPodTypes">
@@ -102,10 +227,15 @@ function remove(podType) {
             ref="hotel"
             embedded
             open
-            :stays="stays"
+            :stays="activeStays"
+            :checked-out="tab === 'checked-out'"
+            :date-from="filters.from"
+            :date-to="filters.to"
+            :loading="guestsLoading"
             :options="options"
             :branches="branches"
             :payment-methods="paymentMethods"
+            @filter="applyDates"
         />
     </div>
 
