@@ -8,7 +8,7 @@ const props = defineProps({
     },
     grain: {
         type: String,
-        default: 'day',
+        default: 'today',
     },
     periodLabel: {
         type: String,
@@ -19,41 +19,49 @@ const props = defineProps({
 const emit = defineEmits(['change']);
 
 const grains = [
-    { value: 'day', label: 'Daily' },
-    { value: 'week', label: 'Weekly' },
-    { value: 'two_weeks', label: 'Every 2 weeks' },
-    { value: 'month', label: 'Monthly' },
+    { value: 'today', label: 'Today' },
+    { value: 'week', label: 'This Week' },
+    { value: 'two_weeks', label: 'Last 2 Weeks' },
+    { value: 'month', label: 'This Month' },
+    { value: 'quarter', label: 'This Quarter' },
+    { value: 'year', label: 'This Year' },
 ];
 
 const open = ref([]);
+const hover = ref(null);
+const pinned = ref(null);
 const width = 640;
-const height = 140;
-const padX = 8;
-const padTop = 8;
-const padBottom = 8;
+const height = 176;
+const padX = 12;
+const padTop = 16;
+const padBottom = 28;
 
 const charts = computed(() => props.categories.map((category) => {
-    const hours = category.points ?? [];
-    const maxAmount = Math.max(...hours.map((hour) => Number(hour.amount) || 0), 0);
-    const maxTransactions = Math.max(...hours.map((hour) => Number(hour.transactions) || 0), 0);
+    const series = category.points ?? [];
+    const maxAmount = Math.max(...series.map((point) => Number(point.amount) || 0), 0);
+    const maxTransactions = Math.max(...series.map((point) => Number(point.transactions) || 0), 0);
     const plotWidth = width - padX * 2;
     const plotHeight = height - padTop - padBottom;
-    const slot = plotWidth / Math.max(hours.length, 1);
+    const slot = plotWidth / Math.max(series.length, 1);
     const baseline = height - padBottom;
-    const points = hours.map((hour, index) => {
+    const points = series.map((point, index) => {
         const center = padX + slot * index + slot / 2;
-        const barWidth = Math.min(10, slot * 0.55);
-        const amountRatio = maxAmount === 0 ? 0 : Number(hour.amount) / maxAmount;
-        const transactionRatio = maxTransactions === 0 ? 0 : Number(hour.transactions) / maxTransactions;
+        const barWidth = Math.min(36, slot * 0.62);
+        const amountRatio = maxAmount === 0 ? 0 : Number(point.amount) / maxAmount;
+        const transactionRatio = maxTransactions === 0 ? 0 : Number(point.transactions) / maxTransactions;
         const barHeight = amountRatio * plotHeight;
 
         return {
-            ...hour,
+            ...point,
+            index,
             center,
+            slot,
+            hitX: padX + slot * index,
             barWidth,
             barX: center - barWidth / 2,
             barY: baseline - barHeight,
             barHeight,
+            barRadius: Math.min(5, barWidth / 2, barHeight / 2),
             lineY: baseline - transactionRatio * plotHeight,
         };
     });
@@ -61,8 +69,10 @@ const charts = computed(() => props.categories.map((category) => {
     return {
         ...category,
         baseline,
+        plotHeight,
         points,
         line: points.map((point) => `${point.center},${point.lineY}`).join(' '),
+        grid: [0, 0.5, 1].map((ratio) => baseline - ratio * plotHeight),
     };
 }));
 
@@ -80,20 +90,52 @@ function transactionLabel(count) {
     return `${count} ${count === 1 ? 'transaction' : 'transactions'}`;
 }
 
-function axisLabels(points) {
-    if (points.length === 0) {
-        return [];
+function selection(name) {
+    if (hover.value?.name === name) {
+        return hover.value;
     }
 
-    if (points.length <= 12) {
-        return points.map((point) => point.label);
+    if (pinned.value?.name === name) {
+        return pinned.value;
     }
 
-    return [
-        points[0].label,
-        points[Math.floor((points.length - 1) / 2)].label,
-        points[points.length - 1].label,
-    ];
+    return null;
+}
+
+function selectedPoint(category) {
+    const current = selection(category.name);
+
+    if (!current) {
+        return null;
+    }
+
+    return category.points[current.index] ?? null;
+}
+
+function enter(name, index) {
+    hover.value = { name, index };
+}
+
+function leave(name) {
+    if (hover.value?.name === name) {
+        hover.value = null;
+    }
+}
+
+function pin(name, index) {
+    if (pinned.value?.name === name && pinned.value.index === index) {
+        pinned.value = null;
+
+        return;
+    }
+
+    pinned.value = { name, index };
+}
+
+function isSelected(name, index) {
+    const current = selection(name);
+
+    return current?.index === index;
 }
 </script>
 
@@ -121,7 +163,7 @@ function axisLabels(points) {
                 </div>
                 <div class="flex items-center gap-4 text-xs text-ink/55 dark:text-foam/50">
                     <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-sm bg-pine" /> Sales</span>
-                    <span class="flex items-center gap-1.5"><span class="h-0.5 w-4 bg-ink dark:bg-foam" /> Transactions</span>
+                    <span class="flex items-center gap-1.5"><span class="h-0.5 w-4 rounded-full bg-sand" /> Transactions</span>
                 </div>
             </div>
         </div>
@@ -146,27 +188,83 @@ function axisLabels(points) {
                     </span>
                     <span class="shrink-0 text-sm font-medium text-pine dark:text-sand">{{ isOpen(category.name) ? 'Hide items' : 'Items' }}</span>
                 </button>
-                <svg class="h-28 w-full text-ink dark:text-foam" :viewBox="`0 0 ${width} ${height}`" role="img" :aria-label="`${category.name} sales and transactions`">
-                    <line class="stroke-mist dark:stroke-white/15" :x1="padX" :x2="width - padX" :y1="category.baseline" :y2="category.baseline" />
+                <div class="flex h-5 items-center text-xs text-ink/70 dark:text-foam/70" aria-live="polite">
+                    <p v-if="selectedPoint(category)">
+                        <span class="font-medium text-ink dark:text-foam">{{ selectedPoint(category).label }}</span>
+                        <span> · {{ selectedPoint(category).total }} · {{ transactionLabel(selectedPoint(category).transactions) }}</span>
+                    </p>
+                </div>
+                <svg
+                    class="h-44 w-full"
+                    :viewBox="`0 0 ${width} ${height}`"
+                    role="img"
+                    :aria-label="`${category.name} sales and transactions`"
+                    @pointerleave="leave(category.name)"
+                >
+                    <line
+                        v-for="(y, gridIndex) in category.grid"
+                        :key="`${category.name}-grid-${gridIndex}`"
+                        class="stroke-mist dark:stroke-white/15"
+                        stroke-dasharray="3 6"
+                        :x1="padX"
+                        :x2="width - padX"
+                        :y1="y"
+                        :y2="y"
+                    />
+                    <template v-for="point in category.points" :key="`${category.name}-${point.index}`">
+                        <rect
+                            v-if="isSelected(category.name, point.index)"
+                            class="fill-sand/20"
+                            :x="point.hitX"
+                            :y="padTop"
+                            :width="point.slot"
+                            :height="category.plotHeight"
+                        />
+                        <rect
+                            v-if="point.barHeight > 0"
+                            class="fill-pine"
+                            :x="point.barX"
+                            :y="point.barY"
+                            :width="point.barWidth"
+                            :height="point.barHeight"
+                            :rx="point.barRadius"
+                        />
+                    </template>
+                    <polyline class="fill-none stroke-sand" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" :points="category.line" />
+                    <circle
+                        v-for="point in category.points"
+                        v-show="point.transactions > 0 || isSelected(category.name, point.index)"
+                        :key="`${category.name}-${point.index}-dot`"
+                        class="fill-sand stroke-white dark:stroke-ink"
+                        :cx="point.center"
+                        :cy="point.lineY"
+                        :r="isSelected(category.name, point.index) ? 5 : 3.5"
+                        stroke-width="2"
+                    />
+                    <text
+                        v-for="point in category.points.filter((item) => item.axis)"
+                        :key="`${category.name}-${point.index}-axis`"
+                        class="fill-ink/50 dark:fill-foam/50"
+                        :x="point.center"
+                        :y="height - 8"
+                        text-anchor="middle"
+                        font-size="12"
+                    >
+                        {{ point.axis }}
+                    </text>
                     <rect
                         v-for="point in category.points"
-                        :key="`${category.name}-${point.label}-bar`"
-                        class="fill-pine"
-                        :x="point.barX"
-                        :y="point.barY"
-                        :width="point.barWidth"
-                        :height="point.barHeight"
-                    >
-                        <title>{{ point.label }} · {{ point.transactions }} · {{ point.amount }}</title>
-                    </rect>
-                    <polyline fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :points="category.line" />
-                    <circle v-for="point in category.points" :key="`${category.name}-${point.label}-dot`" :cx="point.center" :cy="point.lineY" r="2.5" fill="currentColor">
-                        <title>{{ point.label }} · {{ transactionLabel(point.transactions) }}</title>
-                    </circle>
+                        :key="`${category.name}-${point.index}-hit`"
+                        class="cursor-pointer"
+                        fill="transparent"
+                        :x="point.hitX"
+                        :y="padTop"
+                        :width="point.slot"
+                        :height="category.plotHeight"
+                        @pointerenter="enter(category.name, point.index)"
+                        @click="pin(category.name, point.index)"
+                    />
                 </svg>
-                <div class="flex justify-between gap-2 text-[10px] text-ink/50 dark:text-foam/50">
-                    <span v-for="(label, index) in axisLabels(category.points)" :key="`${category.name}-${index}`">{{ label }}</span>
-                </div>
                 <div v-if="isOpen(category.name)" class="flex flex-col gap-2 border-t border-mist pt-3 dark:border-white/10">
                     <div class="grid grid-cols-[minmax(0,1fr)_7rem_7rem] gap-3 text-xs text-ink/55 dark:text-foam/50">
                         <span>Item</span>

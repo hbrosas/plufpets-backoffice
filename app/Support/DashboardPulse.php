@@ -57,16 +57,16 @@ class DashboardPulse
     }
 
     /**
-     * @return array{grain: string, label: string, categories: list<array{name: string, transactions: int, amount: float, total: string, points: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>}
+     * @return array{grain: string, label: string, categories: list<array{name: string, transactions: int, amount: float, total: string, points: list<array{label: string, axis: string, amount: float, total: string, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>}
      */
     public function categoryTrend(string $grain): array
     {
-        $grain = in_array($grain, ['day', 'week', 'two_weeks', 'month'], true) ? $grain : 'day';
+        $grain = in_array($grain, ['today', 'week', 'two_weeks', 'month', 'quarter', 'year'], true) ? $grain : 'today';
         $buckets = $this->trendBuckets($grain);
         $period = new ReportPeriod(
             $grain,
             $this->trendLabel($grain),
-            $buckets[0]['from'],
+            $this->trendWindowStart($grain),
             CarbonImmutable::now(ReportPeriod::ZONE)->endOfDay()->utc(),
         );
 
@@ -336,8 +336,8 @@ class DashboardPulse
     }
 
     /**
-     * @param  list<array{key: string, label: string, start: string, end: string, from: CarbonImmutable}>  $buckets
-     * @return list<array{name: string, transactions: int, amount: float, total: string, points: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>
+     * @param  list<array{key: string, label: string, axis: string, start: string, end: string, from: CarbonImmutable}>  $buckets
+     * @return list<array{name: string, transactions: int, amount: float, total: string, points: list<array{label: string, axis: string, amount: float, total: string, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>
      */
     private function categories(ReportPeriod $period, array $buckets, string $grain): array
     {
@@ -435,58 +435,164 @@ class DashboardPulse
 
     private function trendLabel(string $grain): string
     {
+        $today = CarbonImmutable::now(ReportPeriod::ZONE)->startOfDay();
+        $sunday = $today->startOfWeek(CarbonImmutable::SUNDAY);
+
         return match ($grain) {
-            'week' => 'Last 12 weeks',
-            'two_weeks' => 'Every 2 weeks',
-            'month' => 'Last 12 months',
-            default => 'Last 30 days',
+            'week' => $this->rangeLabel($sunday, $sunday->addDays(6)),
+            'two_weeks' => $this->rangeLabel($sunday->subWeek(), $sunday->addDays(6)),
+            'month' => $today->format('F Y'),
+            'quarter' => $today->startOfQuarter()->format('M').' – '.$today->startOfQuarter()->addMonths(2)->format('M Y'),
+            'year' => $today->format('Y'),
+            default => 'Today',
         };
     }
 
+    private function trendWindowStart(string $grain): CarbonImmutable
+    {
+        $today = CarbonImmutable::now(ReportPeriod::ZONE)->startOfDay();
+        $sunday = $today->startOfWeek(CarbonImmutable::SUNDAY);
+
+        $start = match ($grain) {
+            'week' => $sunday,
+            'two_weeks' => $sunday->subWeek(),
+            'month' => $today->startOfMonth(),
+            'quarter' => $today->startOfQuarter(),
+            'year' => $today->startOfYear(),
+            default => $today,
+        };
+
+        return $start->utc();
+    }
+
+    private function rangeLabel(CarbonImmutable $from, CarbonImmutable $to): string
+    {
+        if ($from->year !== $to->year) {
+            return $from->format('M j, Y').' – '.$to->format('M j, Y');
+        }
+
+        return $from->format('M j').' – '.$to->format('M j');
+    }
+
     /**
-     * @return list<array{key: string, label: string, start: string, end: string, from: CarbonImmutable}>
+     * @return list<array{key: string, label: string, axis: string, start: string, end: string, from: CarbonImmutable}>
      */
     private function trendBuckets(string $grain): array
     {
         $today = CarbonImmutable::now(ReportPeriod::ZONE)->startOfDay();
+        $sunday = $today->startOfWeek(CarbonImmutable::SUNDAY);
 
-        $starts = match ($grain) {
-            'week' => collect(range(11, 0))->map(
-                fn (int $weeksAgo): CarbonImmutable => $today->startOfWeek(CarbonImmutable::MONDAY)->subWeeks($weeksAgo),
-            ),
-            'two_weeks' => collect(range(0, 5))->map(
-                fn (int $block): CarbonImmutable => $today->startOfWeek(CarbonImmutable::MONDAY)->subWeeks(10)->addWeeks($block * 2),
-            ),
-            'month' => collect(range(11, 0))->map(
-                fn (int $monthsAgo): CarbonImmutable => $today->startOfMonth()->subMonths($monthsAgo),
-            ),
-            default => collect(range(29, 0))->map(
-                fn (int $daysAgo): CarbonImmutable => $today->subDays($daysAgo),
-            ),
+        return match ($grain) {
+            'week' => $this->dayBuckets($sunday, 7, true),
+            'two_weeks' => $this->dayBuckets($sunday->subWeek(), 14, false),
+            'month' => $this->monthWeekBuckets($today),
+            'quarter' => $this->monthBuckets($today->startOfQuarter(), 3),
+            'year' => $this->monthBuckets($today->startOfYear(), 12),
+            default => $this->hourBuckets($today),
         };
+    }
 
-        return $starts->map(function (CarbonImmutable $start) use ($grain): array {
-            $end = match ($grain) {
-                'week' => $start->addDays(6),
-                'two_weeks' => $start->addDays(13),
-                'month' => $start->endOfMonth()->startOfDay(),
-                default => $start,
-            };
+    /**
+     * @return list<array{key: string, label: string, axis: string, start: string, end: string, from: CarbonImmutable}>
+     */
+    private function hourBuckets(CarbonImmutable $today): array
+    {
+        return collect(range(0, 23))->map(function (int $hour) use ($today): array {
+            $start = $today->setTime($hour, 0);
 
             return [
-                'key' => $grain === 'month' ? $start->format('Y-m') : $start->toDateString(),
-                'label' => $grain === 'month' ? $start->format('M Y') : $start->format('M j'),
+                'key' => 'hour-'.$hour,
+                'label' => $start->format('g A'),
+                'axis' => $hour % 3 === 0 ? $start->format('g A') : '',
                 'start' => $start->toDateString(),
-                'end' => $end->toDateString(),
+                'end' => $start->toDateString(),
                 'from' => $start->utc(),
+            ];
+        })->all();
+    }
+
+    /**
+     * @return list<array{key: string, label: string, axis: string, start: string, end: string, from: CarbonImmutable}>
+     */
+    private function dayBuckets(CarbonImmutable $start, int $days, bool $weekdayAxis): array
+    {
+        return $this->dayStarts($start, $days)->map(function (CarbonImmutable $day, int $index) use ($days, $weekdayAxis): array {
+            $showAxis = $weekdayAxis
+                || in_array($day->dayOfWeek, [CarbonImmutable::SUNDAY, CarbonImmutable::WEDNESDAY], true)
+                || $index === $days - 1;
+            $date = $day->toDateString();
+
+            return [
+                'key' => $date,
+                'label' => $day->format('l, M j'),
+                'axis' => $showAxis ? ($weekdayAxis ? $day->format('D') : $day->format('M j')) : '',
+                'start' => $date,
+                'end' => $date,
+                'from' => $day->utc(),
             ];
         })->values()->all();
     }
 
     /**
+     * @return list<array{key: string, label: string, axis: string, start: string, end: string, from: CarbonImmutable}>
+     */
+    private function monthWeekBuckets(CarbonImmutable $today): array
+    {
+        $monthStart = $today->startOfMonth();
+        $monthEnd = $today->endOfMonth()->startOfDay();
+        $sunday = $monthStart->startOfWeek(CarbonImmutable::SUNDAY);
+        $buckets = [];
+
+        while ($sunday->lte($monthEnd)) {
+            $rangeStart = $sunday->lt($monthStart) ? $monthStart : $sunday;
+            $rangeEnd = $sunday->addDays(6)->gt($monthEnd) ? $monthEnd : $sunday->addDays(6);
+            $buckets[] = [
+                'key' => $sunday->toDateString(),
+                'label' => $rangeStart->isSameDay($rangeEnd) ? $rangeStart->format('l, M j') : $this->rangeLabel($rangeStart, $rangeEnd),
+                'axis' => $rangeStart->format('M j'),
+                'start' => $rangeStart->toDateString(),
+                'end' => $rangeEnd->toDateString(),
+                'from' => $rangeStart->utc(),
+            ];
+            $sunday = $sunday->addWeek();
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * @return list<array{key: string, label: string, axis: string, start: string, end: string, from: CarbonImmutable}>
+     */
+    private function monthBuckets(CarbonImmutable $start, int $months): array
+    {
+        return collect(range(0, $months - 1))->map(function (int $offset) use ($start): array {
+            $month = $start->startOfMonth()->addMonths($offset);
+
+            return [
+                'key' => $month->format('Y-m'),
+                'label' => $month->format('F Y'),
+                'axis' => $month->format('M'),
+                'start' => $month->toDateString(),
+                'end' => $month->endOfMonth()->startOfDay()->toDateString(),
+                'from' => $month->utc(),
+            ];
+        })->all();
+    }
+
+    /**
+     * @return Collection<int, CarbonImmutable>
+     */
+    private function dayStarts(CarbonImmutable $start, int $days): Collection
+    {
+        return collect(range(0, $days - 1))->map(
+            fn (int $offset): CarbonImmutable => $start->addDays($offset),
+        );
+    }
+
+    /**
      * @param  Collection<int, PosSaleItem>  $rows
-     * @param  list<array{key: string, label: string, start: string, end: string, from: CarbonImmutable}>  $buckets
-     * @return list<array{label: string, amount: float, transactions: int}>
+     * @param  list<array{key: string, label: string, axis: string, start: string, end: string, from: CarbonImmutable}>  $buckets
+     * @return list<array{label: string, axis: string, amount: float, total: string, transactions: int}>
      */
     private function trendPoints(Collection $rows, array $buckets, string $grain): array
     {
@@ -495,6 +601,7 @@ class DashboardPulse
         foreach ($buckets as $bucket) {
             $points[$bucket['key']] = [
                 'label' => $bucket['label'],
+                'axis' => $bucket['axis'],
                 'amount' => 0.0,
                 'transactions' => [],
             ];
@@ -502,7 +609,7 @@ class DashboardPulse
 
         foreach ($rows as $row) {
             $soldOn = CarbonImmutable::parse($row->sold_at)->timezone(ReportPeriod::ZONE);
-            $key = $this->trendKey($soldOn, $grain, $buckets);
+            $key = $this->trendKey($soldOn, $grain);
 
             if (! isset($points[$key])) {
                 continue;
@@ -514,36 +621,21 @@ class DashboardPulse
 
         return array_map(fn (array $point): array => [
             'label' => $point['label'],
+            'axis' => $point['axis'],
             'amount' => round($point['amount'], 2),
+            'total' => Peso::format($point['amount']),
             'transactions' => count($point['transactions']),
         ], array_values($points));
     }
 
-    /**
-     * @param  list<array{key: string, label: string, start: string, end: string, from: CarbonImmutable}>  $buckets
-     */
-    private function trendKey(CarbonImmutable $soldOn, string $grain, array $buckets): string
+    private function trendKey(CarbonImmutable $soldOn, string $grain): string
     {
-        $key = match ($grain) {
-            'week' => $soldOn->startOfWeek(CarbonImmutable::MONDAY)->toDateString(),
-            'month' => $soldOn->format('Y-m'),
-            'two_weeks' => null,
+        return match ($grain) {
+            'today' => 'hour-'.$soldOn->hour,
+            'month' => $soldOn->startOfWeek(CarbonImmutable::SUNDAY)->toDateString(),
+            'quarter', 'year' => $soldOn->format('Y-m'),
             default => $soldOn->toDateString(),
         };
-
-        if ($key !== null) {
-            return $key;
-        }
-
-        $date = $soldOn->toDateString();
-
-        foreach ($buckets as $bucket) {
-            if ($date >= $bucket['start'] && $date <= $bucket['end']) {
-                return $bucket['key'];
-            }
-        }
-
-        return '';
     }
 
     /**
