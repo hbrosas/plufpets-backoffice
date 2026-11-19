@@ -26,7 +26,7 @@ const hourMax = computed(() => Math.max(...(props.pulse?.hours.map((hour) => hou
 const canManageBusiness = computed(() => (usePage().props.employee?.permissions ?? []).includes('business.manage'));
 const employeeView = computed(() => props.commissions?.scope === 'self' && props.attendance !== null);
 const tab = ref('activities');
-const branchOrderTabs = ref({});
+const branchActivityTabs = ref({});
 const tabs = computed(() => [
     { id: 'activities', label: "Today's Activities" },
     ...(props.schedule ? [{ id: 'employees', label: 'Calendar' }] : []),
@@ -75,13 +75,13 @@ watch(tabs, (items) => {
     }
 }, { immediate: true });
 
-function branchOrderTab(branchId) {
-    return branchOrderTabs.value[branchId] ?? 'open';
+function branchActivityTab(branchId) {
+    return branchActivityTabs.value[branchId] ?? 'activity';
 }
 
-function selectBranchOrderTab(branchId, value) {
-    branchOrderTabs.value = {
-        ...branchOrderTabs.value,
+function selectBranchActivityTab(branchId, value) {
+    branchActivityTabs.value = {
+        ...branchActivityTabs.value,
         [branchId]: value,
     };
 }
@@ -320,37 +320,30 @@ function reviewRequest(filing, status) {
                             <p class="text-2xl font-medium">{{ branch.cash_label }}</p>
                         </div>
                     </div>
-                    <div class="flex flex-col gap-2">
-                        <h4 class="text-sm font-medium">Shift activity</h4>
-                        <p v-if="branch.activities.length === 0" class="text-sm text-ink/55 dark:text-foam/50">No shift activity yet.</p>
-                        <div v-else class="flex max-h-96 flex-col gap-2 overflow-y-auto">
-                            <button
-                                v-for="activity in branch.activities"
-                                :key="activity.key"
-                                class="flex w-full flex-col gap-1 rounded-xl border border-mist p-3 text-left text-sm transition hover:border-pine dark:border-white/10 dark:hover:border-sand"
-                                type="button"
-                                @click="selectedActivity = activity"
-                            >
-                                <span class="flex items-start justify-between gap-3">
-                                    <span class="font-medium">{{ activity.title }}</span>
-                                    <span class="shrink-0 font-medium" :class="activity.amount_label.startsWith('-') ? 'text-danger' : ''">{{ activity.amount_label }}</span>
-                                </span>
-                                <span v-if="activity.detail" class="text-ink/60 dark:text-foam/60">{{ activity.detail }}</span>
-                                <span v-if="activity.time" class="text-xs text-ink/50 dark:text-foam/50">{{ activity.time }}</span>
-                            </button>
-                        </div>
-                    </div>
                     <div class="flex flex-col gap-3">
-                        <div class="flex flex-wrap gap-2" role="tablist" :aria-label="`${branch.name} orders`">
+                        <div class="flex flex-wrap gap-2" role="tablist" :aria-label="`${branch.name} activities`">
+                            <button
+                                :id="`branch-${branch.id}-tab-activity`"
+                                class="inline-flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-medium"
+                                :class="branchActivityTab(branch.id) === 'activity' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                                type="button"
+                                role="tab"
+                                :aria-selected="branchActivityTab(branch.id) === 'activity'"
+                                :aria-controls="`branch-${branch.id}-panel-activity`"
+                                @click="selectBranchActivityTab(branch.id, 'activity')"
+                            >
+                                Shift Activity
+                                <CountBadge :count="branch.activities.length" />
+                            </button>
                             <button
                                 :id="`branch-${branch.id}-tab-open`"
                                 class="inline-flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-medium"
-                                :class="branchOrderTab(branch.id) === 'open' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                                :class="branchActivityTab(branch.id) === 'open' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
                                 type="button"
                                 role="tab"
-                                :aria-selected="branchOrderTab(branch.id) === 'open'"
+                                :aria-selected="branchActivityTab(branch.id) === 'open'"
                                 :aria-controls="`branch-${branch.id}-panel-open`"
-                                @click="selectBranchOrderTab(branch.id, 'open')"
+                                @click="selectBranchActivityTab(branch.id, 'open')"
                             >
                                 Open Orders
                                 <CountBadge :count="branch.open.length" />
@@ -358,19 +351,43 @@ function reviewRequest(filing, status) {
                             <button
                                 :id="`branch-${branch.id}-tab-online`"
                                 class="inline-flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-medium"
-                                :class="branchOrderTab(branch.id) === 'online' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                                :class="branchActivityTab(branch.id) === 'online' ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
                                 type="button"
                                 role="tab"
-                                :aria-selected="branchOrderTab(branch.id) === 'online'"
+                                :aria-selected="branchActivityTab(branch.id) === 'online'"
                                 :aria-controls="`branch-${branch.id}-panel-online`"
-                                @click="selectBranchOrderTab(branch.id, 'online')"
+                                @click="selectBranchActivityTab(branch.id, 'online')"
                             >
                                 Online Orders
                                 <CountBadge :count="branch.online.length" />
                             </button>
                         </div>
                         <div
-                            v-show="branchOrderTab(branch.id) === 'open'"
+                            v-show="branchActivityTab(branch.id) === 'activity'"
+                            :id="`branch-${branch.id}-panel-activity`"
+                            role="tabpanel"
+                            :aria-labelledby="`branch-${branch.id}-tab-activity`"
+                        >
+                            <p v-if="branch.activities.length === 0" class="text-sm text-ink/55 dark:text-foam/50">No shift activity yet.</p>
+                            <div v-else class="flex max-h-96 flex-col gap-2 overflow-y-auto">
+                                <button
+                                    v-for="activity in branch.activities"
+                                    :key="activity.key"
+                                    class="flex w-full flex-col gap-1 rounded-xl border border-mist p-3 text-left text-sm transition hover:border-pine dark:border-white/10 dark:hover:border-sand"
+                                    type="button"
+                                    @click="selectedActivity = activity"
+                                >
+                                    <span class="flex items-start justify-between gap-3">
+                                        <span class="font-medium">{{ activity.title }}</span>
+                                        <span class="shrink-0 font-medium" :class="activity.amount_label.startsWith('-') ? 'text-danger' : ''">{{ activity.amount_label }}</span>
+                                    </span>
+                                    <span v-if="activity.detail" class="text-ink/60 dark:text-foam/60">{{ activity.detail }}</span>
+                                    <span v-if="activity.time" class="text-xs text-ink/50 dark:text-foam/50">{{ activity.time }}</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div
+                            v-show="branchActivityTab(branch.id) === 'open'"
                             :id="`branch-${branch.id}-panel-open`"
                             role="tabpanel"
                             :aria-labelledby="`branch-${branch.id}-tab-open`"
@@ -390,7 +407,7 @@ function reviewRequest(filing, status) {
                             </ul>
                         </div>
                         <div
-                            v-show="branchOrderTab(branch.id) === 'online'"
+                            v-show="branchActivityTab(branch.id) === 'online'"
                             :id="`branch-${branch.id}-panel-online`"
                             role="tabpanel"
                             :aria-labelledby="`branch-${branch.id}-tab-online`"
@@ -549,6 +566,32 @@ function reviewRequest(filing, status) {
                         <dd>{{ field.value }}</dd>
                     </div>
                 </dl>
+                <section v-if="selectedActivity.counts" class="flex flex-col gap-2">
+                    <h3 class="text-sm font-medium">Cash count</h3>
+                    <p v-if="selectedActivity.counts.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No cash count.</p>
+                    <div v-else class="overflow-x-auto rounded-2xl border border-mist dark:border-white/10">
+                        <table class="w-full text-left text-sm">
+                            <thead class="text-ink/50 dark:text-foam/50">
+                                <tr class="border-b border-mist dark:border-white/10">
+                                    <th class="px-4 py-3 font-medium">Denomination</th>
+                                    <th class="px-4 py-3 text-right font-medium">Quantity</th>
+                                    <th class="px-4 py-3 text-right font-medium">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="row in selectedActivity.counts"
+                                    :key="row.denomination"
+                                    class="border-b border-mist last:border-b-0 dark:border-white/10"
+                                >
+                                    <td class="px-4 py-3">{{ row.denomination }}</td>
+                                    <td class="px-4 py-3 text-right">{{ row.quantity }}</td>
+                                    <td class="px-4 py-3 text-right">{{ row.total }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
             </template>
         </div>
     </div>

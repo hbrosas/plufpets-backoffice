@@ -2,8 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CommissionRole;
 use App\Models\Branch;
+use App\Models\CatalogItem;
+use App\Models\CatalogItemVariant;
 use App\Models\Employee;
+use App\Models\EmployeeServiceCommission;
 use App\Models\PosSale;
 use App\Models\PosSaleItem;
 use App\Models\PosSaleItemCommission;
@@ -238,6 +242,149 @@ class SalesReceiptControllerTest extends TestCase
             ->assertRedirect("/backoffice/sales/receipts/{$sale->id}")
             ->assertSessionHasErrors([
                 'employee_id' => 'This receipt is refunded.',
+            ]);
+    }
+
+    public function test_guest_cannot_recompute_commissions(): void
+    {
+        $sale = PosSale::factory()->create();
+
+        $this->post("/backoffice/sales/receipts/{$sale->id}/commissions/recompute")
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_recomputing_commissions_requires_the_permission(): void
+    {
+        $role = Role::factory()->withPermissions(['sales.view'])->create();
+        $viewer = Employee::factory()->create(['role_id' => $role->id]);
+        $sale = $this->saleWithCommission(Employee::factory()->create(), '40.00');
+
+        $this->actingAsEmployee($viewer)
+            ->post("/backoffice/sales/receipts/{$sale->id}/commissions/recompute")
+            ->assertForbidden();
+
+        $this->assertSame('40.00', $sale->items()->first()->commissions()->first()->amount);
+    }
+
+    public function test_recompute_applies_the_current_service_rates_and_keeps_waivers(): void
+    {
+        $service = CatalogItem::factory()->service()->create();
+        $variant = CatalogItemVariant::factory()->create(['catalog_item_id' => $service->id]);
+        $ada = Employee::factory()->create(['name' => 'Ada Groomer', 'employee_number' => '30001']);
+        $ben = Employee::factory()->create(['name' => 'Ben Cashier', 'employee_number' => '30002']);
+        $cara = Employee::factory()->create(['name' => 'Cara Assistant', 'employee_number' => '30003']);
+        EmployeeServiceCommission::factory()->create([
+            'employee_id' => $ada->id,
+            'catalog_item_id' => $service->id,
+            'assigned_rate' => '40.00',
+            'assisted_rate' => '0.00',
+        ]);
+        EmployeeServiceCommission::factory()->create([
+            'employee_id' => $cara->id,
+            'catalog_item_id' => $service->id,
+            'assigned_rate' => '0.00',
+            'assisted_rate' => '10.00',
+        ]);
+
+        $sale = PosSale::factory()->create(['sold_at' => now()]);
+        $item = PosSaleItem::factory()->create([
+            'pos_sale_id' => $sale->id,
+            'catalog_item_variant_id' => $variant->id,
+            'product_name' => 'Bath',
+            'variant_name' => 'Default',
+        ]);
+        $waivedAt = now()->subHour();
+        $adaCommission = PosSaleItemCommission::factory()->create([
+            'pos_sale_item_id' => $item->id,
+            'employee_id' => $ada->id,
+            'employee_number' => '30001',
+            'employee_name' => 'Ada Groomer',
+            'role' => CommissionRole::Assigned,
+            'rate' => '10.00',
+            'pool_size' => 1,
+            'commissionable_amount' => '200.00',
+            'amount' => '20.00',
+            'waived_at' => $waivedAt,
+            'waived_by_name' => 'Sample Employee',
+        ]);
+        PosSaleItemCommission::factory()->create([
+            'pos_sale_item_id' => $item->id,
+            'employee_id' => $ben->id,
+            'employee_number' => '30002',
+            'employee_name' => 'Ben Cashier',
+            'role' => CommissionRole::Assigned,
+            'rate' => '10.00',
+            'pool_size' => 1,
+            'commissionable_amount' => '200.00',
+            'amount' => '20.00',
+        ]);
+        PosSaleItemCommission::factory()->create([
+            'pos_sale_item_id' => $item->id,
+            'employee_id' => $cara->id,
+            'employee_number' => '30003',
+            'employee_name' => 'Cara Assistant',
+            'role' => CommissionRole::Assisted,
+            'rate' => '5.00',
+            'pool_size' => 1,
+            'commissionable_amount' => '200.00',
+            'amount' => '10.00',
+        ]);
+
+        $this->actingAsEmployee()
+            ->post("/backoffice/sales/receipts/{$sale->id}/commissions/recompute")
+            ->assertRedirect(route('sales.receipts.show', $sale))
+            ->assertSessionHas('status', 'Commissions recomputed.');
+
+        $adaCommission->refresh();
+        $benCommission = $item->commissions()->where('employee_id', $ben->id)->first();
+        $caraCommission = $item->commissions()->where('employee_id', $cara->id)->first();
+
+        $this->assertSame('40.00', $adaCommission->rate);
+        $this->assertSame(2, $adaCommission->pool_size);
+        $this->assertSame('40.00', $adaCommission->amount);
+        $this->assertNotNull($adaCommission->waived_at);
+        $this->assertSame('0.00', $benCommission->rate);
+        $this->assertSame('0.00', $benCommission->amount);
+        $this->assertSame(2, $benCommission->pool_size);
+        $this->assertSame('10.00', $caraCommission->rate);
+        $this->assertSame(1, $caraCommission->pool_size);
+        $this->assertSame('20.00', $caraCommission->amount);
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/sales/receipts/{$sale->id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('receipt.commissions.0.amount', '₱40.00')
+                ->where('receipt.commissions.0.waived', true)
+                ->where('receipt.commissions.1.amount', '₱0.00')
+                ->where('receipt.commissions.2.amount', '₱20.00'));
+    }
+
+    public function test_a_refunded_receipt_cannot_have_its_commissions_recomputed(): void
+    {
+        $sale = $this->saleWithCommission(Employee::factory()->create(), '40.00', refunded: true);
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/sales/receipts/{$sale->id}")
+            ->post("/backoffice/sales/receipts/{$sale->id}/commissions/recompute")
+            ->assertRedirect("/backoffice/sales/receipts/{$sale->id}")
+            ->assertSessionHasErrors([
+                'commission' => 'This receipt is refunded.',
+            ]);
+
+        $this->assertSame('40.00', $sale->items()->first()->commissions()->first()->amount);
+    }
+
+    public function test_recompute_rejects_a_receipt_with_no_commissions(): void
+    {
+        $sale = PosSale::factory()->create();
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/sales/receipts/{$sale->id}")
+            ->post("/backoffice/sales/receipts/{$sale->id}/commissions/recompute")
+            ->assertRedirect("/backoffice/sales/receipts/{$sale->id}")
+            ->assertSessionHasErrors([
+                'commission' => 'This receipt has no commissions.',
             ]);
     }
 

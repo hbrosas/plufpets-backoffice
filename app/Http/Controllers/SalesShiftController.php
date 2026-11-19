@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Enums\PosCashMovementType;
+use App\Enums\PosDenominationCountType;
 use App\Enums\PrinterRole;
 use App\Http\Requests\SalesShiftFilterRequest;
 use App\Models\Branch;
 use App\Models\PosCashMovement;
 use App\Models\PosSale;
 use App\Models\PosShift;
+use App\Support\CashDenominations;
 use App\Support\Peso;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -32,6 +34,7 @@ class SalesShiftController extends Controller
                     'payments:id,pos_sale_id,payment_method_name,is_cash,amount',
                 ]),
                 'cashMovements',
+                'denominations',
             ])
             ->inPeriod($filters)
             ->orderByDesc('opened_at')
@@ -91,7 +94,9 @@ class SalesShiftController extends Controller
      *     expected_cash: string,
      *     counted_cash: string,
      *     variance: string,
-     *     remit_amount: string
+     *     remit_amount: string,
+     *     opening_counts: list<array{denomination: string, quantity: int, total: string}>,
+     *     closing_counts: list<array{denomination: string, quantity: int, total: string}>
      * }|null
      */
     private function zReport(PosShift $shift): ?array
@@ -140,6 +145,12 @@ class SalesShiftController extends Controller
             'counted_cash' => Peso::format($shift->counted_cash),
             'variance' => Peso::format($shift->variance),
             'remit_amount' => Peso::format($shift->remit_amount),
+            'opening_counts' => CashDenominations::breakdown(
+                $shift->denominations->where('count_type', PosDenominationCountType::Opening),
+            ),
+            'closing_counts' => CashDenominations::breakdown(
+                $shift->denominations->where('count_type', PosDenominationCountType::Closing),
+            ),
         ];
     }
 }

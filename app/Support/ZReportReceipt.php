@@ -20,7 +20,9 @@ class ZReportReceipt
      *     expected_cash: string,
      *     counted_cash: string,
      *     variance: string,
-     *     remit_amount: string
+     *     remit_amount: string,
+     *     opening_counts: list<array{denomination: string, quantity: int, total: string}>,
+     *     closing_counts: list<array{denomination: string, quantity: int, total: string}>
      * }  $report
      */
     public static function text(array $report, int $width = 48): string
@@ -62,8 +64,37 @@ class ZReportReceipt
         $lines[] = self::pair('Variance', self::ascii($report['variance']), $width);
         $lines[] = self::pair('Amount to remit', self::ascii($report['remit_amount']), $width);
         $lines[] = $line;
+        array_push($lines, ...self::countLines('Opening cash count', $report['opening_counts'], $width));
+        $lines[] = $line;
+        array_push($lines, ...self::countLines('Closing cash count', $report['closing_counts'], $width));
+        $lines[] = $line;
 
         return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * @param  list<array{denomination: string, quantity: int, total: string}>  $counts
+     * @return list<string>
+     */
+    private static function countLines(string $heading, array $counts, int $width): array
+    {
+        $lines = [self::wrap($heading, $width)];
+
+        if ($counts === []) {
+            $lines[] = self::wrap('No cash count.', $width);
+
+            return $lines;
+        }
+
+        foreach ($counts as $count) {
+            $lines[] = self::pair(
+                self::ascii($count['denomination']).' x '.$count['quantity'],
+                self::ascii($count['total']),
+                $width,
+            );
+        }
+
+        return $lines;
     }
 
     private static function ascii(string $value): string

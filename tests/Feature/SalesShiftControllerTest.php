@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Enums\PosCashMovementType;
+use App\Enums\PosDenominationCountType;
 use App\Enums\PrinterRole;
 use App\Models\Branch;
 use App\Models\PosCashMovement;
 use App\Models\PosSale;
 use App\Models\PosShift;
+use App\Models\PosShiftDenomination;
 use App\Models\Printer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -57,6 +59,18 @@ class SalesShiftControllerTest extends TestCase
             'reason' => 'Change fund',
             'recorded_at' => now()->subMinutes(5),
         ]);
+        PosShiftDenomination::factory()->create([
+            'pos_shift_id' => $closed->id,
+            'count_type' => PosDenominationCountType::Opening,
+            'denomination' => 1000,
+            'quantity' => 1,
+        ]);
+        PosShiftDenomination::factory()->create([
+            'pos_shift_id' => $closed->id,
+            'count_type' => PosDenominationCountType::Closing,
+            'denomination' => 500,
+            'quantity' => 2,
+        ]);
         $recent = PosShift::factory()->closed()->create([
             'branch_id' => $branch->id,
             'opened_at' => now()->subDays(8),
@@ -91,6 +105,12 @@ class SalesShiftControllerTest extends TestCase
             ->where('shifts.data.0.z_report.sales_total', '₱250.00')
             ->where('shifts.data.0.z_report.cash_out', '₱20.00')
             ->where('shifts.data.0.z_report.remit_amount', '₱0.00')
+            ->where('shifts.data.0.z_report.opening_counts', [
+                ['denomination' => '₱1,000.00', 'quantity' => 1, 'total' => '₱1,000.00'],
+            ])
+            ->where('shifts.data.0.z_report.closing_counts', [
+                ['denomination' => '₱500.00', 'quantity' => 2, 'total' => '₱1,000.00'],
+            ])
             ->where('shifts.data.1.id', $open->id)
             ->where('shifts.data.1.status', 'Open')
             ->where('shifts.data.1.z_report', null)

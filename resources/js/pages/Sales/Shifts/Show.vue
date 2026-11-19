@@ -108,6 +108,60 @@ async function printZReport() {
             </table>
         </div>
 
+        <section class="flex flex-col gap-2">
+            <h3 class="text-sm font-medium">Opening cash count</h3>
+            <p v-if="shift.z_report.opening_counts.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No cash count.</p>
+            <div v-else class="overflow-x-auto rounded-2xl border border-mist dark:border-white/10">
+                <table class="w-full text-left text-sm">
+                    <thead class="text-ink/50 dark:text-foam/50">
+                        <tr class="border-b border-mist dark:border-white/10">
+                            <th class="px-4 py-3 font-medium">Denomination</th>
+                            <th class="px-4 py-3 text-right font-medium">Quantity</th>
+                            <th class="px-4 py-3 text-right font-medium">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            v-for="row in shift.z_report.opening_counts"
+                            :key="`opening-${row.denomination}`"
+                            class="border-b border-mist last:border-b-0 dark:border-white/10"
+                        >
+                            <td class="px-4 py-3">{{ row.denomination }}</td>
+                            <td class="px-4 py-3 text-right">{{ row.quantity }}</td>
+                            <td class="px-4 py-3 text-right">{{ row.total }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="flex flex-col gap-2">
+            <h3 class="text-sm font-medium">Closing cash count</h3>
+            <p v-if="shift.z_report.closing_counts.length === 0" class="text-sm text-ink/60 dark:text-foam/60">No cash count.</p>
+            <div v-else class="overflow-x-auto rounded-2xl border border-mist dark:border-white/10">
+                <table class="w-full text-left text-sm">
+                    <thead class="text-ink/50 dark:text-foam/50">
+                        <tr class="border-b border-mist dark:border-white/10">
+                            <th class="px-4 py-3 font-medium">Denomination</th>
+                            <th class="px-4 py-3 text-right font-medium">Quantity</th>
+                            <th class="px-4 py-3 text-right font-medium">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            v-for="row in shift.z_report.closing_counts"
+                            :key="`closing-${row.denomination}`"
+                            class="border-b border-mist last:border-b-0 dark:border-white/10"
+                        >
+                            <td class="px-4 py-3">{{ row.denomination }}</td>
+                            <td class="px-4 py-3 text-right">{{ row.quantity }}</td>
+                            <td class="px-4 py-3 text-right">{{ row.total }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
         <dl class="overflow-hidden rounded-2xl border border-mist text-sm dark:border-white/10">
             <div
                 v-for="[label, value] in totals"

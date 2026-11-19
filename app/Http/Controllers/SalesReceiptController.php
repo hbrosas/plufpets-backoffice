@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\RecomputePosSaleCommission;
 use App\Actions\RefundPosSale;
 use App\Actions\WaivePosSaleCommission;
 use App\Http\Requests\RefundPosSaleRequest;
@@ -12,6 +13,7 @@ use App\Models\PosSale;
 use App\Support\EmployeeSession;
 use App\Support\PosSaleDetails;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -102,5 +104,17 @@ class SalesReceiptController extends Controller
                 $request->query(),
             ))
             ->with('status', 'Commission waived.');
+    }
+
+    public function recomputeCommission(Request $request, PosSale $posSale, RecomputePosSaleCommission $recomputePosSaleCommission): RedirectResponse
+    {
+        $recomputePosSaleCommission->handle($posSale);
+
+        return redirect()
+            ->route('sales.receipts.show', array_merge(
+                ['pos_sale' => $posSale],
+                $request->query(),
+            ))
+            ->with('status', 'Commissions recomputed.');
     }
 }

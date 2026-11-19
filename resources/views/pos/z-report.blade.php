@@ -89,6 +89,52 @@
             <tr><td>Amount to remit</td><td class="num">{{ $remitAmount }}</td></tr>
         </tbody>
     </table>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Opening cash count</th>
+                <th class="num">Quantity</th>
+                <th class="num">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse ($openingCounts as $row)
+                <tr>
+                    <td>{{ $row['denomination'] }}</td>
+                    <td class="num">{{ $row['quantity'] }}</td>
+                    <td class="num">{{ $row['total'] }}</td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="3">No cash count.</td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Closing cash count</th>
+                <th class="num">Quantity</th>
+                <th class="num">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse ($closingCounts as $row)
+                <tr>
+                    <td>{{ $row['denomination'] }}</td>
+                    <td class="num">{{ $row['quantity'] }}</td>
+                    <td class="num">{{ $row['total'] }}</td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="3">No cash count.</td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
     </div>
 </body>
 </html>

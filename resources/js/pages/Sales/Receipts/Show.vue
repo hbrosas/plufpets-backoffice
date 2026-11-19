@@ -14,6 +14,7 @@ const refundOpen = ref(false);
 const waiveForm = useForm({
     employee_id: 'all',
 });
+const recomputeForm = useForm({});
 
 const openEmployees = computed(() => {
     const employees = new Map();
@@ -33,6 +34,14 @@ function waiveCommission() {
     const params = window.location.search;
 
     waiveForm.post(`/backoffice/sales/receipts/${props.receipt.id}/commissions/waive${params}`, {
+        preserveScroll: true,
+    });
+}
+
+function recomputeCommissions() {
+    const params = window.location.search;
+
+    recomputeForm.post(`/backoffice/sales/receipts/${props.receipt.id}/commissions/recompute${params}`, {
         preserveScroll: true,
     });
 }
@@ -114,7 +123,19 @@ function waiveCommission() {
             v-if="(receipt.commissions ?? []).length > 0"
             class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5"
         >
-            <h2 class="text-sm font-medium">Commissions</h2>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <h2 class="text-sm font-medium">Commissions</h2>
+                <button
+                    v-if="canWaive && !receipt.is_refunded"
+                    class="h-10 rounded-xl border border-mist px-4 text-sm font-medium disabled:opacity-70 dark:border-white/15"
+                    type="button"
+                    :disabled="recomputeForm.processing"
+                    @click="recomputeCommissions"
+                >
+                    {{ recomputeForm.processing ? 'Recomputing…' : 'Recompute commissions' }}
+                </button>
+            </div>
+            <p v-if="recomputeForm.errors.commission" class="text-sm text-danger">{{ recomputeForm.errors.commission }}</p>
             <ul class="flex flex-col gap-3 text-sm">
                 <li v-for="line in receipt.commissions" :key="line.id" class="flex flex-wrap items-baseline justify-between gap-2">
                     <span>

@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\PosDenominationCountType;
 use App\Enums\PrinterRole;
 use App\Models\Branch;
 use App\Models\Business;
 use App\Models\PosSale;
 use App\Models\PosShift;
 use App\Models\Printer;
+use App\Support\CashDenominations;
 use App\Support\Peso;
 use App\Support\ZReportReceipt;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +23,7 @@ class PosZReportController extends Controller
         abort_unless($posShift->branch_id === $branch->id, 404);
         abort_if($posShift->closed_at === null, 404);
 
-        $posShift->load(['branch', 'sales.items', 'sales.payments', 'cashMovements', 'closingDenominations']);
+        $posShift->load(['branch', 'sales.items', 'sales.payments', 'cashMovements', 'denominations']);
 
         $sales = $posShift->sales->filter(fn (PosSale $sale): bool => ! $sale->isRefunded())->values();
 
@@ -56,6 +58,12 @@ class PosZReportController extends Controller
         $countedCash = Peso::format($posShift->counted_cash);
         $variance = Peso::format($posShift->variance);
         $remitAmount = Peso::format($posShift->remit_amount);
+        $openingCounts = CashDenominations::breakdown(
+            $posShift->denominations->where('count_type', PosDenominationCountType::Opening),
+        );
+        $closingCounts = CashDenominations::breakdown(
+            $posShift->denominations->where('count_type', PosDenominationCountType::Closing),
+        );
         $receiptText = ZReportReceipt::text([
             'app' => Business::documentName(),
             'branch' => (string) $posShift->branch?->name,
@@ -72,6 +80,8 @@ class PosZReportController extends Controller
             'counted_cash' => $countedCash,
             'variance' => $variance,
             'remit_amount' => $remitAmount,
+            'opening_counts' => $openingCounts,
+            'closing_counts' => $closingCounts,
         ], $printer !== null && $printer->paper_width_mm <= 58 ? 32 : 48);
 
         if ($request->wantsJson()) {
@@ -99,6 +109,8 @@ class PosZReportController extends Controller
             'countedCash' => $countedCash,
             'variance' => $variance,
             'remitAmount' => $remitAmount,
+            'openingCounts' => $openingCounts,
+            'closingCounts' => $closingCounts,
         ]);
     }
 }

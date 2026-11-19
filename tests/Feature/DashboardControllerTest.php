@@ -6,6 +6,7 @@ use App\Enums\CommissionRole;
 use App\Enums\HolidayType;
 use App\Enums\PayrollFilingStatus;
 use App\Enums\PosCashMovementType;
+use App\Enums\PosDenominationCountType;
 use App\Enums\ShopOrderStatus;
 use App\Models\Branch;
 use App\Models\BranchInventory;
@@ -26,6 +27,7 @@ use App\Models\PosSaleItemCommission;
 use App\Models\PosSalePayment;
 use App\Models\PosSaleTax;
 use App\Models\PosShift;
+use App\Models\PosShiftDenomination;
 use App\Models\Role;
 use App\Models\SmsCreditBalance;
 use Carbon\CarbonImmutable;
@@ -476,6 +478,24 @@ class DashboardControllerTest extends TestCase
             'starting_cash' => 500,
             'counted_cash' => 480,
         ]);
+        PosShiftDenomination::factory()->create([
+            'pos_shift_id' => $closed->id,
+            'count_type' => PosDenominationCountType::Opening,
+            'denomination' => 500,
+            'quantity' => 1,
+        ]);
+        PosShiftDenomination::factory()->create([
+            'pos_shift_id' => $closed->id,
+            'count_type' => PosDenominationCountType::Opening,
+            'denomination' => 20,
+            'quantity' => 0,
+        ]);
+        PosShiftDenomination::factory()->create([
+            'pos_shift_id' => $closed->id,
+            'count_type' => PosDenominationCountType::Closing,
+            'denomination' => 200,
+            'quantity' => 2,
+        ]);
         PosSale::factory()->create([
             'pos_shift_id' => $closed->id,
             'branch_id' => $sanPedro->id,
@@ -506,9 +526,16 @@ class DashboardControllerTest extends TestCase
                 ->where('branchOrders.1.cash_label', '₱480.00')
                 ->where('branchOrders.1.activities.0.title', 'Closing cash')
                 ->where('branchOrders.1.activities.0.amount_label', '₱480.00')
+                ->where('branchOrders.1.activities.0.counts', [
+                    ['denomination' => '₱200.00', 'quantity' => 2, 'total' => '₱400.00'],
+                ])
                 ->where('branchOrders.1.activities.1.title', 'Transaction')
+                ->where('branchOrders.1.activities.1.counts', null)
                 ->where('branchOrders.1.activities.2.title', 'Starting cash')
-                ->where('branchOrders.1.activities.2.amount_label', '₱500.00'));
+                ->where('branchOrders.1.activities.2.amount_label', '₱500.00')
+                ->where('branchOrders.1.activities.2.counts', [
+                    ['denomination' => '₱500.00', 'quantity' => 1, 'total' => '₱500.00'],
+                ]));
     }
 
     public function test_employee_dashboard_lists_their_cash_advances(): void

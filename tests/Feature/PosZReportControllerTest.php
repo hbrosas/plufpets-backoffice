@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Enums\PosDenominationCountType;
 use App\Enums\PrinterConnection;
 use App\Enums\PrinterRole;
 use App\Models\PosShift;
+use App\Models\PosShiftDenomination;
 use App\Models\Printer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -38,12 +40,28 @@ class PosZReportControllerTest extends TestCase
             'variance' => 0,
             'remit_amount' => 1000,
         ]);
+        PosShiftDenomination::factory()->create([
+            'pos_shift_id' => $shift->id,
+            'count_type' => PosDenominationCountType::Opening,
+            'denomination' => 1000,
+            'quantity' => 1,
+        ]);
+        PosShiftDenomination::factory()->create([
+            'pos_shift_id' => $shift->id,
+            'count_type' => PosDenominationCountType::Closing,
+            'denomination' => 500,
+            'quantity' => 2,
+        ]);
 
         $this->actingAsEmployee()
             ->get("/backoffice/pos/register/{$shift->branch_id}/shifts/{$shift->id}/z-report")
             ->assertOk()
             ->assertSee('Z-Report')
-            ->assertSee('Amount to remit');
+            ->assertSee('Amount to remit')
+            ->assertSee('Opening cash count')
+            ->assertSee('Closing cash count')
+            ->assertSee('₱1,000.00')
+            ->assertSee('₱500.00');
     }
 
     public function test_closed_shift_report_hides_the_print_button(): void

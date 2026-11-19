@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\PayrollFilingStatus;
 use App\Enums\PayrollFilingType;
 use App\Enums\PosCashMovementType;
+use App\Enums\PosDenominationCountType;
 use App\Enums\ShopOrderStatus;
 use App\Http\Requests\CommissionPeriodRequest;
 use App\Models\Branch;
@@ -15,6 +16,7 @@ use App\Models\PosCashMovement;
 use App\Models\PosOpenOrder;
 use App\Models\PosSale;
 use App\Models\PosShift;
+use App\Support\CashDenominations;
 use App\Support\DashboardPulse;
 use App\Support\EmployeeSession;
 use App\Support\Peso;
@@ -163,6 +165,7 @@ class DashboardController extends Controller
                 'sales.payments',
                 'sales.taxes',
                 'cashMovements',
+                'denominations',
                 'hotelPayments.stay:id,client_name',
             ])
             ->where(function ($query) use ($today): void {
@@ -247,7 +250,7 @@ class DashboardController extends Controller
 
     /**
      * @param  Collection<int, PosShift>  $shifts
-     * @return list<array{key: string, title: string, detail: string, time: string, amount_label: string, receipt: array<string, mixed>|null, fields: list<array{label: string, value: string}>}>
+     * @return list<array{key: string, title: string, detail: string, time: string, amount_label: string, receipt: array<string, mixed>|null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>|null}>
      */
     private function shiftActivities(Collection $shifts): array
     {
@@ -269,6 +272,7 @@ class DashboardController extends Controller
                 'fields' => $this->activityFields([
                     ['label' => 'Opened by', 'value' => $this->personLabel($shift->opened_by_name, $shift->opened_by_employee_number)],
                 ]),
+                'counts' => $this->cashCount($shift, PosDenominationCountType::Opening),
             ]);
 
             if ($shift->closed_at !== null) {
@@ -285,6 +289,7 @@ class DashboardController extends Controller
                         ['label' => 'Variance', 'value' => $this->varianceLabel($shift->variance)],
                         ['label' => 'Remit', 'value' => $shift->remit_amount === null ? null : Peso::format($shift->remit_amount)],
                     ]),
+                    'counts' => $this->cashCount($shift, PosDenominationCountType::Closing),
                 ]);
             }
 
@@ -299,6 +304,7 @@ class DashboardController extends Controller
                     'amount_label' => ($sale->isRefunded() ? '-' : '').Peso::format($sale->total),
                     'receipt' => PosSaleDetails::payload($sale, ReportPeriod::ZONE),
                     'fields' => [],
+                    'counts' => null,
                 ]);
             }
 
@@ -318,6 +324,7 @@ class DashboardController extends Controller
                         ['label' => 'Reference', 'value' => $payment->reference_number],
                         ['label' => 'Recorded by', 'value' => $this->personLabel($payment->recorded_by_name, $payment->recorded_by_employee_number)],
                     ]),
+                    'counts' => null,
                 ]);
             }
 
@@ -341,6 +348,7 @@ class DashboardController extends Controller
                         ['label' => 'Recorded by', 'value' => $this->personLabel($movement->employee_name, $movement->employee_number)],
                         ['label' => 'Reason', 'value' => $movement->reason],
                     ]),
+                    'counts' => null,
                 ]);
             }
         }
@@ -370,6 +378,16 @@ class DashboardController extends Controller
             $fields,
             fn (array $field): bool => $field['value'] !== null && $field['value'] !== '',
         ));
+    }
+
+    /**
+     * @return list<array{denomination: string, quantity: int, total: string}>
+     */
+    private function cashCount(PosShift $shift, PosDenominationCountType $type): array
+    {
+        return CashDenominations::breakdown(
+            $shift->denominations->where('count_type', $type),
+        );
     }
 
     private function personLabel(?string $name, ?string $number): string

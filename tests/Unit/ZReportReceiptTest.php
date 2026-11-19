@@ -27,6 +27,13 @@ class ZReportReceiptTest extends TestCase
             'counted_cash' => '₱1,150.00',
             'variance' => '₱0.00',
             'remit_amount' => '₱1,150.00',
+            'opening_counts' => [
+                ['denomination' => '₱1,000.00', 'quantity' => 1, 'total' => '₱1,000.00'],
+            ],
+            'closing_counts' => [
+                ['denomination' => '₱500.00', 'quantity' => 2, 'total' => '₱1,000.00'],
+                ['denomination' => '₱100.00', 'quantity' => 1, 'total' => '₱100.00'],
+            ],
         ]);
 
         $this->assertStringContainsString('Z-REPORT', $text);
@@ -34,6 +41,11 @@ class ZReportReceiptTest extends TestCase
         $this->assertStringContainsString('Cash (2)', $text);
         $this->assertStringContainsString('Amount to remit', $text);
         $this->assertStringContainsString('P1,150.00', $text);
+        $this->assertStringContainsString('Opening cash count', $text);
+        $this->assertStringContainsString('P1,000.00 x 1', $text);
+        $this->assertStringContainsString('Closing cash count', $text);
+        $this->assertStringContainsString('P500.00 x 2', $text);
+        $this->assertStringContainsString('P100.00 x 1', $text);
         $this->assertStringNotContainsString('₱', $text);
     }
 }

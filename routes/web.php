@@ -267,6 +267,9 @@ Route::prefix('backoffice')->group(function () {
             Route::post('receipts/{pos_sale}/commissions/waive', [SalesReceiptController::class, 'waiveCommission'])
                 ->middleware('employee.permission:sales.waive-commission')
                 ->name('receipts.commissions.waive');
+            Route::post('receipts/{pos_sale}/commissions/recompute', [SalesReceiptController::class, 'recomputeCommission'])
+                ->middleware('employee.permission:sales.waive-commission')
+                ->name('receipts.commissions.recompute');
             Route::get('items', [SalesItemController::class, 'index'])->name('items.index');
             Route::get('shifts', [SalesShiftController::class, 'index'])->name('shifts.index');
         });
