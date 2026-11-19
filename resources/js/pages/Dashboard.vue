@@ -325,6 +325,7 @@ function reviewRequest(filing, status) {
                         <button class="flex flex-col gap-1 text-left" type="button" @click="selectedActivity = branch.close_cash">
                             <span class="text-sm text-ink/60 dark:text-foam/60">Close Cash</span>
                             <span class="text-2xl font-medium">{{ branch.close_cash.amount_label }}</span>
+                            <span v-if="branch.close_cash.variance_label" class="text-xs text-ink/55 dark:text-foam/50">{{ branch.close_cash.variance_label }}</span>
                         </button>
                     </div>
                     <div class="flex flex-col gap-3">

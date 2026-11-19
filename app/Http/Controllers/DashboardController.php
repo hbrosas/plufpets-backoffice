@@ -132,8 +132,8 @@ class DashboardController extends Controller
      *     name: string,
      *     pos_href: string|null,
      *     sales_label: string,
-     *     start_cash: array{title: string, time: string, amount_label: string, receipt: null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>},
-     *     close_cash: array{title: string, time: string, amount_label: string, receipt: null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>},
+     *     start_cash: array{title: string, time: string, amount_label: string, variance_label: null, receipt: null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>},
+     *     close_cash: array{title: string, time: string, amount_label: string, variance_label: string|null, receipt: null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>},
      *     activities: list<array{key: string, title: string, detail: string, time: string, amount_label: string, receipt: array<string, mixed>|null, fields: list<array{label: string, value: string}>}>,
      *     open: list<array<string, mixed>>,
      *     online: list<array<string, mixed>>
@@ -287,7 +287,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * @return array{title: string, time: string, amount_label: string, receipt: null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>}
+     * @return array{title: string, time: string, amount_label: string, variance_label: string|null, receipt: null, fields: list<array{label: string, value: string}>, counts: list<array{denomination: string, quantity: int, total: string}>}
      */
     private function cashSummary(?PosShift $shift, PosDenominationCountType $type): array
     {
@@ -307,6 +307,7 @@ class DashboardController extends Controller
                 ? ''
                 : CarbonImmutable::parse($at)->timezone(ReportPeriod::ZONE)->format('M j, g:i A'),
             'amount_label' => $amount === null ? '—' : Peso::format($amount),
+            'variance_label' => $closing && $counted ? $this->varianceLabel($shift->variance) : null,
             'receipt' => null,
             'fields' => $this->activityFields($closing ? [
                 ['label' => 'Closed by', 'value' => $counted ? $this->personLabel($shift->closed_by_name, $shift->closed_by_employee_number) : null],

@@ -116,6 +116,13 @@ function applyDates(dates) {
     loadGuests('checked-out', dates);
 }
 
+function applyDateFilter(event, key) {
+    applyDates({
+        from: key === 'from' ? event.target.value : props.filters.from,
+        to: key === 'to' ? event.target.value : props.filters.to,
+    });
+}
+
 function checkIn() {
     const start = () => hotel.value?.startCheckIn();
 
@@ -221,8 +228,30 @@ function remove(podType) {
         </button>
     </Teleport>
 
-    <div class="flex h-full min-h-[36rem] flex-col">
-        <p v-if="podTypeError" class="mb-3 text-sm text-danger">{{ podTypeError }}</p>
+    <div class="flex h-full min-h-[36rem] flex-col gap-3">
+        <p v-if="podTypeError" class="text-sm text-danger">{{ podTypeError }}</p>
+        <div v-if="tab === 'checked-out'" class="flex shrink-0 items-center gap-2">
+            <label class="flex items-center gap-2 text-sm" for="checked-out-from">
+                From
+                <input
+                    id="checked-out-from"
+                    class="h-10 rounded-xl border border-mist bg-white px-3 text-sm text-ink dark:border-white/10 dark:bg-white/5 dark:text-foam"
+                    type="date"
+                    :value="filters.from"
+                    @change="applyDateFilter($event, 'from')"
+                />
+            </label>
+            <label class="flex items-center gap-2 text-sm" for="checked-out-to">
+                To
+                <input
+                    id="checked-out-to"
+                    class="h-10 rounded-xl border border-mist bg-white px-3 text-sm text-ink dark:border-white/10 dark:bg-white/5 dark:text-foam"
+                    type="date"
+                    :value="filters.to"
+                    @change="applyDateFilter($event, 'to')"
+                />
+            </label>
+        </div>
         <HotelManager
             ref="hotel"
             embedded
@@ -235,7 +264,6 @@ function remove(podType) {
             :options="options"
             :branches="branches"
             :payment-methods="paymentMethods"
-            @filter="applyDates"
         />
     </div>
 

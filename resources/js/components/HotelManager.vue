@@ -20,7 +20,7 @@ const props = defineProps({
     loading: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['close', 'sell', 'drawer', 'filter']);
+const emit = defineEmits(['close', 'sell', 'drawer']);
 
 const selectedId = ref(null);
 const checkingIn = ref(false);
@@ -147,15 +147,6 @@ function startCheckIn() {
     refreshCheckedInLabel();
 }
 
-function applyDateFilter(event, key) {
-    const value = event.target.value;
-
-    emit('filter', {
-        from: key === 'from' ? value : props.dateFrom,
-        to: key === 'to' ? value : props.dateTo,
-    });
-}
-
 function selectStay(stay) {
     selectedId.value = stay.id;
     checkingIn.value = false;
@@ -275,14 +266,14 @@ defineExpose({
     <div
         v-if="open"
         :class="embedded
-            ? 'flex h-full min-h-0 flex-1 flex-col'
+            ? 'flex min-h-0 flex-1 flex-col'
             : 'fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-3 sm:p-6'"
         @click.self="embedded ? undefined : close()"
     >
         <div
             class="flex w-full flex-col overflow-hidden bg-foam text-ink dark:bg-ink dark:text-foam"
             :class="embedded
-                ? 'h-full min-h-0 flex-1 rounded-2xl border border-mist dark:border-white/10'
+                ? 'min-h-0 flex-1 rounded-2xl border border-mist dark:border-white/10'
                 : 'h-[min(92dvh,52rem)] max-w-6xl rounded-2xl'"
             :role="embedded ? undefined : 'dialog'"
             :aria-modal="embedded ? undefined : true"
@@ -307,26 +298,6 @@ defineExpose({
                 <aside class="flex h-full min-h-0 flex-col overflow-hidden border-r border-mist dark:border-white/10">
                     <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 py-4">
                         <p class="shrink-0 text-xs font-medium text-ink/55 dark:text-foam/55">{{ checkedOut ? 'Checked out' : 'Checked in' }}</p>
-                        <div v-if="checkedOut" class="flex shrink-0 flex-col gap-2">
-                            <label class="flex flex-col gap-1 text-xs font-medium text-ink/55 dark:text-foam/55">
-                                From
-                                <input
-                                    class="h-10 rounded-xl border border-mist bg-white px-3 text-sm text-ink dark:border-white/10 dark:bg-white/5 dark:text-foam"
-                                    type="date"
-                                    :value="dateFrom"
-                                    @change="applyDateFilter($event, 'from')"
-                                />
-                            </label>
-                            <label class="flex flex-col gap-1 text-xs font-medium text-ink/55 dark:text-foam/55">
-                                To
-                                <input
-                                    class="h-10 rounded-xl border border-mist bg-white px-3 text-sm text-ink dark:border-white/10 dark:bg-white/5 dark:text-foam"
-                                    type="date"
-                                    :value="dateTo"
-                                    @change="applyDateFilter($event, 'to')"
-                                />
-                            </label>
-                        </div>
                         <p v-if="loading && stays.length === 0" class="text-sm text-ink/55 dark:text-foam/55">Loading guests…</p>
                         <p v-else-if="stays.length === 0" class="text-sm text-ink/55 dark:text-foam/55">{{ emptyLabel }}</p>
                         <ul v-else class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">

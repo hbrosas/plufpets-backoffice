@@ -376,6 +376,7 @@ class DashboardControllerTest extends TestCase
                 ->where('branchOrders.0.start_cash.amount_label', '—')
                 ->where('branchOrders.0.start_cash.counts', [])
                 ->where('branchOrders.0.close_cash.amount_label', '—')
+                ->where('branchOrders.0.close_cash.variance_label', null)
                 ->where('branchOrders.0.close_cash.counts', [])
                 ->where('branchOrders.0.activities', [])
                 ->has('branchOrders.0.open', 1)
@@ -481,6 +482,8 @@ class DashboardControllerTest extends TestCase
             'closed_at' => CarbonImmutable::parse('2026-06-15 00:30:00', 'UTC'),
             'starting_cash' => 500,
             'counted_cash' => 480,
+            'expected_cash' => 500,
+            'variance' => -20,
         ]);
         PosShiftDenomination::factory()->create([
             'pos_shift_id' => $closed->id,
@@ -524,6 +527,7 @@ class DashboardControllerTest extends TestCase
                 ->where('branchOrders.0.start_cash.fields.0.value', 'Hazel Brosas · #10001')
                 ->where('branchOrders.0.start_cash.counts', [])
                 ->where('branchOrders.0.close_cash.amount_label', '—')
+                ->where('branchOrders.0.close_cash.variance_label', null)
                 ->where('branchOrders.0.close_cash.counts', [])
                 ->has('branchOrders.0.activities', 7)
                 ->where('branchOrders.0.activities.0.title', 'Refund')
@@ -544,6 +548,7 @@ class DashboardControllerTest extends TestCase
                     ['denomination' => '₱500.00', 'quantity' => 1, 'total' => '₱500.00'],
                 ])
                 ->where('branchOrders.1.close_cash.amount_label', '₱480.00')
+                ->where('branchOrders.1.close_cash.variance_label', 'Short ₱20.00')
                 ->where('branchOrders.1.close_cash.fields.0.label', 'Closed by')
                 ->where('branchOrders.1.close_cash.fields.0.value', 'Robin Santiago · #10001')
                 ->where('branchOrders.1.close_cash.counts', [
