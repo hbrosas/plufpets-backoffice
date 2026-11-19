@@ -15,6 +15,7 @@ defineOptions({
 
 const props = defineProps({
     pulse: { default: null },
+    categoryTrend: { default: null },
     commissions: { default: null },
     stock: { default: null },
     branchOrders: { type: Array, default: () => [] },
@@ -24,6 +25,22 @@ const props = defineProps({
 });
 
 const hourMax = computed(() => Math.max(...(props.pulse?.hours.map((hour) => hour.amount) ?? [0]), 0));
+
+function selectCategoryTrend(grain) {
+    if (grain === props.categoryTrend?.grain) {
+        return;
+    }
+
+    const query = Object.fromEntries(new URLSearchParams(window.location.search));
+    query.trend = grain;
+
+    router.get('/backoffice/dashboard', query, {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+        only: ['categoryTrend'],
+    });
+}
 const canManageBusiness = computed(() => (usePage().props.employee?.permissions ?? []).includes('business.manage'));
 const employeeView = computed(() => props.commissions?.scope === 'self' && props.attendance !== null);
 const tab = ref('activities');
@@ -218,7 +235,13 @@ function reviewRequest(filing, status) {
                 </article>
             </div>
 
-            <CategorySalesChart :categories="pulse.categories" />
+            <CategorySalesChart
+                v-if="categoryTrend"
+                :categories="categoryTrend.categories"
+                :grain="categoryTrend.grain"
+                :period-label="categoryTrend.label"
+                @change="selectCategoryTrend"
+            />
 
             <article class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
                 <h3 class="text-lg font-medium">Hourly sales</h3>

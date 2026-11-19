@@ -6,7 +6,24 @@ const props = defineProps({
         type: Array,
         required: true,
     },
+    grain: {
+        type: String,
+        default: 'day',
+    },
+    periodLabel: {
+        type: String,
+        default: '',
+    },
 });
+
+const emit = defineEmits(['change']);
+
+const grains = [
+    { value: 'day', label: 'Daily' },
+    { value: 'week', label: 'Weekly' },
+    { value: 'two_weeks', label: 'Every 2 weeks' },
+    { value: 'month', label: 'Monthly' },
+];
 
 const open = ref([]);
 const width = 640;
@@ -16,7 +33,7 @@ const padTop = 8;
 const padBottom = 8;
 
 const charts = computed(() => props.categories.map((category) => {
-    const hours = category.hours ?? [];
+    const hours = category.points ?? [];
     const maxAmount = Math.max(...hours.map((hour) => Number(hour.amount) || 0), 0);
     const maxTransactions = Math.max(...hours.map((hour) => Number(hour.transactions) || 0), 0);
     const plotWidth = width - padX * 2;
@@ -62,19 +79,54 @@ function toggle(name) {
 function transactionLabel(count) {
     return `${count} ${count === 1 ? 'transaction' : 'transactions'}`;
 }
+
+function axisLabels(points) {
+    if (points.length === 0) {
+        return [];
+    }
+
+    if (points.length <= 12) {
+        return points.map((point) => point.label);
+    }
+
+    return [
+        points[0].label,
+        points[Math.floor((points.length - 1) / 2)].label,
+        points[points.length - 1].label,
+    ];
+}
 </script>
 
 <template>
     <section class="flex flex-col gap-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h3 class="text-lg font-medium">Categories</h3>
-            <div class="flex items-center gap-4 text-xs text-ink/55 dark:text-foam/50">
-                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-sm bg-pine" /> Sales</span>
-                <span class="flex items-center gap-1.5"><span class="h-0.5 w-4 bg-ink dark:bg-foam" /> Transactions</span>
+            <div class="flex flex-col gap-1">
+                <h3 class="text-lg font-medium">Categories</h3>
+                <p class="text-sm text-ink/55 dark:text-foam/50">{{ periodLabel }}</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <div class="flex flex-wrap gap-2" role="tablist" aria-label="Category trend">
+                    <button
+                        v-for="item in grains"
+                        :key="item.value"
+                        class="h-9 rounded-xl px-3 text-sm font-medium"
+                        :class="grain === item.value ? 'bg-pine text-foam' : 'border border-mist dark:border-white/15'"
+                        type="button"
+                        role="tab"
+                        :aria-selected="grain === item.value"
+                        @click="emit('change', item.value)"
+                    >
+                        {{ item.label }}
+                    </button>
+                </div>
+                <div class="flex items-center gap-4 text-xs text-ink/55 dark:text-foam/50">
+                    <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-sm bg-pine" /> Sales</span>
+                    <span class="flex items-center gap-1.5"><span class="h-0.5 w-4 bg-ink dark:bg-foam" /> Transactions</span>
+                </div>
             </div>
         </div>
         <p v-if="categories.length === 0" class="rounded-2xl border border-mist bg-white px-5 py-8 text-sm text-ink/55 dark:border-white/10 dark:bg-white/5 dark:text-foam/50">
-            No category sales today.
+            No category sales in this period.
         </p>
         <div v-else class="grid gap-4 lg:grid-cols-2">
             <article
@@ -94,7 +146,7 @@ function transactionLabel(count) {
                     </span>
                     <span class="shrink-0 text-sm font-medium text-pine dark:text-sand">{{ isOpen(category.name) ? 'Hide items' : 'Items' }}</span>
                 </button>
-                <svg class="h-28 w-full text-ink dark:text-foam" :viewBox="`0 0 ${width} ${height}`" role="img" :aria-label="`${category.name} hourly sales and transactions`">
+                <svg class="h-28 w-full text-ink dark:text-foam" :viewBox="`0 0 ${width} ${height}`" role="img" :aria-label="`${category.name} sales and transactions`">
                     <line class="stroke-mist dark:stroke-white/15" :x1="padX" :x2="width - padX" :y1="category.baseline" :y2="category.baseline" />
                     <rect
                         v-for="point in category.points"
@@ -113,9 +165,7 @@ function transactionLabel(count) {
                     </circle>
                 </svg>
                 <div class="flex justify-between gap-2 text-[10px] text-ink/50 dark:text-foam/50">
-                    <span>{{ category.hours[0]?.label }}</span>
-                    <span>{{ category.hours[12]?.label }}</span>
-                    <span>{{ category.hours[23]?.label }}</span>
+                    <span v-for="(label, index) in axisLabels(category.points)" :key="`${category.name}-${index}`">{{ label }}</span>
                 </div>
                 <div v-if="isOpen(category.name)" class="flex flex-col gap-2 border-t border-mist pt-3 dark:border-white/10">
                     <div class="grid grid-cols-[minmax(0,1fr)_7rem_7rem] gap-3 text-xs text-ink/55 dark:text-foam/50">

@@ -42,8 +42,11 @@ class DashboardController extends Controller
             && ! EmployeeSession::allows('inventory.view')
             && $employeeId !== null;
 
+        $trend = $request->string('trend')->toString();
+
         return Inertia::render('Dashboard', [
             'pulse' => $canSeeSales ? $pulse->today() : null,
+            'categoryTrend' => $canSeeSales ? $pulse->categoryTrend($trend) : null,
             'commissions' => $this->commissions($request, $reports, $canSeeAllCommissions, $employeeId),
             'stock' => EmployeeSession::allows('inventory.view') ? $pulse->stock() : null,
             'branchOrders' => $isEmployeeDashboard ? [] : $this->branchOrders(),

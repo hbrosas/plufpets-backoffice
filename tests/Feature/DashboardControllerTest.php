@@ -106,7 +106,7 @@ class DashboardControllerTest extends TestCase
         $yesterday = PosSale::factory()->create([
             'branch_id' => $greenheights->id,
             'pos_shift_id' => $shift->id,
-            'sold_at' => CarbonImmutable::parse('2026-06-14 02:00:00', 'UTC'),
+            'sold_at' => CarbonImmutable::parse('2025-01-01 02:00:00', 'UTC'),
             'total' => 999,
         ]);
         PosSaleItem::factory()->create([
@@ -149,35 +149,121 @@ class DashboardControllerTest extends TestCase
             ->get('/backoffice/dashboard')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->has('pulse.categories', 3)
-                ->where('pulse.categories.0.name', 'Grooming')
-                ->where('pulse.categories.0.transactions', 2)
-                ->where('pulse.categories.0.total', '₱450.00')
-                ->where('pulse.categories.0.hours.10.amount', 300)
-                ->where('pulse.categories.0.hours.10.transactions', 1)
-                ->where('pulse.categories.0.hours.11.amount', 150)
-                ->where('pulse.categories.0.hours.11.transactions', 1)
-                ->where('pulse.categories.0.items.0.name', 'Full groom')
-                ->where('pulse.categories.0.items.0.transactions', 2)
-                ->where('pulse.categories.0.items.0.total', '₱400.00')
-                ->where('pulse.categories.0.items.0.branches.0.name', 'Greenheights')
-                ->where('pulse.categories.0.items.0.branches.0.transactions', 1)
-                ->where('pulse.categories.0.items.0.branches.0.total', '₱300.00')
-                ->where('pulse.categories.0.items.0.branches.1.name', 'San Pedro')
-                ->where('pulse.categories.0.items.0.branches.1.transactions', 1)
-                ->where('pulse.categories.0.items.0.branches.1.total', '₱100.00')
-                ->where('pulse.categories.0.items.1.name', 'Nail trim')
-                ->where('pulse.categories.0.items.1.transactions', 1)
-                ->where('pulse.categories.0.items.1.total', '₱50.00')
-                ->where('pulse.categories.0.items.1.branches.0.name', 'San Pedro')
-                ->where('pulse.categories.0.items.1.branches.0.total', '₱50.00')
-                ->where('pulse.categories.1.name', 'Food')
-                ->where('pulse.categories.1.transactions', 1)
-                ->where('pulse.categories.1.total', '₱200.00')
-                ->where('pulse.categories.2.name', 'Uncategorized')
-                ->where('pulse.categories.2.transactions', 1)
-                ->where('pulse.categories.2.total', '₱40.00')
-                ->where('pulse.categories.2.items.0.name', 'Walk-in extra'));
+                ->where('categoryTrend.grain', 'day')
+                ->where('categoryTrend.label', 'Last 30 days')
+                ->has('categoryTrend.categories', 3)
+                ->has('categoryTrend.categories.0.points', 30)
+                ->where('categoryTrend.categories.0.name', 'Grooming')
+                ->where('categoryTrend.categories.0.transactions', 2)
+                ->where('categoryTrend.categories.0.total', '₱450.00')
+                ->where('categoryTrend.categories.0.points.29.label', 'Jun 15')
+                ->where('categoryTrend.categories.0.points.29.amount', 450)
+                ->where('categoryTrend.categories.0.points.29.transactions', 2)
+                ->where('categoryTrend.categories.0.points.28.amount', 0)
+                ->where('categoryTrend.categories.0.items.0.name', 'Full groom')
+                ->where('categoryTrend.categories.0.items.0.transactions', 2)
+                ->where('categoryTrend.categories.0.items.0.total', '₱400.00')
+                ->where('categoryTrend.categories.0.items.0.branches.0.name', 'Greenheights')
+                ->where('categoryTrend.categories.0.items.0.branches.0.transactions', 1)
+                ->where('categoryTrend.categories.0.items.0.branches.0.total', '₱300.00')
+                ->where('categoryTrend.categories.0.items.0.branches.1.name', 'San Pedro')
+                ->where('categoryTrend.categories.0.items.0.branches.1.transactions', 1)
+                ->where('categoryTrend.categories.0.items.0.branches.1.total', '₱100.00')
+                ->where('categoryTrend.categories.0.items.1.name', 'Nail trim')
+                ->where('categoryTrend.categories.0.items.1.transactions', 1)
+                ->where('categoryTrend.categories.0.items.1.total', '₱50.00')
+                ->where('categoryTrend.categories.0.items.1.branches.0.name', 'San Pedro')
+                ->where('categoryTrend.categories.0.items.1.branches.0.total', '₱50.00')
+                ->where('categoryTrend.categories.1.name', 'Food')
+                ->where('categoryTrend.categories.1.transactions', 1)
+                ->where('categoryTrend.categories.1.total', '₱200.00')
+                ->where('categoryTrend.categories.2.name', 'Uncategorized')
+                ->where('categoryTrend.categories.2.transactions', 1)
+                ->where('categoryTrend.categories.2.total', '₱40.00')
+                ->where('categoryTrend.categories.2.items.0.name', 'Walk-in extra'));
+    }
+
+    public function test_category_trend_groups_sales_by_week_fortnight_and_month(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-06-15 04:00:00', 'UTC'));
+
+        $branch = Branch::factory()->create();
+        $shift = PosShift::factory()->create(['branch_id' => $branch->id]);
+        $category = Category::factory()->create(['name' => 'Grooming']);
+        $variant = CatalogItemVariant::factory()->create([
+            'catalog_item_id' => CatalogItem::factory()->create([
+                'name' => 'Full groom',
+                'category_id' => $category->id,
+            ])->id,
+        ]);
+
+        foreach ([
+            '2026-06-15 02:00:00' => 100,
+            '2026-06-01 02:00:00' => 40,
+            '2026-04-15 02:00:00' => 25,
+            '2025-01-01 02:00:00' => 999,
+        ] as $soldAt => $total) {
+            $sale = PosSale::factory()->create([
+                'branch_id' => $branch->id,
+                'pos_shift_id' => $shift->id,
+                'sold_at' => CarbonImmutable::parse($soldAt, 'UTC'),
+                'total' => $total,
+            ]);
+            PosSaleItem::factory()->create([
+                'pos_sale_id' => $sale->id,
+                'catalog_item_variant_id' => $variant->id,
+                'line_total' => $total,
+            ]);
+        }
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/dashboard?trend=week')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('categoryTrend.grain', 'week')
+                ->where('categoryTrend.label', 'Last 12 weeks')
+                ->has('categoryTrend.categories.0.points', 12)
+                ->where('categoryTrend.categories.0.total', '₱165.00')
+                ->where('categoryTrend.categories.0.points.11.label', 'Jun 15')
+                ->where('categoryTrend.categories.0.points.11.amount', 100)
+                ->where('categoryTrend.categories.0.points.11.transactions', 1)
+                ->where('categoryTrend.categories.0.points.9.label', 'Jun 1')
+                ->where('categoryTrend.categories.0.points.9.amount', 40));
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/dashboard?trend=two_weeks')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('categoryTrend.grain', 'two_weeks')
+                ->where('categoryTrend.label', 'Every 2 weeks')
+                ->has('categoryTrend.categories.0.points', 6)
+                ->where('categoryTrend.categories.0.total', '₱165.00')
+                ->where('categoryTrend.categories.0.points.5.label', 'Jun 15')
+                ->where('categoryTrend.categories.0.points.5.amount', 100)
+                ->where('categoryTrend.categories.0.points.4.label', 'Jun 1')
+                ->where('categoryTrend.categories.0.points.4.amount', 40)
+                ->where('categoryTrend.categories.0.points.0.amount', 25));
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/dashboard?trend=month')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('categoryTrend.grain', 'month')
+                ->where('categoryTrend.label', 'Last 12 months')
+                ->has('categoryTrend.categories.0.points', 12)
+                ->where('categoryTrend.categories.0.total', '₱165.00')
+                ->where('categoryTrend.categories.0.points.11.label', 'Jun 2026')
+                ->where('categoryTrend.categories.0.points.11.amount', 140)
+                ->where('categoryTrend.categories.0.points.11.transactions', 2)
+                ->where('categoryTrend.categories.0.points.9.label', 'Apr 2026')
+                ->where('categoryTrend.categories.0.points.9.amount', 25));
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/dashboard?trend=later')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('categoryTrend.grain', 'day')
+                ->where('categoryTrend.label', 'Last 30 days'));
     }
 
     public function test_sms_credit_balance_is_shared_for_an_employee_who_can_view_it(): void

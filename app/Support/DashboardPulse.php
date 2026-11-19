@@ -28,8 +28,7 @@ class DashboardPulse
      *     discounts: list<array{cashier: string, total: string, flagged: bool}>,
      *     drawer: list<array{cashier: string, branch: string, cash_in: string, cash_out: string, opens: int, flagged: bool}>,
      *     open_shifts: list<array{branch: string, opened_by: string, opened_at: string, starting_cash: string}>,
-     *     variances: list<array{branch: string, closed_by: string, variance: string, direction: string}>,
-     *     categories: list<array{name: string, transactions: int, amount: float, total: string, hours: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>
+     *     variances: list<array{branch: string, closed_by: string, variance: string, direction: string}>
      * }
      */
     public function today(): array
@@ -54,7 +53,27 @@ class DashboardPulse
             'drawer' => $this->drawer($today),
             'open_shifts' => $this->openShifts(),
             'variances' => $this->variances($today),
-            'categories' => $this->categories($today),
+        ];
+    }
+
+    /**
+     * @return array{grain: string, label: string, categories: list<array{name: string, transactions: int, amount: float, total: string, points: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>}
+     */
+    public function categoryTrend(string $grain): array
+    {
+        $grain = in_array($grain, ['day', 'week', 'two_weeks', 'month'], true) ? $grain : 'day';
+        $buckets = $this->trendBuckets($grain);
+        $period = new ReportPeriod(
+            $grain,
+            $this->trendLabel($grain),
+            $buckets[0]['from'],
+            CarbonImmutable::now(ReportPeriod::ZONE)->endOfDay()->utc(),
+        );
+
+        return [
+            'grain' => $grain,
+            'label' => $period->label,
+            'categories' => $this->categories($period, $buckets, $grain),
         ];
     }
 
@@ -317,9 +336,10 @@ class DashboardPulse
     }
 
     /**
-     * @return list<array{name: string, transactions: int, amount: float, total: string, hours: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>
+     * @param  list<array{key: string, label: string, start: string, end: string, from: CarbonImmutable}>  $buckets
+     * @return list<array{name: string, transactions: int, amount: float, total: string, points: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string, branches: list<array{name: string, transactions: int, total: string}>}>}>
      */
-    private function categories(ReportPeriod $period): array
+    private function categories(ReportPeriod $period, array $buckets, string $grain): array
     {
         $items = PosSaleItem::query()
             ->join('pos_sales', 'pos_sales.id', '=', 'pos_sale_items.pos_sale_id')
@@ -346,7 +366,7 @@ class DashboardPulse
 
         return $items
             ->groupBy('category')
-            ->map(function (Collection $rows, string $category): array {
+            ->map(function (Collection $rows, string $category) use ($buckets, $grain): array {
                 $amount = round((float) $rows->sum('line_total'), 2);
 
                 return [
@@ -354,7 +374,7 @@ class DashboardPulse
                     'transactions' => $rows->pluck('pos_sale_id')->unique()->count(),
                     'amount' => $amount,
                     'total' => Peso::format($amount),
-                    'hours' => $this->categoryHours($rows),
+                    'points' => $this->trendPoints($rows, $buckets, $grain),
                     'items' => $rows
                         ->groupBy('product')
                         ->map(function (Collection $itemRows, string $product): array {
@@ -413,31 +433,117 @@ class DashboardPulse
             ->all();
     }
 
+    private function trendLabel(string $grain): string
+    {
+        return match ($grain) {
+            'week' => 'Last 12 weeks',
+            'two_weeks' => 'Every 2 weeks',
+            'month' => 'Last 12 months',
+            default => 'Last 30 days',
+        };
+    }
+
+    /**
+     * @return list<array{key: string, label: string, start: string, end: string, from: CarbonImmutable}>
+     */
+    private function trendBuckets(string $grain): array
+    {
+        $today = CarbonImmutable::now(ReportPeriod::ZONE)->startOfDay();
+
+        $starts = match ($grain) {
+            'week' => collect(range(11, 0))->map(
+                fn (int $weeksAgo): CarbonImmutable => $today->startOfWeek(CarbonImmutable::MONDAY)->subWeeks($weeksAgo),
+            ),
+            'two_weeks' => collect(range(0, 5))->map(
+                fn (int $block): CarbonImmutable => $today->startOfWeek(CarbonImmutable::MONDAY)->subWeeks(10)->addWeeks($block * 2),
+            ),
+            'month' => collect(range(11, 0))->map(
+                fn (int $monthsAgo): CarbonImmutable => $today->startOfMonth()->subMonths($monthsAgo),
+            ),
+            default => collect(range(29, 0))->map(
+                fn (int $daysAgo): CarbonImmutable => $today->subDays($daysAgo),
+            ),
+        };
+
+        return $starts->map(function (CarbonImmutable $start) use ($grain): array {
+            $end = match ($grain) {
+                'week' => $start->addDays(6),
+                'two_weeks' => $start->addDays(13),
+                'month' => $start->endOfMonth()->startOfDay(),
+                default => $start,
+            };
+
+            return [
+                'key' => $grain === 'month' ? $start->format('Y-m') : $start->toDateString(),
+                'label' => $grain === 'month' ? $start->format('M Y') : $start->format('M j'),
+                'start' => $start->toDateString(),
+                'end' => $end->toDateString(),
+                'from' => $start->utc(),
+            ];
+        })->values()->all();
+    }
+
     /**
      * @param  Collection<int, PosSaleItem>  $rows
+     * @param  list<array{key: string, label: string, start: string, end: string, from: CarbonImmutable}>  $buckets
      * @return list<array{label: string, amount: float, transactions: int}>
      */
-    private function categoryHours(Collection $rows): array
+    private function trendPoints(Collection $rows, array $buckets, string $grain): array
     {
-        $hours = collect(range(0, 23))->map(fn (int $hour): array => [
-            'label' => CarbonImmutable::createFromTime($hour, 0, 0, ReportPeriod::ZONE)->format('g A'),
-            'amount' => 0.0,
-            'transactions' => [],
-        ]);
+        $points = [];
 
-        foreach ($rows as $row) {
-            $hour = CarbonImmutable::parse($row->sold_at)->timezone(ReportPeriod::ZONE)->hour;
-            $current = $hours->get($hour);
-            $current['amount'] += (float) $row->line_total;
-            $current['transactions'][$row->pos_sale_id] = true;
-            $hours->put($hour, $current);
+        foreach ($buckets as $bucket) {
+            $points[$bucket['key']] = [
+                'label' => $bucket['label'],
+                'amount' => 0.0,
+                'transactions' => [],
+            ];
         }
 
-        return $hours->map(fn (array $hour): array => [
-            'label' => $hour['label'],
-            'amount' => round($hour['amount'], 2),
-            'transactions' => count($hour['transactions']),
-        ])->values()->all();
+        foreach ($rows as $row) {
+            $soldOn = CarbonImmutable::parse($row->sold_at)->timezone(ReportPeriod::ZONE);
+            $key = $this->trendKey($soldOn, $grain, $buckets);
+
+            if (! isset($points[$key])) {
+                continue;
+            }
+
+            $points[$key]['amount'] += (float) $row->line_total;
+            $points[$key]['transactions'][$row->pos_sale_id] = true;
+        }
+
+        return array_map(fn (array $point): array => [
+            'label' => $point['label'],
+            'amount' => round($point['amount'], 2),
+            'transactions' => count($point['transactions']),
+        ], array_values($points));
+    }
+
+    /**
+     * @param  list<array{key: string, label: string, start: string, end: string, from: CarbonImmutable}>  $buckets
+     */
+    private function trendKey(CarbonImmutable $soldOn, string $grain, array $buckets): string
+    {
+        $key = match ($grain) {
+            'week' => $soldOn->startOfWeek(CarbonImmutable::MONDAY)->toDateString(),
+            'month' => $soldOn->format('Y-m'),
+            'two_weeks' => null,
+            default => $soldOn->toDateString(),
+        };
+
+        if ($key !== null) {
+            return $key;
+        }
+
+        $date = $soldOn->toDateString();
+
+        foreach ($buckets as $bucket) {
+            if ($date >= $bucket['start'] && $date <= $bucket['end']) {
+                return $bucket['key'];
+            }
+        }
+
+        return '';
     }
 
     /**
