@@ -146,17 +146,24 @@ class ShopReports
     }
 
     /**
-     * @return array{label: string, total: string, employees: list<array{name: string, employee_number: string, amount: string}>}
+     * @return array{
+     *     label: string,
+     *     total: string,
+     *     employees: list<array{
+     *         name: string,
+     *         employee_number: string,
+     *         amount: string,
+     *         lines?: list<array{date: string, transaction: string, item: string, amount: string, commission: string}>
+     *     }>
+     * }
      */
-    public function commissions(ReportPeriod $period, ?int $employeeId = null): array
+    public function commissions(ReportPeriod $period, ?int $employeeId = null, bool $withLines = false): array
     {
-        $rows = PosSaleItemCommission::query()
-            ->payable()
-            ->join('pos_sale_items', 'pos_sale_items.id', '=', 'pos_sale_item_commissions.pos_sale_item_id')
-            ->join('pos_sales', 'pos_sales.id', '=', 'pos_sale_items.pos_sale_id')
-            ->whereNull('pos_sales.refunded_at')
-            ->whereBetween('pos_sales.sold_at', [$period->from, $period->to])
-            ->when($employeeId !== null, fn ($query) => $query->where('pos_sale_item_commissions.employee_id', $employeeId))
+        if ($withLines) {
+            return $this->commissionsWithLines($period, $employeeId);
+        }
+
+        $rows = $this->commissionQuery($period, $employeeId)
             ->groupBy(
                 'pos_sale_item_commissions.employee_id',
                 'pos_sale_item_commissions.employee_number',
@@ -191,17 +198,87 @@ class ShopReports
     }
 
     /**
+     * @return array{
+     *     label: string,
+     *     total: string,
+     *     employees: list<array{
+     *         name: string,
+     *         employee_number: string,
+     *         amount: string,
+     *         lines: list<array{date: string, transaction: string, item: string, amount: string, commission: string}>
+     *     }>
+     * }
+     */
+    private function commissionsWithLines(ReportPeriod $period, ?int $employeeId): array
+    {
+        $rows = $this->commissionQuery($period, $employeeId)
+            ->orderByDesc('pos_sales.sold_at')
+            ->orderByDesc('pos_sale_item_commissions.id')
+            ->get([
+                'pos_sale_item_commissions.employee_id',
+                'pos_sale_item_commissions.employee_number',
+                'pos_sale_item_commissions.employee_name',
+                'pos_sale_item_commissions.amount',
+                'pos_sales.number as sale_number',
+                'pos_sales.sold_at',
+                'pos_sale_items.product_name',
+                'pos_sale_items.variant_name',
+                'pos_sale_items.line_total',
+            ]);
+
+        $employees = $rows
+            ->groupBy(fn (PosSaleItemCommission $row): string => implode('|', [
+                (string) $row->employee_id,
+                (string) $row->employee_number,
+                (string) $row->employee_name,
+            ]))
+            ->map(function (Collection $group): array {
+                /** @var PosSaleItemCommission $first */
+                $first = $group->first();
+                $total = (float) $group->sum(fn (PosSaleItemCommission $row): float => (float) $row->amount);
+
+                return [
+                    'name' => $first->employee_name,
+                    'employee_number' => (string) $first->employee_number,
+                    'amount' => Peso::format($total),
+                    'total' => $total,
+                    'lines' => $group->map(fn (PosSaleItemCommission $row): array => [
+                        'date' => Carbon::parse($row->sold_at)->timezone(ReportPeriod::ZONE)->format('M j, Y g:i A'),
+                        'transaction' => (string) $row->sale_number,
+                        'item' => $this->commissionItemName((string) $row->product_name, $row->variant_name),
+                        'amount' => Peso::format($row->line_total),
+                        'commission' => Peso::format($row->amount),
+                    ])->values()->all(),
+                ];
+            })
+            ->sort(function (array $left, array $right): int {
+                $byTotal = $right['total'] <=> $left['total'];
+
+                if ($byTotal !== 0) {
+                    return $byTotal;
+                }
+
+                return strcasecmp($left['name'], $right['name']);
+            })
+            ->values();
+
+        return [
+            'label' => $period->label,
+            'total' => Peso::format($employees->sum('total')),
+            'employees' => $employees->map(function (array $employee): array {
+                unset($employee['total']);
+
+                return $employee;
+            })->all(),
+        ];
+    }
+
+    /**
      * @return list<array{sold_at: string, number: string, item: string, role: string, amount: string}>
      */
     public function commissionLines(ReportPeriod $period, int $employeeId): array
     {
-        return PosSaleItemCommission::query()
-            ->payable()
-            ->join('pos_sale_items', 'pos_sale_items.id', '=', 'pos_sale_item_commissions.pos_sale_item_id')
-            ->join('pos_sales', 'pos_sales.id', '=', 'pos_sale_items.pos_sale_id')
-            ->whereNull('pos_sales.refunded_at')
-            ->whereBetween('pos_sales.sold_at', [$period->from, $period->to])
-            ->where('pos_sale_item_commissions.employee_id', $employeeId)
+        return $this->commissionQuery($period, $employeeId)
             ->orderByDesc('pos_sales.sold_at')
             ->orderByDesc('pos_sale_item_commissions.id')
             ->limit(100)
@@ -214,26 +291,44 @@ class ShopReports
                 'pos_sale_item_commissions.amount',
             ])
             ->map(function (object $row): array {
-                $variant = trim((string) $row->variant_name);
-                $item = (string) $row->product_name;
-
-                if ($variant !== '' && strcasecmp($variant, 'Default') !== 0) {
-                    $item .= ' · '.$variant;
-                }
-
                 $role = $row->role instanceof CommissionRole
                     ? $row->role->value
                     : (string) $row->role;
 
                 return [
-                    'sold_at' => Carbon::parse($row->sold_at)->timezone('Asia/Manila')->format('M j, g:i A'),
+                    'sold_at' => Carbon::parse($row->sold_at)->timezone(ReportPeriod::ZONE)->format('M j, g:i A'),
                     'number' => (string) $row->sale_number,
-                    'item' => $item,
+                    'item' => $this->commissionItemName((string) $row->product_name, $row->variant_name),
                     'role' => ucfirst($role),
                     'amount' => Peso::format($row->amount),
                 ];
             })
             ->all();
+    }
+
+    /**
+     * @return Builder<PosSaleItemCommission>
+     */
+    private function commissionQuery(ReportPeriod $period, ?int $employeeId): Builder
+    {
+        return PosSaleItemCommission::query()
+            ->payable()
+            ->join('pos_sale_items', 'pos_sale_items.id', '=', 'pos_sale_item_commissions.pos_sale_item_id')
+            ->join('pos_sales', 'pos_sales.id', '=', 'pos_sale_items.pos_sale_id')
+            ->whereNull('pos_sales.refunded_at')
+            ->whereBetween('pos_sales.sold_at', [$period->from, $period->to])
+            ->when($employeeId !== null, fn (Builder $query): Builder => $query->where('pos_sale_item_commissions.employee_id', $employeeId));
+    }
+
+    private function commissionItemName(string $product, mixed $variant): string
+    {
+        $variant = trim((string) $variant);
+
+        if ($variant !== '' && strcasecmp($variant, 'Default') !== 0) {
+            return $product.' · '.$variant;
+        }
+
+        return $product;
     }
 
     /**

@@ -6,7 +6,6 @@ use App\Enums\PosCashMovementType;
 use App\Enums\PrinterRole;
 use App\Http\Requests\SalesShiftFilterRequest;
 use App\Models\Branch;
-use App\Models\HotelStayPayment;
 use App\Models\PosCashMovement;
 use App\Models\PosSale;
 use App\Models\PosShift;
@@ -28,12 +27,11 @@ class SalesShiftController extends Controller
                     ->where('is_active', true)
                     ->orderByDesc('is_default')
                     ->orderBy('id'),
-                'sales' => fn ($query) => $query->orderBy('sold_at')->orderBy('id')->with([
-                    'items:id,pos_sale_id,product_name,variant_name,quantity,line_total',
-                    'payments:id,pos_sale_id,payment_method_name,amount',
+                'sales' => fn ($query) => $query->with([
+                    'items:id,pos_sale_id,quantity',
+                    'payments:id,pos_sale_id,payment_method_name,is_cash,amount',
                 ]),
                 'cashMovements',
-                'hotelPayments.stay:id,client_name',
             ])
             ->inPeriod($filters)
             ->orderByDesc('opened_at')
@@ -77,99 +75,71 @@ class SalesShiftController extends Controller
             'receipt_printer' => $shift->isOpen()
                 ? null
                 : $shift->branch?->printers->first()?->toSettingsPayload(),
-            'transactions' => $this->transactions($shift),
+            'z_report' => $this->zReport($shift),
         ];
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return array{
+     *     payments: list<array{name: string, count: int, total: string}>,
+     *     item_count: int,
+     *     sales_total: string,
+     *     starting_cash: string,
+     *     cash_sales: string,
+     *     cash_in: string,
+     *     cash_out: string,
+     *     expected_cash: string,
+     *     counted_cash: string,
+     *     variance: string,
+     *     remit_amount: string
+     * }|null
      */
-    private function transactions(PosShift $shift): array
+    private function zReport(PosShift $shift): ?array
     {
-        $timezone = config('app.timezone');
-        $rows = collect();
-        $hotelCashMovementIds = $shift->hotelPayments
-            ->pluck('pos_cash_movement_id')
-            ->filter()
-            ->all();
-
-        if ((float) $shift->starting_cash > 0) {
-            $rows->push([
-                'key' => 'starting-'.$shift->id,
-                'sort' => $shift->opened_at?->timestamp ?? 0,
-                'type' => 'Starting cash',
-                'title' => 'Starting cash',
-                'time' => $shift->opened_at?->timezone($timezone)->format('g:i A'),
-                'actor' => $shift->opened_by_name,
-                'detail' => '',
-                'amount' => Peso::format($shift->starting_cash),
-            ]);
+        if ($shift->isOpen()) {
+            return null;
         }
 
-        foreach ($shift->sales as $sale) {
-            $rows->push([
-                'key' => 'sale-'.$sale->id,
-                'sort' => $sale->sold_at?->timestamp ?? 0,
-                'type' => $sale->isRefunded() ? 'Refunded sale' : 'Sale',
-                'title' => $sale->number,
-                'time' => $sale->sold_at?->timezone($timezone)->format('g:i A'),
-                'actor' => $sale->sold_by_name,
-                'detail' => $sale->items->map(function ($item): string {
-                    $label = $item->variant_name === 'Default'
-                        ? $item->product_name
-                        : $item->product_name.' · '.$item->variant_name;
+        $sales = $shift->sales->filter(fn (PosSale $sale): bool => ! $sale->isRefunded())->values();
+        $payments = $sales
+            ->flatMap(function (PosSale $sale) {
+                if ($sale->payments->isNotEmpty()) {
+                    return $sale->payments;
+                }
 
-                    return $item->quantity.' × '.$label;
-                })->implode(', '),
-                'amount' => ($sale->isRefunded() ? '-' : '').Peso::format($sale->total),
-            ]);
-        }
-
-        foreach ($shift->hotelPayments as $payment) {
-            /** @var HotelStayPayment $payment */
-            $rows->push([
-                'key' => 'hotel-payment-'.$payment->id,
-                'sort' => $payment->recorded_at?->timestamp ?? 0,
-                'type' => 'Hotel payment',
-                'title' => 'Hotel payment',
-                'time' => $payment->recorded_at?->timezone($timezone)->format('g:i A'),
-                'actor' => $payment->recorded_by_name,
-                'detail' => (string) $payment->stay?->client_name,
-                'amount' => Peso::format($payment->amount),
-            ]);
-        }
-
-        foreach ($shift->cashMovements as $movement) {
-            /** @var PosCashMovement $movement */
-            if (in_array($movement->id, $hotelCashMovementIds, true)) {
-                continue;
-            }
-
-            $amount = Peso::format($movement->amount);
-            $rows->push([
-                'key' => 'cash-'.$movement->id,
-                'sort' => $movement->recorded_at?->timestamp ?? 0,
-                'type' => $movement->type->label(),
-                'title' => $movement->type->label(),
-                'time' => $movement->recorded_at?->timezone($timezone)->format('g:i A'),
-                'actor' => $movement->employee_name,
-                'detail' => $movement->reason,
-                'amount' => match ($movement->type) {
-                    PosCashMovementType::CashOut => '-'.$amount,
-                    PosCashMovementType::OpenDrawer => '',
-                    PosCashMovementType::CashIn => $amount,
-                },
-            ]);
-        }
-
-        return $rows
-            ->sortByDesc('sort')
-            ->values()
-            ->map(function (array $row): array {
-                unset($row['sort']);
-
-                return $row;
+                return collect([(object) [
+                    'payment_method_name' => $sale->payment_method_name,
+                    'amount' => $sale->total,
+                ]]);
             })
+            ->groupBy('payment_method_name')
+            ->map(fn ($rows): array => [
+                'name' => (string) $rows->first()->payment_method_name,
+                'count' => $rows->count(),
+                'total' => Peso::format($rows->sum('amount')),
+            ])
+            ->values()
             ->all();
+        $cashSales = $sales->sum(fn (PosSale $sale): float => (float) $sale->payments
+            ->where('is_cash', true)
+            ->sum(fn ($payment): float => (float) $payment->amount));
+
+        return [
+            'payments' => $payments,
+            'item_count' => (int) $sales->sum(fn (PosSale $sale): int => (int) $sale->items->sum('quantity')),
+            'sales_total' => Peso::format($sales->sum('total')),
+            'starting_cash' => Peso::format($shift->starting_cash),
+            'cash_sales' => Peso::format($cashSales),
+            'cash_in' => Peso::format($shift->cashMovements
+                ->where('type', PosCashMovementType::CashIn)
+                ->sum(fn (PosCashMovement $movement): float => (float) $movement->amount)),
+            'cash_out' => Peso::format($shift->cashMovements
+                ->where('type', PosCashMovementType::CashOut)
+                ->sum(fn (PosCashMovement $movement): float => (float) $movement->amount)),
+            'expected_cash' => Peso::format($shift->expected_cash),
+            'counted_cash' => Peso::format($shift->counted_cash),
+            'variance' => Peso::format($shift->variance),
+            'remit_amount' => Peso::format($shift->remit_amount),
+        ];
     }
 }

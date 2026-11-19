@@ -18,6 +18,7 @@ use App\Models\PosShift;
 use App\Support\DashboardPulse;
 use App\Support\EmployeeSession;
 use App\Support\Peso;
+use App\Support\PosSaleDetails;
 use App\Support\ReportPeriod;
 use App\Support\ShopReports;
 use Carbon\CarbonImmutable;
@@ -129,7 +130,7 @@ class DashboardController extends Controller
      *     pos_href: string|null,
      *     sales_label: string,
      *     cash_label: string,
-     *     activities: list<array{key: string, title: string, detail: string, time: string, amount_label: string}>,
+     *     activities: list<array{key: string, title: string, detail: string, time: string, amount_label: string, receipt: array<string, mixed>|null, fields: list<array{label: string, value: string}>}>,
      *     open: list<array<string, mixed>>,
      *     online: list<array<string, mixed>>
      * }>
@@ -156,7 +157,14 @@ class DashboardController extends Controller
             ->get()
             ->groupBy('branch_id');
         $shifts = PosShift::query()
-            ->with(['sales.payments', 'cashMovements', 'hotelPayments.stay:id,client_name'])
+            ->with([
+                'sales.branch:id,name',
+                'sales.items.commissions',
+                'sales.payments',
+                'sales.taxes',
+                'cashMovements',
+                'hotelPayments.stay:id,client_name',
+            ])
             ->where(function ($query) use ($today): void {
                 $query->where(fn ($open) => $open->open())
                     ->orWhereBetween('opened_at', [$today->from, $today->to])
@@ -239,7 +247,7 @@ class DashboardController extends Controller
 
     /**
      * @param  Collection<int, PosShift>  $shifts
-     * @return list<array{key: string, title: string, detail: string, time: string, amount_label: string}>
+     * @return list<array{key: string, title: string, detail: string, time: string, amount_label: string, receipt: array<string, mixed>|null, fields: list<array{label: string, value: string}>}>
      */
     private function shiftActivities(Collection $shifts): array
     {
@@ -257,6 +265,10 @@ class DashboardController extends Controller
                 'detail' => (string) $shift->opened_by_name,
                 'at' => $shift->opened_at,
                 'amount_label' => Peso::format($shift->starting_cash),
+                'receipt' => null,
+                'fields' => $this->activityFields([
+                    ['label' => 'Opened by', 'value' => $this->personLabel($shift->opened_by_name, $shift->opened_by_employee_number)],
+                ]),
             ]);
 
             if ($shift->closed_at !== null) {
@@ -266,6 +278,13 @@ class DashboardController extends Controller
                     'detail' => (string) $shift->closed_by_name,
                     'at' => $shift->closed_at,
                     'amount_label' => Peso::format($shift->counted_cash),
+                    'receipt' => null,
+                    'fields' => $this->activityFields([
+                        ['label' => 'Closed by', 'value' => $this->personLabel($shift->closed_by_name, $shift->closed_by_employee_number)],
+                        ['label' => 'Expected cash', 'value' => $shift->expected_cash === null ? null : Peso::format($shift->expected_cash)],
+                        ['label' => 'Variance', 'value' => $this->varianceLabel($shift->variance)],
+                        ['label' => 'Remit', 'value' => $shift->remit_amount === null ? null : Peso::format($shift->remit_amount)],
+                    ]),
                 ]);
             }
 
@@ -278,6 +297,8 @@ class DashboardController extends Controller
                         ->implode(' · '),
                     'at' => $sale->isRefunded() ? $sale->refunded_at : $sale->sold_at,
                     'amount_label' => ($sale->isRefunded() ? '-' : '').Peso::format($sale->total),
+                    'receipt' => PosSaleDetails::payload($sale, ReportPeriod::ZONE),
+                    'fields' => [],
                 ]);
             }
 
@@ -288,6 +309,15 @@ class DashboardController extends Controller
                     'detail' => (string) $payment->stay?->client_name,
                     'at' => $payment->recorded_at,
                     'amount_label' => Peso::format($payment->amount),
+                    'receipt' => null,
+                    'fields' => $this->activityFields([
+                        ['label' => 'Client', 'value' => $payment->stay?->client_name],
+                        ['label' => 'Payment', 'value' => $payment->payment_method_name],
+                        ['label' => 'Tendered', 'value' => $payment->is_cash ? Peso::format($payment->amount_tendered) : null],
+                        ['label' => 'Change', 'value' => $payment->is_cash ? Peso::format($payment->change_due) : null],
+                        ['label' => 'Reference', 'value' => $payment->reference_number],
+                        ['label' => 'Recorded by', 'value' => $this->personLabel($payment->recorded_by_name, $payment->recorded_by_employee_number)],
+                    ]),
                 ]);
             }
 
@@ -306,6 +336,11 @@ class DashboardController extends Controller
                     'amount_label' => $movement->type === PosCashMovementType::CashOut
                         ? '-'.Peso::format($movement->amount)
                         : Peso::format($movement->amount),
+                    'receipt' => null,
+                    'fields' => $this->activityFields([
+                        ['label' => 'Recorded by', 'value' => $this->personLabel($movement->employee_name, $movement->employee_number)],
+                        ['label' => 'Reason', 'value' => $movement->reason],
+                    ]),
                 ]);
             }
         }
@@ -323,6 +358,49 @@ class DashboardController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  list<array{label: string, value: string|null}>  $fields
+     * @return list<array{label: string, value: string}>
+     */
+    private function activityFields(array $fields): array
+    {
+        return array_values(array_filter(
+            $fields,
+            fn (array $field): bool => $field['value'] !== null && $field['value'] !== '',
+        ));
+    }
+
+    private function personLabel(?string $name, ?string $number): string
+    {
+        $name = trim((string) $name);
+        $number = trim((string) $number);
+
+        if ($name === '') {
+            return $number === '' ? '' : '#'.$number;
+        }
+
+        if ($number === '') {
+            return $name;
+        }
+
+        return $name.' · #'.$number;
+    }
+
+    private function varianceLabel(mixed $variance): ?string
+    {
+        if ($variance === null || $variance === '') {
+            return null;
+        }
+
+        $amount = (float) $variance;
+
+        if ($amount === 0.0) {
+            return Peso::format(0);
+        }
+
+        return ($amount < 0 ? 'Short ' : 'Over ').Peso::format(abs($amount));
     }
 
     /**

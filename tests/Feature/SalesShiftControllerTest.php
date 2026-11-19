@@ -85,10 +85,15 @@ class SalesShiftControllerTest extends TestCase
             ->where('shifts.data.0.z_report_print_href', '/backoffice/pos/register/'.$branch->id.'/shifts/'.$closed->id.'/z-report?print=1')
             ->where('shifts.data.0.receipt_printer.bluetooth_id', 'bt-greenheights')
             ->where('shifts.data.0.receipt_printer.device_name', 'Y58_2052')
-            ->where('shifts.data.0.transactions.0.title', 'POS-SHIFT-1')
-            ->where('shifts.data.0.transactions.0.type', 'Sale')
+            ->where('shifts.data.0.z_report.payments.0.name', 'Cash')
+            ->where('shifts.data.0.z_report.payments.0.count', 1)
+            ->where('shifts.data.0.z_report.payments.0.total', '₱250.00')
+            ->where('shifts.data.0.z_report.sales_total', '₱250.00')
+            ->where('shifts.data.0.z_report.cash_out', '₱20.00')
+            ->where('shifts.data.0.z_report.remit_amount', '₱0.00')
             ->where('shifts.data.1.id', $open->id)
             ->where('shifts.data.1.status', 'Open')
+            ->where('shifts.data.1.z_report', null)
             ->where('shifts.data.1.z_report_href', null)
             ->where('shifts.data.1.z_report_print_href', null));
     }

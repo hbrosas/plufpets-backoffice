@@ -6,6 +6,8 @@ import SalesRefundModal from '../../../components/SalesRefundModal.vue';
 const props = defineProps({
     receipt: { type: Object, required: true },
     canWaive: { type: Boolean, default: false },
+    canRefund: { type: Boolean, default: true },
+    showTitle: { type: Boolean, default: true },
 });
 
 const refundOpen = ref(false);
@@ -41,7 +43,7 @@ function waiveCommission() {
         <section class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div class="flex flex-col gap-1">
-                    <h1 class="text-lg font-medium">{{ receipt.number }}</h1>
+                    <h1 v-if="showTitle" class="text-lg font-medium">{{ receipt.number }}</h1>
                     <p class="text-sm text-ink/60 dark:text-foam/60">{{ receipt.sold_at }}</p>
                     <p v-if="receipt.is_refunded" class="text-sm text-danger">
                         Refunded {{ receipt.refunded_at }} by {{ receipt.refunded_by }}
@@ -51,7 +53,7 @@ function waiveCommission() {
                 <div class="flex flex-col items-end gap-2">
                     <p class="text-2xl font-medium">{{ receipt.total }}</p>
                     <button
-                        v-if="!receipt.is_refunded"
+                        v-if="canRefund && !receipt.is_refunded"
                         class="h-10 rounded-xl bg-danger px-4 text-sm font-medium text-foam"
                         type="button"
                         @click="refundOpen = true"
@@ -92,6 +94,13 @@ function waiveCommission() {
                             <p class="font-medium">{{ item.product }}</p>
                             <p v-if="item.variant && item.variant !== 'Default'" class="text-xs text-ink/50">{{ item.variant }}</p>
                             <p v-if="item.notes" class="text-xs text-ink/50">{{ item.notes }}</p>
+                            <p
+                                v-for="(modifier, modifierIndex) in item.modifiers ?? []"
+                                :key="`${item.id}-modifier-${modifierIndex}`"
+                                class="text-xs text-ink/50"
+                            >
+                                {{ modifier.name }}<span v-if="modifier.option">: {{ modifier.option }}</span>
+                            </p>
                         </td>
                         <td class="px-4 py-3">{{ item.quantity }}</td>
                         <td class="px-4 py-3">{{ item.unit_price }}</td>
@@ -153,6 +162,10 @@ function waiveCommission() {
                         <span>
                             {{ payment.name }}
                             <span v-if="payment.reference" class="text-ink/50"> · {{ payment.reference }}</span>
+                            <span v-if="payment.tendered" class="block text-xs text-ink/50">
+                                Tendered {{ payment.tendered }}
+                                <span v-if="payment.change"> · Change {{ payment.change }}</span>
+                            </span>
                         </span>
                         <span>{{ payment.amount }}</span>
                     </li>

@@ -210,7 +210,8 @@ class ReportControllerTest extends TestCase
                 ->where('report.total', '₱47.00')
                 ->has('report.employees', 1)
                 ->where('report.employees.0.name', 'Ada Groomer')
-                ->where('report.employees.0.amount', '₱47.00'));
+                ->where('report.employees.0.amount', '₱47.00')
+                ->has('report.employees.0.lines', 3));
 
         $this->actingAsEmployee($viewer)
             ->get('/backoffice/reports/commissions?preset=week')
@@ -230,7 +231,10 @@ class ReportControllerTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('report.label', 'Jun 8, 2026')
-                ->where('report.total', '₱10.00'));
+                ->where('report.total', '₱10.00')
+                ->has('report.employees.0.lines', 1)
+                ->where('report.employees.0.lines.0.date', 'Jun 8, 2026 9:00 AM')
+                ->where('report.employees.0.lines.0.commission', '₱10.00'));
     }
 
     public function test_commissions_report_lists_every_employee_for_a_sales_viewer(): void
@@ -256,7 +260,69 @@ class ReportControllerTest extends TestCase
                 ->where('report.employees.0.name', 'Ben Cashier')
                 ->where('report.employees.0.amount', '₱40.00')
                 ->where('report.employees.1.name', 'Ada Groomer')
-                ->where('report.employees.1.amount', '₱25.00'));
+                ->where('report.employees.1.amount', '₱25.00')
+                ->has('report.employees.0.lines', 1)
+                ->where('report.employees.0.lines.0.commission', '₱40.00')
+                ->has('report.employees.1.lines', 1)
+                ->where('report.employees.1.lines.0.commission', '₱25.00'));
+    }
+
+    public function test_commissions_report_lists_each_employees_transactions_in_the_filtered_period(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-06-15 04:00:00', 'UTC'));
+
+        $viewer = $this->employeeWith(['sales.view', 'dashboard.view'], 'Ada Groomer', '30001');
+        $branch = Branch::factory()->create();
+        $later = $this->sale($branch, '2026-06-15 03:00:00', 200);
+        $later->update(['number' => 'POS-LATER']);
+        $laterItem = PosSaleItem::factory()->create([
+            'pos_sale_id' => $later->id,
+            'product_name' => 'The Full Pluf',
+            'variant_name' => 'Large',
+            'line_total' => 200,
+        ]);
+        PosSaleItemCommission::factory()->create([
+            'pos_sale_item_id' => $laterItem->id,
+            'employee_id' => $viewer->id,
+            'employee_number' => $viewer->employee_number,
+            'employee_name' => $viewer->name,
+            'amount' => 20,
+        ]);
+        $earlier = $this->sale($branch, '2026-06-15 02:00:00', 80);
+        $earlier->update(['number' => 'POS-EARLY']);
+        $earlierItem = PosSaleItem::factory()->create([
+            'pos_sale_id' => $earlier->id,
+            'product_name' => 'Shampoo',
+            'variant_name' => 'Default',
+            'line_total' => 80,
+        ]);
+        PosSaleItemCommission::factory()->create([
+            'pos_sale_item_id' => $earlierItem->id,
+            'employee_id' => $viewer->id,
+            'employee_number' => $viewer->employee_number,
+            'employee_name' => $viewer->name,
+            'amount' => 8,
+        ]);
+        $this->commission($viewer, '2026-05-20 01:00:00', 7);
+        $this->commission($viewer, '2026-06-15 01:00:00', 80, refunded: true);
+
+        $this->actingAsEmployee($viewer)
+            ->get('/backoffice/reports/commissions')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('report.total', '₱28.00')
+                ->has('report.employees', 1)
+                ->has('report.employees.0.lines', 2)
+                ->where('report.employees.0.lines.0.date', 'Jun 15, 2026 11:00 AM')
+                ->where('report.employees.0.lines.0.transaction', 'POS-LATER')
+                ->where('report.employees.0.lines.0.item', 'The Full Pluf · Large')
+                ->where('report.employees.0.lines.0.amount', '₱200.00')
+                ->where('report.employees.0.lines.0.commission', '₱20.00')
+                ->where('report.employees.0.lines.1.date', 'Jun 15, 2026 10:00 AM')
+                ->where('report.employees.0.lines.1.transaction', 'POS-EARLY')
+                ->where('report.employees.0.lines.1.item', 'Shampoo')
+                ->where('report.employees.0.lines.1.amount', '₱80.00')
+                ->where('report.employees.0.lines.1.commission', '₱8.00'));
     }
 
     public function test_sales_export_includes_receipts_lines_and_totals(): void

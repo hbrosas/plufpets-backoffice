@@ -32,6 +32,6 @@ defineProps({
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <CommissionList :report="report" :scope="scope" />
+        <CommissionList :report="report" :scope="scope" expandable />
     </div>
 </template>

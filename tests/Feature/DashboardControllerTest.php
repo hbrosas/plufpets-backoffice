@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CommissionRole;
 use App\Enums\HolidayType;
 use App\Enums\PayrollFilingStatus;
 use App\Enums\PosCashMovementType;
@@ -20,8 +21,10 @@ use App\Models\PayrollFiling;
 use App\Models\PosCashMovement;
 use App\Models\PosOpenOrder;
 use App\Models\PosSale;
+use App\Models\PosSaleItem;
 use App\Models\PosSaleItemCommission;
 use App\Models\PosSalePayment;
+use App\Models\PosSaleTax;
 use App\Models\PosShift;
 use App\Models\Role;
 use App\Models\SmsCreditBalance;
@@ -493,6 +496,9 @@ class DashboardControllerTest extends TestCase
                 ->where('branchOrders.0.activities.0.title', 'Refund')
                 ->where('branchOrders.0.activities.0.amount_label', '-₱40.00')
                 ->where('branchOrders.0.activities.0.time', 'Jun 15, 11:45 AM')
+                ->where('branchOrders.0.activities.0.receipt.number', 'POS-BACK')
+                ->where('branchOrders.0.activities.0.receipt.is_refunded', true)
+                ->where('branchOrders.0.activities.0.receipt.total', '₱40.00')
                 ->where('branchOrders.0.activities.1.title', 'Cash out')
                 ->where('branchOrders.0.activities.1.amount_label', '-₱20.00')
                 ->where('branchOrders.1.name', 'San Pedro')
@@ -570,8 +576,115 @@ class DashboardControllerTest extends TestCase
                 ->where('branchOrders.0.activities', fn ($rows) => $rows->contains(
                     fn ($row) => $row['title'] === 'Hotel payment'
                         && $row['detail'] === 'Mina Cruz'
-                        && $row['amount_label'] === '₱500.00',
+                        && $row['amount_label'] === '₱500.00'
+                        && $row['receipt'] === null
+                        && collect($row['fields'])->contains(
+                            fn (array $field): bool => $field['label'] === 'Client' && $field['value'] === 'Mina Cruz',
+                        ),
                 ) && $rows->doesntContain(fn ($row) => $row['title'] === 'Cash in')));
+    }
+
+    public function test_shift_activity_transaction_includes_the_receipt_details(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-06-15 04:00:00', 'UTC'));
+
+        $branch = Branch::factory()->create(['name' => 'Greenheights']);
+        $viewer = $this->employeeWith(['dashboard.view', 'sales.view']);
+        $shift = PosShift::factory()->create([
+            'branch_id' => $branch->id,
+            'opened_by_name' => 'Hazel Brosas',
+            'opened_by_employee_number' => '10001',
+            'opened_at' => CarbonImmutable::parse('2026-06-15 01:00:00', 'UTC'),
+            'starting_cash' => 1000,
+        ]);
+        $sale = PosSale::factory()->create([
+            'pos_shift_id' => $shift->id,
+            'branch_id' => $branch->id,
+            'number' => 'POS-DETAIL',
+            'payment_method_name' => 'Cash',
+            'is_cash' => true,
+            'delivery_method_name' => 'Pickup',
+            'delivery_fee' => 15,
+            'subtotal' => 200,
+            'tax_total' => 24,
+            'total' => 239,
+            'sold_by_name' => 'Hazel Brosas',
+            'sold_by_employee_number' => '10001',
+            'sold_at' => CarbonImmutable::parse('2026-06-15 02:00:00', 'UTC'),
+        ]);
+        $item = PosSaleItem::factory()->create([
+            'pos_sale_id' => $sale->id,
+            'product_name' => 'The Full Pluf',
+            'variant_name' => 'Large',
+            'notes' => 'No onions',
+            'modifiers' => [['name' => 'Sauce', 'option' => 'Gravy', 'price' => '0.00']],
+            'quantity' => 2,
+            'unit_price' => 100,
+            'line_total' => 200,
+            'is_free' => false,
+        ]);
+        PosSaleItemCommission::factory()->create([
+            'pos_sale_item_id' => $item->id,
+            'employee_number' => '30001',
+            'employee_name' => 'Ada Groomer',
+            'role' => CommissionRole::Assigned,
+            'amount' => 20,
+        ]);
+        PosSalePayment::factory()->create([
+            'pos_sale_id' => $sale->id,
+            'payment_method_name' => 'Cash',
+            'is_cash' => true,
+            'amount' => 239,
+            'amount_tendered' => 250,
+            'change_due' => 11,
+        ]);
+        PosSaleTax::factory()->create([
+            'pos_sale_id' => $sale->id,
+            'name' => 'VAT',
+            'amount' => 24,
+        ]);
+
+        $this->actingAsEmployee($viewer)
+            ->get('/backoffice/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('branchOrders.0.activities.0.title', 'Transaction')
+                ->where('branchOrders.0.activities.0.detail', 'POS-DETAIL · Hazel Brosas · Cash')
+                ->where('branchOrders.0.activities.0.amount_label', '₱239.00')
+                ->where('branchOrders.0.activities.0.receipt.number', 'POS-DETAIL')
+                ->where('branchOrders.0.activities.0.receipt.sold_at', 'Jun 15, 2026 10:00 AM')
+                ->where('branchOrders.0.activities.0.receipt.branch', 'Greenheights')
+                ->where('branchOrders.0.activities.0.receipt.cashier', 'Hazel Brosas')
+                ->where('branchOrders.0.activities.0.receipt.employee_number', '10001')
+                ->where('branchOrders.0.activities.0.receipt.delivery', 'Pickup')
+                ->where('branchOrders.0.activities.0.receipt.subtotal', '₱200.00')
+                ->where('branchOrders.0.activities.0.receipt.delivery_fee', '₱15.00')
+                ->where('branchOrders.0.activities.0.receipt.tax', '₱24.00')
+                ->where('branchOrders.0.activities.0.receipt.total', '₱239.00')
+                ->where('branchOrders.0.activities.0.receipt.is_refunded', false)
+                ->where('branchOrders.0.activities.0.receipt.items.0.product', 'The Full Pluf')
+                ->where('branchOrders.0.activities.0.receipt.items.0.variant', 'Large')
+                ->where('branchOrders.0.activities.0.receipt.items.0.quantity', 2)
+                ->where('branchOrders.0.activities.0.receipt.items.0.unit_price', '₱100.00')
+                ->where('branchOrders.0.activities.0.receipt.items.0.line_total', '₱200.00')
+                ->where('branchOrders.0.activities.0.receipt.items.0.notes', 'No onions')
+                ->where('branchOrders.0.activities.0.receipt.items.0.modifiers.0.name', 'Sauce')
+                ->where('branchOrders.0.activities.0.receipt.items.0.modifiers.0.option', 'Gravy')
+                ->where('branchOrders.0.activities.0.receipt.payments.0.name', 'Cash')
+                ->where('branchOrders.0.activities.0.receipt.payments.0.amount', '₱239.00')
+                ->where('branchOrders.0.activities.0.receipt.payments.0.tendered', '₱250.00')
+                ->where('branchOrders.0.activities.0.receipt.payments.0.change', '₱11.00')
+                ->where('branchOrders.0.activities.0.receipt.taxes.0.name', 'VAT')
+                ->where('branchOrders.0.activities.0.receipt.taxes.0.amount', '₱24.00')
+                ->where('branchOrders.0.activities.0.receipt.commissions.0.employee_name', 'Ada Groomer')
+                ->where('branchOrders.0.activities.0.receipt.commissions.0.employee_number', '30001')
+                ->where('branchOrders.0.activities.0.receipt.commissions.0.role', 'Assigned')
+                ->where('branchOrders.0.activities.0.receipt.commissions.0.item', 'The Full Pluf · Large')
+                ->where('branchOrders.0.activities.0.receipt.commissions.0.amount', '₱20.00')
+                ->where('branchOrders.0.activities.1.title', 'Starting cash')
+                ->where('branchOrders.0.activities.1.receipt', null)
+                ->where('branchOrders.0.activities.1.fields.0.label', 'Opened by')
+                ->where('branchOrders.0.activities.1.fields.0.value', 'Hazel Brosas · #10001'));
     }
 
     public function test_calendar_shows_guests_after_they_check_out(): void

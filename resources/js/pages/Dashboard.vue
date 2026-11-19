@@ -6,6 +6,7 @@ import CommissionPeriodFilter from '../components/CommissionPeriodFilter.vue';
 import CountBadge from '../components/CountBadge.vue';
 import LowStockList from '../components/LowStockList.vue';
 import AdminLayout from '../layouts/AdminLayout.vue';
+import ReceiptView from './Sales/Receipts/Show.vue';
 
 defineOptions({
     layout: AdminLayout,
@@ -35,6 +36,7 @@ const tabs = computed(() => [
 ]);
 const requestsOpen = ref(false);
 const selectedDay = ref(null);
+const selectedActivity = ref(null);
 const reviewNotes = reactive({});
 const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const calendarDays = computed(() => {
@@ -321,15 +323,22 @@ function reviewRequest(filing, status) {
                     <div class="flex flex-col gap-2">
                         <h4 class="text-sm font-medium">Shift activity</h4>
                         <p v-if="branch.activities.length === 0" class="text-sm text-ink/55 dark:text-foam/50">No shift activity yet.</p>
-                        <ul v-else class="flex max-h-64 flex-col gap-2 overflow-y-auto rounded-xl border border-mist p-3 dark:border-white/10">
-                            <li v-for="activity in branch.activities" :key="activity.key" class="flex items-baseline justify-between gap-3 text-sm">
-                                <span class="min-w-0">
+                        <div v-else class="flex max-h-96 flex-col gap-2 overflow-y-auto">
+                            <button
+                                v-for="activity in branch.activities"
+                                :key="activity.key"
+                                class="flex w-full flex-col gap-1 rounded-xl border border-mist p-3 text-left text-sm transition hover:border-pine dark:border-white/10 dark:hover:border-sand"
+                                type="button"
+                                @click="selectedActivity = activity"
+                            >
+                                <span class="flex items-start justify-between gap-3">
                                     <span class="font-medium">{{ activity.title }}</span>
-                                    <span class="text-ink/55 dark:text-foam/50"> · {{ activity.detail }} · {{ activity.time }}</span>
+                                    <span class="shrink-0 font-medium" :class="activity.amount_label.startsWith('-') ? 'text-danger' : ''">{{ activity.amount_label }}</span>
                                 </span>
-                                <span class="shrink-0 font-medium">{{ activity.amount_label }}</span>
-                            </li>
-                        </ul>
+                                <span v-if="activity.detail" class="text-ink/60 dark:text-foam/60">{{ activity.detail }}</span>
+                                <span v-if="activity.time" class="text-xs text-ink/50 dark:text-foam/50">{{ activity.time }}</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="flex flex-col gap-3">
                         <div class="flex flex-wrap gap-2" role="tablist" :aria-label="`${branch.name} orders`">
@@ -510,6 +519,38 @@ function reviewRequest(filing, status) {
                 </div>
             </div>
         </section>
+    </div>
+
+    <div v-if="selectedActivity" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4" @click.self="selectedActivity = null">
+        <div
+            class="flex max-h-[90vh] w-full flex-col gap-4 overflow-y-auto rounded-2xl bg-foam p-6 dark:bg-ink"
+            :class="selectedActivity.receipt ? 'max-w-3xl' : 'max-w-lg'"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shift-activity-title"
+        >
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex min-w-0 flex-col gap-1">
+                    <h2 id="shift-activity-title" class="text-lg font-medium">
+                        {{ selectedActivity.receipt ? selectedActivity.receipt.number : selectedActivity.title }}
+                    </h2>
+                    <p v-if="!selectedActivity.receipt && selectedActivity.time" class="text-sm text-ink/60 dark:text-foam/60">{{ selectedActivity.time }}</p>
+                </div>
+                <button class="text-sm font-medium" type="button" @click="selectedActivity = null">Close</button>
+            </div>
+            <template v-if="selectedActivity.receipt">
+                <ReceiptView :receipt="selectedActivity.receipt" :can-refund="false" :can-waive="false" :show-title="false" />
+            </template>
+            <template v-else>
+                <p class="text-2xl font-medium" :class="selectedActivity.amount_label.startsWith('-') ? 'text-danger' : ''">{{ selectedActivity.amount_label }}</p>
+                <dl v-if="selectedActivity.fields.length > 0" class="grid gap-3 text-sm sm:grid-cols-2">
+                    <div v-for="field in selectedActivity.fields" :key="field.label" class="flex flex-col gap-0.5">
+                        <dt class="text-ink/55 dark:text-foam/50">{{ field.label }}</dt>
+                        <dd>{{ field.value }}</dd>
+                    </div>
+                </dl>
+            </template>
+        </div>
     </div>
 
     <div v-if="selectedDay" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4" @click.self="selectedDay = null">

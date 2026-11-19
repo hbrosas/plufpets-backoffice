@@ -31,7 +31,7 @@ class ReportController extends Controller
         return Inertia::render('Reports/Commissions', [
             'filters' => $period->toArray(),
             'scope' => $employeeId === null ? 'all' : 'self',
-            'report' => $reports->commissions($period, $employeeId),
+            'report' => $reports->commissions($period, $employeeId, withLines: true),
         ]);
     }
 
