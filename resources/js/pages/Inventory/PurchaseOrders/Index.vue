@@ -71,9 +71,9 @@ function selectOrder(order) {
         </div>
     </Teleport>
 
-    <div class="flex min-h-0 w-full flex-1 flex-col gap-4">
-        <div class="grid min-h-0 flex-1 grid-rows-[minmax(16rem,0.8fr)_minmax(0,1.2fr)] gap-4 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:grid-rows-1">
-            <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5" aria-labelledby="purchase-order-list-heading">
+    <div class="flex h-full min-h-0 w-full flex-1 flex-col gap-4">
+        <div class="grid h-full min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:grid-rows-1">
+            <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5" aria-labelledby="purchase-order-list-heading">
                 <h2 id="purchase-order-list-heading" class="border-b border-mist px-4 py-3 text-sm font-medium dark:border-white/10">Purchase Orders</h2>
                 <div class="min-h-0 flex-1 overflow-y-auto" role="tabpanel" :aria-labelledby="`purchase-orders-tab-${statusTab}`">
                     <p v-if="visibleOrders.length === 0" class="px-4 py-8 text-sm text-ink/60 dark:text-foam/60">No purchase orders with this status.</p>

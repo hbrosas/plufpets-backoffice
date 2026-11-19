@@ -78,9 +78,9 @@ function selectReceipt(item) {
         />
     </Teleport>
 
-    <div class="mx-auto grid w-full max-w-6xl items-start gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
-        <div class="flex max-h-[70vh] flex-col gap-3 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)]">
-            <div class="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
+    <div class="mx-auto grid h-full min-h-0 w-full max-w-6xl flex-1 gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
+        <div class="flex h-full min-h-0 flex-col gap-3">
+            <div class="h-full min-h-0 flex-1 overflow-y-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
                 <p v-if="receipts.data.length === 0" class="px-4 py-10 text-sm text-ink/60 dark:text-foam/60">
                     No receipts in this period.
                 </p>
@@ -129,9 +129,11 @@ function selectReceipt(item) {
             </nav>
         </div>
 
-        <ReceiptView v-if="selected" :key="selected.id" :receipt="selected" :can-waive="can_waive_commissions" />
-        <p v-else class="rounded-2xl border border-mist bg-white px-5 py-10 text-sm text-ink/60 dark:border-white/10 dark:bg-white/5 dark:text-foam/60">
-            Select a receipt.
-        </p>
+        <div class="min-h-0 overflow-y-auto lg:h-full">
+            <ReceiptView v-if="selected" :key="selected.id" :receipt="selected" :can-waive="can_waive_commissions" />
+            <p v-else class="rounded-2xl border border-mist bg-white px-5 py-10 text-sm text-ink/60 dark:border-white/10 dark:bg-white/5 dark:text-foam/60">
+                Select a receipt.
+            </p>
+        </div>
     </div>
 </template>

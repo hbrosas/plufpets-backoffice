@@ -35,42 +35,27 @@ function openShift(shift) {
         <SalesFilters action="/backoffice/sales/shifts" :filters="filters" :branches="branches" />
     </Teleport>
 
-    <div class="mx-auto flex w-full max-w-6xl flex-col gap-4">
-        <div class="overflow-x-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
-            <table class="w-full min-w-[40rem] text-left text-sm">
-                <thead class="text-ink/50 dark:text-foam/50">
-                    <tr class="border-b border-mist dark:border-white/10">
-                        <th class="px-4 py-3 font-medium">Branch</th>
-                        <th class="px-4 py-3 font-medium">Status</th>
-                        <th class="px-4 py-3 font-medium">Opened</th>
-                        <th class="px-4 py-3 font-medium">Receipts</th>
-                        <th class="px-4 py-3 font-medium">Sales</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-if="shifts.data.length === 0">
-                        <td class="px-4 py-10 text-ink/60 dark:text-foam/60" colspan="5">No shifts in this period.</td>
-                    </tr>
-                    <tr
-                        v-for="shift in shifts.data"
-                        :key="shift.id"
-                        class="border-b border-mist last:border-b-0 dark:border-white/10"
-                        :class="shift.z_report ? 'cursor-pointer hover:bg-sand/40 dark:hover:bg-white/5' : ''"
+    <div class="flex h-full min-h-0 w-full max-w-[20rem] flex-1 flex-col gap-3">
+        <div class="h-full min-h-0 flex-1 overflow-y-auto rounded-2xl border border-mist bg-white dark:border-white/10 dark:bg-white/5">
+            <p v-if="shifts.data.length === 0" class="px-4 py-10 text-sm text-ink/60 dark:text-foam/60">
+                No shifts in this period.
+            </p>
+            <ul v-else>
+                <li v-for="shift in shifts.data" :key="shift.id" class="border-b border-mist last:border-b-0 dark:border-white/10">
+                    <button
+                        class="flex w-full flex-col gap-1 px-4 py-3 text-left"
+                        :class="[
+                            selected?.id === shift.id ? 'bg-pine/10 dark:bg-sand/10' : '',
+                            shift.z_report ? '' : 'cursor-default',
+                        ]"
+                        type="button"
+                        :disabled="!shift.z_report"
+                        :aria-pressed="selected?.id === shift.id"
+                        :aria-label="shift.z_report ? `View Z-Report for ${shift.branch}` : `${shift.branch} is still open`"
                         @click="openShift(shift)"
                     >
-                        <td class="px-4 py-3 font-medium">
-                            <button
-                                class="text-left font-medium"
-                                :class="shift.z_report ? '' : 'cursor-default'"
-                                type="button"
-                                :disabled="!shift.z_report"
-                                :aria-label="shift.z_report ? `View Z-Report for ${shift.branch}` : `${shift.branch} is still open`"
-                                @click.stop="openShift(shift)"
-                            >
-                                {{ shift.branch }}
-                            </button>
-                        </td>
-                        <td class="px-4 py-3">
+                        <span class="flex flex-wrap items-center gap-2">
+                            <span class="font-medium">{{ shift.branch }}</span>
                             <span
                                 class="rounded-full px-2 py-0.5 text-[11px] font-medium"
                                 :class="
@@ -81,13 +66,12 @@ function openShift(shift) {
                             >
                                 {{ shift.status }}
                             </span>
-                        </td>
-                        <td class="px-4 py-3 text-ink/60 dark:text-foam/60">{{ shift.opened_at }}</td>
-                        <td class="px-4 py-3">{{ shift.receipts }}</td>
-                        <td class="px-4 py-3">{{ shift.sales_total }}</td>
-                    </tr>
-                </tbody>
-            </table>
+                        </span>
+                        <span class="text-xs text-ink/60 dark:text-foam/60">{{ shift.opened_at }}</span>
+                        <span class="text-sm">{{ shift.receipts }} receipts · {{ shift.sales_total }}</span>
+                    </button>
+                </li>
+            </ul>
         </div>
 
         <nav v-if="shifts.last_page > 1" class="flex gap-3" aria-label="Pagination">
