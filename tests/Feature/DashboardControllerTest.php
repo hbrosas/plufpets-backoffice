@@ -12,6 +12,7 @@ use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
+use App\Models\Category;
 use App\Models\Employee;
 use App\Models\Holiday;
 use App\Models\HotelPodType;
@@ -67,6 +68,106 @@ class DashboardControllerTest extends TestCase
             ->where('stock.low', [])
             ->missing('activeStaffCount')
             ->where('smsCreditBalance', null));
+    }
+
+    public function test_sales_pulse_charts_today_by_category_and_item(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-06-15 04:00:00', 'UTC'));
+
+        $branch = Branch::factory()->create();
+        $shift = PosShift::factory()->create(['branch_id' => $branch->id]);
+        $grooming = Category::factory()->create(['name' => 'Grooming']);
+        $food = Category::factory()->create(['name' => 'Food']);
+        $fullGroom = CatalogItem::factory()->create(['name' => 'Full groom', 'category_id' => $grooming->id]);
+        $nailTrim = CatalogItem::factory()->create(['name' => 'Nail trim', 'category_id' => $grooming->id]);
+        $kibble = CatalogItem::factory()->create(['name' => 'Kibble', 'category_id' => $food->id]);
+        $walkIn = CatalogItem::factory()->create(['name' => 'Walk-in extra']);
+        $firstSale = PosSale::factory()->create([
+            'branch_id' => $branch->id,
+            'pos_shift_id' => $shift->id,
+            'sold_at' => CarbonImmutable::parse('2026-06-15 02:00:00', 'UTC'),
+            'total' => 500,
+        ]);
+        $secondSale = PosSale::factory()->create([
+            'branch_id' => $branch->id,
+            'pos_shift_id' => $shift->id,
+            'sold_at' => CarbonImmutable::parse('2026-06-15 03:00:00', 'UTC'),
+            'total' => 150,
+        ]);
+        $refundedSale = PosSale::factory()->create([
+            'branch_id' => $branch->id,
+            'pos_shift_id' => $shift->id,
+            'sold_at' => CarbonImmutable::parse('2026-06-15 03:30:00', 'UTC'),
+            'refunded_at' => CarbonImmutable::parse('2026-06-15 03:40:00', 'UTC'),
+            'total' => 999,
+        ]);
+        $yesterday = PosSale::factory()->create([
+            'branch_id' => $branch->id,
+            'pos_shift_id' => $shift->id,
+            'sold_at' => CarbonImmutable::parse('2026-06-14 02:00:00', 'UTC'),
+            'total' => 999,
+        ]);
+        PosSaleItem::factory()->create([
+            'pos_sale_id' => $firstSale->id,
+            'catalog_item_variant_id' => CatalogItemVariant::factory()->create(['catalog_item_id' => $fullGroom->id])->id,
+            'line_total' => 300,
+        ]);
+        PosSaleItem::factory()->create([
+            'pos_sale_id' => $firstSale->id,
+            'catalog_item_variant_id' => CatalogItemVariant::factory()->create(['catalog_item_id' => $kibble->id])->id,
+            'line_total' => 200,
+        ]);
+        PosSaleItem::factory()->create([
+            'pos_sale_id' => $secondSale->id,
+            'catalog_item_variant_id' => CatalogItemVariant::factory()->create(['catalog_item_id' => $fullGroom->id])->id,
+            'line_total' => 100,
+        ]);
+        PosSaleItem::factory()->create([
+            'pos_sale_id' => $secondSale->id,
+            'catalog_item_variant_id' => CatalogItemVariant::factory()->create(['catalog_item_id' => $nailTrim->id])->id,
+            'line_total' => 50,
+        ]);
+        PosSaleItem::factory()->create([
+            'pos_sale_id' => $firstSale->id,
+            'catalog_item_variant_id' => CatalogItemVariant::factory()->create(['catalog_item_id' => $walkIn->id])->id,
+            'line_total' => 40,
+        ]);
+        PosSaleItem::factory()->create([
+            'pos_sale_id' => $refundedSale->id,
+            'catalog_item_variant_id' => CatalogItemVariant::factory()->create(['catalog_item_id' => $kibble->id])->id,
+            'line_total' => 999,
+        ]);
+        PosSaleItem::factory()->create([
+            'pos_sale_id' => $yesterday->id,
+            'catalog_item_variant_id' => CatalogItemVariant::factory()->create(['catalog_item_id' => $fullGroom->id])->id,
+            'line_total' => 999,
+        ]);
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('pulse.categories', 3)
+                ->where('pulse.categories.0.name', 'Grooming')
+                ->where('pulse.categories.0.transactions', 2)
+                ->where('pulse.categories.0.total', '₱450.00')
+                ->where('pulse.categories.0.hours.10.amount', 300)
+                ->where('pulse.categories.0.hours.10.transactions', 1)
+                ->where('pulse.categories.0.hours.11.amount', 150)
+                ->where('pulse.categories.0.hours.11.transactions', 1)
+                ->where('pulse.categories.0.items.0.name', 'Full groom')
+                ->where('pulse.categories.0.items.0.transactions', 2)
+                ->where('pulse.categories.0.items.0.total', '₱400.00')
+                ->where('pulse.categories.0.items.1.name', 'Nail trim')
+                ->where('pulse.categories.0.items.1.transactions', 1)
+                ->where('pulse.categories.0.items.1.total', '₱50.00')
+                ->where('pulse.categories.1.name', 'Food')
+                ->where('pulse.categories.1.transactions', 1)
+                ->where('pulse.categories.1.total', '₱200.00')
+                ->where('pulse.categories.2.name', 'Uncategorized')
+                ->where('pulse.categories.2.transactions', 1)
+                ->where('pulse.categories.2.total', '₱40.00')
+                ->where('pulse.categories.2.items.0.name', 'Walk-in extra'));
     }
 
     public function test_sms_credit_balance_is_shared_for_an_employee_who_can_view_it(): void

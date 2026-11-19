@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, reactive, ref, watch } from 'vue';
+import CategorySalesChart from '../components/CategorySalesChart.vue';
 import CommissionList from '../components/CommissionList.vue';
 import CommissionPeriodFilter from '../components/CommissionPeriodFilter.vue';
 import CountBadge from '../components/CountBadge.vue';
@@ -216,6 +217,8 @@ function reviewRequest(filing, status) {
                     <p v-if="metric.target_gap" class="text-sm font-medium">{{ metric.target_gap }}</p>
                 </article>
             </div>
+
+            <CategorySalesChart :categories="pulse.categories" />
 
             <article class="flex flex-col gap-4 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
                 <h3 class="text-lg font-medium">Hourly sales</h3>

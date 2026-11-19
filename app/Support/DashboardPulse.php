@@ -28,7 +28,8 @@ class DashboardPulse
      *     discounts: list<array{cashier: string, total: string, flagged: bool}>,
      *     drawer: list<array{cashier: string, branch: string, cash_in: string, cash_out: string, opens: int, flagged: bool}>,
      *     open_shifts: list<array{branch: string, opened_by: string, opened_at: string, starting_cash: string}>,
-     *     variances: list<array{branch: string, closed_by: string, variance: string, direction: string}>
+     *     variances: list<array{branch: string, closed_by: string, variance: string, direction: string}>,
+     *     categories: list<array{name: string, transactions: int, amount: float, total: string, hours: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string}>}>
      * }
      */
     public function today(): array
@@ -53,6 +54,7 @@ class DashboardPulse
             'drawer' => $this->drawer($today),
             'open_shifts' => $this->openShifts(),
             'variances' => $this->variances($today),
+            'categories' => $this->categories($today),
         ];
     }
 
@@ -312,6 +314,97 @@ class DashboardPulse
                 ];
             })
             ->all();
+    }
+
+    /**
+     * @return list<array{name: string, transactions: int, amount: float, total: string, hours: list<array{label: string, amount: float, transactions: int}>, items: list<array{name: string, transactions: int, amount: float, total: string}>}>
+     */
+    private function categories(ReportPeriod $period): array
+    {
+        $items = PosSaleItem::query()
+            ->join('pos_sales', 'pos_sales.id', '=', 'pos_sale_items.pos_sale_id')
+            ->leftJoin('catalog_item_variants', 'catalog_item_variants.id', '=', 'pos_sale_items.catalog_item_variant_id')
+            ->leftJoin('catalog_items', 'catalog_items.id', '=', 'catalog_item_variants.catalog_item_id')
+            ->leftJoin('categories', 'categories.id', '=', 'catalog_items.category_id')
+            ->whereNull('pos_sales.refunded_at')
+            ->whereBetween('pos_sales.sold_at', [$period->from, $period->to])
+            ->get([
+                'pos_sale_items.pos_sale_id',
+                'pos_sale_items.product_name as product',
+                'pos_sale_items.line_total',
+                'pos_sales.sold_at',
+                'catalog_items.name as catalog_name',
+                'categories.name as category',
+            ])
+            ->each(function (PosSaleItem $item): void {
+                $item->setAttribute('category', $item->getAttribute('category') ?: 'Uncategorized');
+                $item->setAttribute('product', $item->getAttribute('catalog_name') ?: ($item->getAttribute('product') ?: 'Unknown product'));
+            });
+
+        return $items
+            ->groupBy('category')
+            ->map(function (Collection $rows, string $category): array {
+                $amount = round((float) $rows->sum('line_total'), 2);
+
+                return [
+                    'name' => $category,
+                    'transactions' => $rows->pluck('pos_sale_id')->unique()->count(),
+                    'amount' => $amount,
+                    'total' => Peso::format($amount),
+                    'hours' => $this->categoryHours($rows),
+                    'items' => $rows
+                        ->groupBy('product')
+                        ->map(function (Collection $itemRows, string $product): array {
+                            $itemAmount = round((float) $itemRows->sum('line_total'), 2);
+
+                            return [
+                                'name' => $product,
+                                'transactions' => $itemRows->pluck('pos_sale_id')->unique()->count(),
+                                'amount' => $itemAmount,
+                                'total' => Peso::format($itemAmount),
+                            ];
+                        })
+                        ->sortBy([
+                            ['amount', 'desc'],
+                            ['name', 'asc'],
+                        ])
+                        ->values()
+                        ->all(),
+                ];
+            })
+            ->sortBy([
+                ['amount', 'desc'],
+                ['name', 'asc'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, PosSaleItem>  $rows
+     * @return list<array{label: string, amount: float, transactions: int}>
+     */
+    private function categoryHours(Collection $rows): array
+    {
+        $hours = collect(range(0, 23))->map(fn (int $hour): array => [
+            'label' => CarbonImmutable::createFromTime($hour, 0, 0, ReportPeriod::ZONE)->format('g A'),
+            'amount' => 0.0,
+            'transactions' => [],
+        ]);
+
+        foreach ($rows as $row) {
+            $hour = CarbonImmutable::parse($row->sold_at)->timezone(ReportPeriod::ZONE)->hour;
+            $current = $hours->get($hour);
+            $current['amount'] += (float) $row->line_total;
+            $current['transactions'][$row->pos_sale_id] = true;
+            $hours->put($hour, $current);
+        }
+
+        return $hours->map(fn (array $hour): array => [
+            'label' => $hour['label'],
+            'amount' => round($hour['amount'], 2),
+            'transactions' => count($hour['transactions']),
+        ])->values()->all();
     }
 
     /**
