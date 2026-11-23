@@ -5,6 +5,7 @@ namespace App\Actions;
 use App\Models\Category;
 use App\Models\PosCategory;
 use App\Support\CsvImportFile;
+use App\Support\CsvImportResult;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -30,18 +31,25 @@ class ImportCategories
     ];
 
     /**
-     * @return array{imported: int, errors: list<array{row: int, message: string}>}
+     * @return array{columns: list<string>, rows: list<array{row: int, values: list<string>}>}
+     */
+    public function preview(UploadedFile $file): array
+    {
+        $parsed = $this->parsed($file);
+
+        return [
+            'columns' => $parsed['columns'],
+            'rows' => CsvImportResult::table($parsed['rows'], $parsed['columns']),
+        ];
+    }
+
+    /**
+     * @return array{imported: int, errors: list<array{row: int, message: string}>, logs: array{columns: list<string>, rows: list<array{row: int, values: list<string>, imported: bool, message: string}>}}
      */
     public function handle(UploadedFile $file): array
     {
-        $parsed = CsvImportFile::read(
-            $file,
-            self::REQUIRED_COLUMNS,
-            self::OPTIONAL_COLUMNS,
-            self::MAX_ROWS,
-            'category rows',
-        );
-        $hasShopColumn = array_key_exists('show_on_shop', $parsed['columns']);
+        $parsed = $this->parsed($file);
+        $hasShopColumn = $parsed['has_shop_column'];
         $existing = [];
 
         foreach (Category::query()->orderBy('id')->get() as $category) {
@@ -101,6 +109,7 @@ class ImportCategories
 
             $seen[$key] = true;
             $accepted[] = [
+                'row' => $row['number'],
                 'name' => $name,
                 'key' => $key,
                 'pos_category_id' => $posCategory->id,
@@ -132,6 +141,30 @@ class ImportCategories
         return [
             'imported' => count($accepted),
             'errors' => $errors,
+            'logs' => [
+                'columns' => $parsed['columns'],
+                'rows' => CsvImportResult::logs($parsed['rows'], $parsed['columns'], $errors, array_column($accepted, 'row')),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{columns: list<string>, rows: list<array{number: int, cells: array<string, string>}>, has_shop_column: bool}
+     */
+    private function parsed(UploadedFile $file): array
+    {
+        $parsed = CsvImportFile::read(
+            $file,
+            self::REQUIRED_COLUMNS,
+            self::OPTIONAL_COLUMNS,
+            self::MAX_ROWS,
+            'category rows',
+        );
+
+        return [
+            'columns' => CsvImportFile::orderedColumns($parsed['columns'], self::REQUIRED_COLUMNS, self::OPTIONAL_COLUMNS),
+            'rows' => $parsed['rows'],
+            'has_shop_column' => array_key_exists('show_on_shop', $parsed['columns']),
         ];
     }
 

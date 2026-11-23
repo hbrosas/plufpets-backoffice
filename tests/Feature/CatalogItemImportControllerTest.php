@@ -14,6 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
+use ZipArchive;
 
 class CatalogItemImportControllerTest extends TestCase
 {
@@ -46,13 +47,59 @@ class CatalogItemImportControllerTest extends TestCase
         );
     }
 
+    public function test_guest_cannot_preview_a_catalog_import(): void
+    {
+        $this->post('/backoffice/shop/catalog/import/preview', [
+            'file' => $this->csvFile(),
+        ])->assertRedirect(route('login'));
+
+        $this->assertDatabaseCount('catalog_items', 0);
+    }
+
+    public function test_preview_lists_catalog_rows_without_importing(): void
+    {
+        $response = $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog')
+            ->post('/backoffice/shop/catalog/import/preview', [
+                'file' => $this->csvFile(),
+            ]);
+
+        $response->assertRedirect('/backoffice/shop/catalog');
+        $this->assertSame('Organic kibble', $response->getSession()->get('import_preview')['rows'][0]['values'][1]);
+        $this->assertSame('Full groom', $response->getSession()->get('import_preview')['rows'][1]['values'][1]);
+        $this->assertDatabaseCount('catalog_items', 0);
+    }
+
     public function test_missing_file_is_rejected(): void
     {
         $response = $this->actingAsEmployee()->from('/backoffice/shop/catalog')->post('/backoffice/shop/catalog/import', []);
 
         $response->assertRedirect('/backoffice/shop/catalog');
         $response->assertSessionHasErrors([
-            'file' => 'Choose a CSV file to upload.',
+            'file' => 'Choose a CSV or Excel file to upload.',
+        ]);
+    }
+
+    public function test_xlsx_catalog_file_imports_products_and_services(): void
+    {
+        $response = $this->actingAsEmployee()->post('/backoffice/shop/catalog/import', [
+            'file' => $this->xlsxFile(),
+        ]);
+
+        $response->assertRedirect(route('shop.catalog.index'));
+        $response->assertSessionHas('status', 'Imported 2 catalog rows.');
+        $this->assertDatabaseHas('catalog_items', [
+            'name' => 'Organic kibble',
+            'type' => CatalogItemType::Product->value,
+        ]);
+        $this->assertDatabaseHas('catalog_item_variants', [
+            'sku' => 'KIB-001',
+            'name' => '1kg',
+            'barcode' => '4800123456789',
+        ]);
+        $this->assertDatabaseHas('catalog_items', [
+            'name' => 'Full groom',
+            'type' => CatalogItemType::Service->value,
         ]);
     }
 
@@ -97,6 +144,9 @@ class CatalogItemImportControllerTest extends TestCase
         $response->assertSessionHas('import_errors', [
             ['row' => 3, 'message' => 'Enter a variant name.'],
         ]);
+        $this->assertSame(true, $response->getSession()->get('import_logs')['rows'][0]['imported']);
+        $this->assertSame(false, $response->getSession()->get('import_logs')['rows'][1]['imported']);
+        $this->assertSame('Enter a variant name.', $response->getSession()->get('import_logs')['rows'][1]['message']);
         $this->assertDatabaseCount('catalog_items', 1);
     }
 
@@ -243,7 +293,7 @@ class CatalogItemImportControllerTest extends TestCase
 
         $response->assertRedirect('/backoffice/shop/catalog');
         $response->assertSessionHasErrors([
-            'file' => 'The CSV must include these columns: type, name, description, category, brand, variant_name, sku, barcode, price, is_active.',
+            'file' => 'The file must include these columns: type, name, description, category, brand, variant_name, sku, barcode, price, is_active.',
         ]);
         $this->assertDatabaseCount('catalog_items', 0);
     }
@@ -434,6 +484,54 @@ class CatalogItemImportControllerTest extends TestCase
         $response->assertSessionHas('status', 'Imported 40 catalog rows.');
         $this->assertDatabaseCount('catalog_items', 40);
         $this->assertLessThan(25, count(DB::getQueryLog()));
+    }
+
+    private function xlsxFile(): UploadedFile
+    {
+        $strings = [
+            'type', 'name', 'description', 'category', 'brand', 'variant_name', 'sku', 'barcode', 'price', 'is_active',
+            'product', 'Organic kibble', 'Daily dry food', 'Food', 'Pluf Pets', '1kg', 'KIB-001', '4800123456789',
+            'service', 'Full groom', 'Bath and haircut', 'Grooming', 'Standard', 'GRM-001', '4800987654321',
+        ];
+        $shared = '';
+
+        foreach ($strings as $string) {
+            $shared .= '<si><t>'.htmlspecialchars($string, ENT_XML1).'</t></si>';
+        }
+
+        $sheet = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c><c r="E1" t="s"><v>4</v></c>
+      <c r="F1" t="s"><v>5</v></c><c r="G1" t="s"><v>6</v></c><c r="H1" t="s"><v>7</v></c><c r="I1" t="s"><v>8</v></c><c r="J1" t="s"><v>9</v></c>
+    </row>
+    <row r="2">
+      <c r="A2" t="s"><v>10</v></c><c r="B2" t="s"><v>11</v></c><c r="C2" t="s"><v>12</v></c><c r="D2" t="s"><v>13</v></c><c r="E2" t="s"><v>14</v></c>
+      <c r="F2" t="s"><v>15</v></c><c r="G2" t="s"><v>16</v></c><c r="H2" t="s"><v>17</v></c><c r="I2"><v>29.9</v></c><c r="J2"><v>1</v></c>
+    </row>
+    <row r="4">
+      <c r="A4" t="s"><v>18</v></c><c r="B4" t="s"><v>19</v></c><c r="C4" t="s"><v>20</v></c><c r="D4" t="s"><v>21</v></c>
+      <c r="F4" t="s"><v>22</v></c><c r="G4" t="s"><v>23</v></c><c r="H4" t="s"><v>24</v></c><c r="I4"><v>45</v></c><c r="J4"><v>1</v></c>
+    </row>
+  </sheetData>
+</worksheet>
+XML;
+        $path = tempnam(sys_get_temp_dir(), 'catalog-xlsx');
+        $zip = new ZipArchive;
+        $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>');
+        $zip->addFromString('_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+        $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Catalog" sheetId="1" r:id="rId1"/></sheets></workbook>');
+        $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
+        $zip->addFromString('xl/sharedStrings.xml', '<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'.count($strings).'" uniqueCount="'.count($strings).'">'.$shared.'</sst>');
+        $zip->addFromString('xl/worksheets/sheet1.xml', $sheet);
+        $zip->close();
+        $contents = file_get_contents($path);
+        unlink($path);
+
+        return UploadedFile::fake()->createWithContent('catalog.xlsx', $contents === false ? '' : $contents);
     }
 
     private function csvFile(): UploadedFile

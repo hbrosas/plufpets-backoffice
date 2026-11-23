@@ -4,6 +4,7 @@ namespace App\Actions;
 
 use App\Models\Brand;
 use App\Support\CsvImportFile;
+use App\Support\CsvImportResult;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -21,11 +22,24 @@ class ImportBrands
     ];
 
     /**
-     * @return array{imported: int, errors: list<array{row: int, message: string}>}
+     * @return array{columns: list<string>, rows: list<array{row: int, values: list<string>}>}
+     */
+    public function preview(UploadedFile $file): array
+    {
+        $parsed = $this->parsed($file);
+
+        return [
+            'columns' => $parsed['columns'],
+            'rows' => CsvImportResult::table($parsed['rows'], $parsed['columns']),
+        ];
+    }
+
+    /**
+     * @return array{imported: int, errors: list<array{row: int, message: string}>, logs: array{columns: list<string>, rows: list<array{row: int, values: list<string>, imported: bool, message: string}>}}
      */
     public function handle(UploadedFile $file): array
     {
-        $parsed = CsvImportFile::read($file, self::REQUIRED_COLUMNS, [], self::MAX_ROWS, 'brand rows');
+        $parsed = $this->parsed($file);
         $existing = Brand::query()
             ->orderBy('id')
             ->get()
@@ -60,18 +74,38 @@ class ImportBrands
                 continue;
             }
 
-            $accepted[] = $name;
+            $accepted[] = [
+                'row' => $row['number'],
+                'name' => $name,
+            ];
         }
 
         DB::transaction(function () use ($accepted): void {
-            foreach ($accepted as $name) {
-                Brand::query()->create(['name' => $name]);
+            foreach ($accepted as $brand) {
+                Brand::query()->create(['name' => $brand['name']]);
             }
         });
 
         return [
             'imported' => count($accepted),
             'errors' => $errors,
+            'logs' => [
+                'columns' => $parsed['columns'],
+                'rows' => CsvImportResult::logs($parsed['rows'], $parsed['columns'], $errors, array_column($accepted, 'row')),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{columns: list<string>, rows: list<array{number: int, cells: array<string, string>}>}
+     */
+    private function parsed(UploadedFile $file): array
+    {
+        $parsed = CsvImportFile::read($file, self::REQUIRED_COLUMNS, [], self::MAX_ROWS, 'brand rows');
+
+        return [
+            'columns' => CsvImportFile::orderedColumns($parsed['columns'], self::REQUIRED_COLUMNS, []),
+            'rows' => $parsed['rows'],
         ];
     }
 

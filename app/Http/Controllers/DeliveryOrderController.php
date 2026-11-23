@@ -31,7 +31,9 @@ class DeliveryOrderController extends Controller
 
         $orders = PurchaseOrder::query()
             ->confirmed()
-            ->with(['supplier:id,name', 'items'])
+            ->with('supplier:id,name')
+            ->withSum('items', 'quantity')
+            ->withSum('items', 'received_quantity')
             ->when($status === DeliveryStatus::ForDelivery, function ($query): void {
                 $query->whereDoesntHave('items', fn ($query) => $query->where('received_quantity', '>', 0));
             })
@@ -72,9 +74,12 @@ class DeliveryOrderController extends Controller
         abort_unless($purchaseOrder->status === PurchaseOrderStatus::Confirmed, 404);
 
         $purchaseOrder->load([
-            'supplier',
-            'items.variant.catalogItem',
-            'receipts.items.purchaseOrderItem.variant.catalogItem',
+            'supplier:id,name',
+            'items.variant:id,catalog_item_id,name,sku',
+            'items.variant.catalogItem:id,name',
+            'receipts.items.purchaseOrderItem:id,catalog_item_variant_id',
+            'receipts.items.purchaseOrderItem.variant:id,catalog_item_id,name',
+            'receipts.items.purchaseOrderItem.variant.catalogItem:id,name',
         ]);
 
         $employee = EmployeeSession::current();

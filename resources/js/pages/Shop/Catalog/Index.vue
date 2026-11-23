@@ -1,8 +1,8 @@
 <script setup>
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import CsvImportDialog from '../../../components/CsvImportDialog.vue';
 import AdminLayout from '../../../layouts/AdminLayout.vue';
-import FilePicker from '../../../components/FilePicker.vue';
 
 defineOptions({
     layout: AdminLayout,
@@ -80,10 +80,6 @@ const filters = useForm({
     category: props.filters.category,
 });
 
-const importForm = useForm({
-    file: null,
-});
-
 function applyFilters() {
     filters.get('/backoffice/shop/catalog', {
         preserveState: true,
@@ -102,21 +98,6 @@ function selectType(type) {
         preserveScroll: true,
         replace: true,
         showProgress: false,
-    });
-}
-
-function onFileChange(event) {
-    importForm.file = event.target.files[0] ?? null;
-}
-
-function submitImport() {
-    importForm.post('/backoffice/shop/catalog/import', {
-        forceFormData: true,
-        preserveScroll: true,
-        onSuccess: () => {
-            importForm.reset();
-            importOpen.value = false;
-        },
     });
 }
 
@@ -220,18 +201,6 @@ watch(visibleIds, (ids) => {
     </Teleport>
 
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div
-            v-if="flash.import_errors?.length"
-            class="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
-        >
-            <p class="font-medium">Skipped rows</p>
-            <ul class="mt-2 flex flex-col gap-1">
-                <li v-for="error in flash.import_errors" :key="`${error.row}-${error.message}`">
-                    Row {{ error.row }}: {{ error.message }}
-                </li>
-            </ul>
-        </div>
-
         <Teleport defer to="#admin-header-tabs">
         <div class="flex w-max gap-2" role="tablist" aria-label="Catalog type">
             <button
@@ -493,42 +462,16 @@ watch(visibleIds, (ids) => {
             </form>
         </div>
 
-        <div v-if="importOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
-            <div class="flex w-full max-w-md flex-col gap-4 rounded-2xl bg-foam p-6 dark:bg-ink">
-                <div class="flex items-start justify-between gap-4">
-                    <div class="flex flex-col gap-1">
-                        <h2 class="text-lg font-medium">Bulk upload</h2>
-                        <p class="text-sm text-ink/70 dark:text-foam/70">
-                            One row per variant. Leave the product name blank to add another variant to the product above.
-                            Columns: type, name, description, category, brand, variant_name, sku, barcode, price, is_active, variant_active.
-                        </p>
-                    </div>
-                    <button class="text-sm font-medium" type="button" @click="importOpen = false">Close</button>
-                </div>
-
-                <a class="text-sm font-medium text-pine dark:text-sand" href="/backoffice/shop/catalog/import/template">
-                    Download template
-                </a>
-
-                <form class="flex flex-col gap-4" @submit.prevent="submitImport">
-                    <FilePicker
-                        id="import-file"
-                        accept=".csv,text/csv"
-                        button-label="Choose CSV file"
-                        :file-name="importForm.file?.name ?? ''"
-                        hint="No file chosen"
-                        @change="onFileChange"
-                    />
-                    <p v-if="importForm.errors.file" class="text-sm text-danger">{{ importForm.errors.file }}</p>
-                    <button
-                        class="h-11 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-70"
-                        type="submit"
-                        :disabled="importForm.processing"
-                    >
-                        {{ importForm.processing ? 'Uploading…' : 'Upload CSV' }}
-                    </button>
-                </form>
-            </div>
-        </div>
+        <CsvImportDialog
+            :open="importOpen"
+            title="Bulk upload"
+            description="One row per variant. Leave the product name blank to add another variant to the product above. Columns: type, name, description, category, brand, variant_name, sku, barcode, price, is_active, variant_active."
+            template-href="/backoffice/shop/catalog/import/template"
+            preview-url="/backoffice/shop/catalog/import/preview"
+            confirm-url="/backoffice/shop/catalog/import"
+            :preview="flash.import_preview"
+            :logs="flash.import_logs"
+            @close="importOpen = false"
+        />
     </div>
 </template>

@@ -19,6 +19,11 @@ class BrandImportController extends Controller
         ]);
     }
 
+    public function preview(ImportBrandsRequest $request, ImportBrands $importBrands): RedirectResponse
+    {
+        return back()->with('import_preview', $importBrands->preview($request->file('file')));
+    }
+
     public function store(ImportBrandsRequest $request, ImportBrands $importBrands): RedirectResponse
     {
         $result = $importBrands->handle($request->file('file'));
@@ -33,6 +38,7 @@ class BrandImportController extends Controller
         return redirect()
             ->route('shop.catalog-meta.index')
             ->with('status', $status)
-            ->with('import_errors', $result['errors']);
+            ->with('import_errors', $result['errors'])
+            ->with('import_logs', $result['logs']);
     }
 }

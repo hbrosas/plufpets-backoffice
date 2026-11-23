@@ -124,6 +124,7 @@ Route::prefix('backoffice')->group(function () {
         Route::middleware('employee.permission:hotel.manage')->group(function () {
             Route::get('/hotel', [HotelController::class, 'index'])->name('hotel.index');
             Route::post('/hotel/stays', [HotelController::class, 'store'])->name('hotel.stays.store');
+            Route::put('/hotel/stays/{hotel_stay}', [HotelController::class, 'update'])->name('hotel.stays.update');
             Route::post('/hotel/stays/{hotel_stay}/payments', [HotelController::class, 'storePayment'])->name('hotel.stays.payments.store');
             Route::post('/hotel/stays/{hotel_stay}/checkout', [HotelController::class, 'checkout'])->name('hotel.stays.checkout');
             Route::post('/hotel/pod-types', [HotelPodTypeController::class, 'store'])->name('hotel.pod-types.store');
@@ -278,6 +279,9 @@ Route::prefix('backoffice')->group(function () {
             Route::middleware('employee.permission:shop.catalog')->group(function () {
                 Route::get('catalog/import/template', [CatalogItemImportController::class, 'template'])
                     ->name('catalog.import.template');
+                Route::post('catalog/import/preview', [CatalogItemImportController::class, 'preview'])
+                    ->middleware('throttle:catalog-import')
+                    ->name('catalog.import.preview');
                 Route::post('catalog/import', [CatalogItemImportController::class, 'store'])
                     ->middleware('throttle:catalog-import')
                     ->name('catalog.import.store');
@@ -295,11 +299,17 @@ Route::prefix('backoffice')->group(function () {
                 Route::get('catalog-meta', [CatalogMetaController::class, 'index'])->name('catalog-meta.index');
                 Route::get('categories/import/template', [CategoryImportController::class, 'template'])
                     ->name('categories.import.template');
+                Route::post('categories/import/preview', [CategoryImportController::class, 'preview'])
+                    ->middleware('throttle:catalog-import')
+                    ->name('categories.import.preview');
                 Route::post('categories/import', [CategoryImportController::class, 'store'])
                     ->middleware('throttle:catalog-import')
                     ->name('categories.import.store');
                 Route::get('brands/import/template', [BrandImportController::class, 'template'])
                     ->name('brands.import.template');
+                Route::post('brands/import/preview', [BrandImportController::class, 'preview'])
+                    ->middleware('throttle:catalog-import')
+                    ->name('brands.import.preview');
                 Route::post('brands/import', [BrandImportController::class, 'store'])
                     ->middleware('throttle:catalog-import')
                     ->name('brands.import.store');

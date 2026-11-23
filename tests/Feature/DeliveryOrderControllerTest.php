@@ -10,6 +10,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -166,6 +167,64 @@ class DeliveryOrderControllerTest extends TestCase
         $this->assertDatabaseCount('purchase_order_receipts', 0);
     }
 
+    public function test_a_product_from_another_order_is_rejected(): void
+    {
+        $order = $this->confirmedOrder(quantity: 4);
+        $other = $this->confirmedOrder(quantity: 2);
+
+        $this->actingAsEmployee()
+            ->from("/backoffice/inventory/delivery-orders/{$order->id}")
+            ->post("/backoffice/inventory/delivery-orders/{$order->id}/receive", [
+                'items' => [[
+                    'id' => $other->items()->first()->id,
+                    'quantity' => 1,
+                ]],
+            ])
+            ->assertRedirect("/backoffice/inventory/delivery-orders/{$order->id}")
+            ->assertSessionHasErrors(['items.0.id' => 'That product is not on this purchase order.']);
+
+        $this->assertDatabaseCount('purchase_order_receipts', 0);
+    }
+
+    public function test_a_delivery_with_many_lines_records_each_quantity(): void
+    {
+        $order = PurchaseOrder::factory()->confirmed()->create();
+        $items = PurchaseOrderItem::factory()->count(30)->create([
+            'purchase_order_id' => $order->id,
+            'quantity' => 5,
+            'received_quantity' => 0,
+        ]);
+
+        $this->actingAsEmployee();
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $response = $this->post("/backoffice/inventory/delivery-orders/{$order->id}/receive", [
+            'delivery_receipt_number' => 'DR-MANY',
+            'items' => $items->values()->map(fn (PurchaseOrderItem $item, int $index): array => [
+                'id' => $item->id,
+                'quantity' => $index === 0 ? 1 : 5,
+            ])->all(),
+        ]);
+
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $response->assertRedirect(route('inventory.delivery-orders.show', $order));
+        $this->assertLessThan(40, $queries);
+        $this->assertSame(1, $items->first()->fresh()->received_quantity);
+        $this->assertSame(5, $items->last()->fresh()->received_quantity);
+        $this->assertDatabaseCount('purchase_order_receipt_items', 30);
+
+        $this->actingAsEmployee()
+            ->get("/backoffice/inventory/delivery-orders/{$order->id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('order.received_quantity', 146)
+                ->has('order.receipts.0.items', 30));
+    }
+
     public function test_delivery_show_page_lists_products_alphabetically(): void
     {
         $order = PurchaseOrder::factory()->confirmed()->create();
@@ -219,7 +278,8 @@ class DeliveryOrderControllerTest extends TestCase
             ->where('order.receipts.0.delivery_receipt_number', 'DR-01')
             ->where('order.receipts.0.notes', 'Count the bags')
             ->where('order.receipts.0.received_by', 'Sample Employee')
-            ->where('order.receipts.0.items.0.quantity', 6));
+            ->where('order.receipts.0.items.0.quantity', 6)
+            ->where('order.receipts.0.items.0.product', 'Organic kibble'));
         $this->assertNotNull(PurchaseOrderReceipt::query()->first()?->received_at);
     }
 

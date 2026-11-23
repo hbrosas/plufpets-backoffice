@@ -18,7 +18,7 @@ class ImportCategoriesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:1024'],
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx', 'max:1024'],
         ];
     }
 
@@ -28,8 +28,8 @@ class ImportCategoriesRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'file.required' => 'Choose a CSV file to upload.',
-            'file.mimes' => 'Upload a CSV file.',
+            'file.required' => 'Choose a CSV or Excel file to upload.',
+            'file.mimes' => 'Upload a CSV or Excel file.',
         ];
     }
 }

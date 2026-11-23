@@ -68,6 +68,11 @@ const paymentForm = useForm({
 });
 
 const checkoutForm = useForm({});
+const datesForm = useForm({
+    checked_in_at: '',
+    checkout_on: '',
+    checked_out_at: '',
+});
 
 const selectedStay = computed(() => props.stays.find((stay) => stay.id === selectedId.value) ?? null);
 const emptyLabel = computed(() => {
@@ -107,6 +112,16 @@ const paymentChange = computed(() => {
     return Math.max(0, tendered - amount);
 });
 
+watch(
+    [
+        () => selectedStay.value?.id,
+        () => selectedStay.value?.checked_in_at,
+        () => selectedStay.value?.checkout_on,
+        () => selectedStay.value?.checked_out_at,
+    ],
+    syncDates,
+);
+
 watch(() => props.stays, (stays) => {
     if (selectedId.value !== null && !stays.some((stay) => stay.id === selectedId.value)) {
         selectedId.value = null;
@@ -145,6 +160,34 @@ function startCheckIn() {
     checkingIn.value = true;
     paymentOpen.value = false;
     refreshCheckedInLabel();
+}
+
+function syncDates() {
+    const stay = selectedStay.value;
+
+    if (!stay) {
+        return;
+    }
+
+    datesForm.defaults({
+        checked_in_at: stay.checked_in_at ?? '',
+        checkout_on: stay.checkout_on ?? '',
+        checked_out_at: stay.checked_out_at ?? '',
+    });
+    datesForm.reset();
+}
+
+function saveDates() {
+    if (!selectedStay.value) {
+        return;
+    }
+
+    datesForm.put(`/backoffice/hotel/stays/${selectedStay.value.id}${window.location.search}`, {
+        preserveScroll: true,
+        preserveState: true,
+        preserveUrl: true,
+        only: props.checkedOut ? ['checkedOutStays', 'filters', 'flash'] : ['stays', 'filters', 'flash'],
+    });
 }
 
 function selectStay(stay) {
@@ -490,9 +533,33 @@ defineExpose({
                         </div>
                         <div class="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
                             <p><span class="text-ink/55 dark:text-foam/55">Branch</span><br>{{ selectedStay.branch_name }}</p>
-                            <p><span class="text-ink/55 dark:text-foam/55">Check in</span><br>{{ selectedStay.checked_in_label }}</p>
-                            <p><span class="text-ink/55 dark:text-foam/55">{{ selectedStay.checked_out_label ? 'Scheduled check out' : 'Check out' }}</span><br>{{ selectedStay.checkout_label }}</p>
-                            <p v-if="selectedStay.checked_out_label"><span class="text-ink/55 dark:text-foam/55">Checked out</span><br>{{ selectedStay.checked_out_label }}</p>
+                            <form v-if="embedded" class="contents" @submit.prevent="saveDates">
+                                <label class="flex flex-col gap-1">
+                                    <span class="text-ink/55 dark:text-foam/55">Check in</span>
+                                    <input v-model="datesForm.checked_in_at" class="h-10 rounded-xl border border-mist bg-white px-3 text-ink dark:border-white/10 dark:bg-white/5 dark:text-foam" required type="datetime-local" />
+                                    <span v-if="datesForm.errors.checked_in_at" class="text-danger">{{ datesForm.errors.checked_in_at }}</span>
+                                </label>
+                                <label class="flex flex-col gap-1">
+                                    <span class="text-ink/55 dark:text-foam/55">{{ selectedStay.checked_out_at ? 'Scheduled check out' : 'Check out' }}</span>
+                                    <input v-model="datesForm.checkout_on" class="h-10 rounded-xl border border-mist bg-white px-3 text-ink dark:border-white/10 dark:bg-white/5 dark:text-foam" required type="date" />
+                                    <span v-if="datesForm.errors.checkout_on" class="text-danger">{{ datesForm.errors.checkout_on }}</span>
+                                </label>
+                                <label v-if="selectedStay.checked_out_at" class="flex flex-col gap-1">
+                                    <span class="text-ink/55 dark:text-foam/55">Checked out</span>
+                                    <input v-model="datesForm.checked_out_at" class="h-10 rounded-xl border border-mist bg-white px-3 text-ink dark:border-white/10 dark:bg-white/5 dark:text-foam" required type="datetime-local" />
+                                    <span v-if="datesForm.errors.checked_out_at" class="text-danger">{{ datesForm.errors.checked_out_at }}</span>
+                                </label>
+                                <div class="flex items-end">
+                                    <button class="h-10 rounded-xl bg-pine px-3 text-sm font-medium text-foam disabled:opacity-70" type="submit" :disabled="datesForm.processing">
+                                        {{ datesForm.processing ? 'Saving…' : 'Save dates' }}
+                                    </button>
+                                </div>
+                            </form>
+                            <template v-else>
+                                <p><span class="text-ink/55 dark:text-foam/55">Check in</span><br>{{ selectedStay.checked_in_label }}</p>
+                                <p><span class="text-ink/55 dark:text-foam/55">{{ selectedStay.checked_out_label ? 'Scheduled check out' : 'Check out' }}</span><br>{{ selectedStay.checkout_label }}</p>
+                                <p v-if="selectedStay.checked_out_label"><span class="text-ink/55 dark:text-foam/55">Checked out</span><br>{{ selectedStay.checked_out_label }}</p>
+                            </template>
                             <p v-if="selectedStay.checked_out_by"><span class="text-ink/55 dark:text-foam/55">Checked out by</span><br>{{ selectedStay.checked_out_by }}</p>
                             <p><span class="text-ink/55 dark:text-foam/55">Pod</span><br>{{ selectedStay.pod_type_label }}</p>
                         </div>

@@ -20,6 +20,11 @@ class CategoryImportController extends Controller
         ]);
     }
 
+    public function preview(ImportCategoriesRequest $request, ImportCategories $importCategories): RedirectResponse
+    {
+        return back()->with('import_preview', $importCategories->preview($request->file('file')));
+    }
+
     public function store(ImportCategoriesRequest $request, ImportCategories $importCategories): RedirectResponse
     {
         $result = $importCategories->handle($request->file('file'));
@@ -34,6 +39,7 @@ class CategoryImportController extends Controller
         return redirect()
             ->route('shop.catalog-meta.index')
             ->with('status', $status)
-            ->with('import_errors', $result['errors']);
+            ->with('import_errors', $result['errors'])
+            ->with('import_logs', $result['logs']);
     }
 }

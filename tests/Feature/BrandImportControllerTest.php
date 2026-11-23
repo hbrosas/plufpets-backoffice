@@ -30,13 +30,29 @@ class BrandImportControllerTest extends TestCase
         $this->assertStringContainsString("name\nPluf Pets\n", $response->streamedContent());
     }
 
+    public function test_preview_lists_brand_rows_without_importing(): void
+    {
+        $response = $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog-meta')
+            ->post('/backoffice/shop/brands/import/preview', [
+                'file' => $this->csvFile("name\nPluf Pets\nHouse Brand\n"),
+            ]);
+
+        $response->assertRedirect('/backoffice/shop/catalog-meta');
+        $this->assertSame([
+            ['row' => 2, 'values' => ['Pluf Pets']],
+            ['row' => 3, 'values' => ['House Brand']],
+        ], $response->getSession()->get('import_preview')['rows']);
+        $this->assertDatabaseCount('brands', 0);
+    }
+
     public function test_missing_file_is_rejected(): void
     {
         $response = $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/brands/import', []);
 
         $response->assertRedirect('/backoffice/shop/catalog-meta');
         $response->assertSessionHasErrors([
-            'file' => 'Choose a CSV file to upload.',
+            'file' => 'Choose a CSV or Excel file to upload.',
         ]);
     }
 
@@ -65,6 +81,8 @@ class BrandImportControllerTest extends TestCase
         $response->assertSessionHas('import_errors', [
             ['row' => 2, 'message' => 'That brand already exists.'],
         ]);
+        $this->assertSame(false, $response->getSession()->get('import_logs')['rows'][0]['imported']);
+        $this->assertSame(true, $response->getSession()->get('import_logs')['rows'][1]['imported']);
         $this->assertDatabaseCount('brands', 2);
         $this->assertDatabaseHas('brands', ['name' => 'House Brand']);
     }

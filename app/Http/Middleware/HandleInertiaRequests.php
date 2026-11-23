@@ -64,6 +64,8 @@ class HandleInertiaRequests extends Middleware
                 'status' => $request->session()->get('status'),
                 'status_at' => $request->session()->has('status') ? microtime(true) : null,
                 'import_errors' => $request->session()->get('import_errors'),
+                'import_preview' => $request->session()->get('import_preview'),
+                'import_logs' => $request->session()->get('import_logs'),
                 'created_category' => $request->session()->get('created_category'),
                 'created_brand' => $request->session()->get('created_brand'),
                 'new_variant' => $request->session()->get('new_variant'),

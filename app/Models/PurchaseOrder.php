@@ -61,7 +61,7 @@ class PurchaseOrder extends Model
 
     public function orderedQuantity(): int
     {
-        return (int) $this->items->sum('quantity');
+        return $this->summed('items_sum_quantity', 'quantity');
     }
 
     public function totalAmount(): float
@@ -71,7 +71,16 @@ class PurchaseOrder extends Model
 
     public function receivedQuantity(): int
     {
-        return (int) $this->items->sum('received_quantity');
+        return $this->summed('items_sum_received_quantity', 'received_quantity');
+    }
+
+    private function summed(string $aggregate, string $column): int
+    {
+        if (! $this->relationLoaded('items') && array_key_exists($aggregate, $this->attributes)) {
+            return (int) $this->attributes[$aggregate];
+        }
+
+        return (int) $this->items->sum($column);
     }
 
     public function deliveryStatus(): DeliveryStatus

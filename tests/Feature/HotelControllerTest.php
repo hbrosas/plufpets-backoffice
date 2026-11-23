@@ -383,6 +383,185 @@ class HotelControllerTest extends TestCase
         ]);
     }
 
+    public function test_guest_cannot_change_hotel_stay_dates(): void
+    {
+        $stay = HotelStay::factory()->create([
+            'checked_in_at' => '2026-06-14 02:00:00',
+            'checkout_on' => '2026-06-15',
+        ]);
+
+        $this->put(route('hotel.stays.update', $stay), [
+            'checked_in_at' => '2026-06-16T10:00',
+            'checkout_on' => '2026-06-18',
+        ])->assertRedirect(route('login'));
+
+        $stay->refresh();
+        $this->assertSame('2026-06-14 02:00:00', $stay->checked_in_at?->utc()->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-06-15', $stay->checkout_on?->toDateString());
+    }
+
+    public function test_employee_without_hotel_access_cannot_change_hotel_stay_dates(): void
+    {
+        $employee = Employee::factory()->create([
+            'role_id' => Role::factory()->withPermissions(['dashboard.view'])->create()->id,
+        ]);
+        $stay = HotelStay::factory()->create([
+            'checked_in_at' => '2026-06-14 02:00:00',
+            'checkout_on' => '2026-06-15',
+        ]);
+
+        $this->actingAsEmployee($employee)
+            ->put(route('hotel.stays.update', $stay), [
+                'checked_in_at' => '2026-06-16T10:00',
+                'checkout_on' => '2026-06-18',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('2026-06-15', $stay->fresh()->checkout_on?->toDateString());
+    }
+
+    public function test_stay_dates_can_be_changed(): void
+    {
+        $stay = HotelStay::factory()->create([
+            'client_name' => 'Mina Cruz',
+            'checked_in_at' => '2026-06-14 02:00:00',
+            'checkout_on' => '2026-06-15',
+        ]);
+
+        $this->actingAsEmployee()
+            ->put(route('hotel.stays.update', $stay), [
+                'checked_in_at' => '2026-06-14T18:30',
+                'checkout_on' => '2026-06-14',
+                'checked_out_at' => '2026-06-16T09:15',
+            ])
+            ->assertRedirect(route('hotel.index'))
+            ->assertSessionHas('status', 'Stay dates updated.');
+
+        $stay->refresh();
+        $this->assertSame('2026-06-14 10:30:00', $stay->checked_in_at?->utc()->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-06-14', $stay->checkout_on?->toDateString());
+        $this->assertNull($stay->checked_out_at);
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/hotel')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('stays.0.checked_in_at', '2026-06-14T18:30')
+                ->where('stays.0.checked_in_label', 'Jun 14, 2026 6:30 PM')
+                ->where('stays.0.checkout_on', '2026-06-14')
+                ->where('stays.0.checkout_label', 'Jun 14, 2026'));
+    }
+
+    public function test_checked_out_stay_dates_can_be_changed(): void
+    {
+        $stay = HotelStay::factory()->checkedOut()->create([
+            'client_name' => 'Mina Cruz',
+            'checked_in_at' => '2026-06-14 02:00:00',
+            'checkout_on' => '2026-06-15',
+            'checked_out_at' => '2026-06-15 02:00:00',
+            'checked_out_by_name' => 'Hazel Brosas',
+            'checked_out_by_employee_number' => '10001',
+        ]);
+
+        $this->actingAsEmployee()
+            ->put(route('hotel.stays.update', $stay).'?tab=checked-out&from=2026-06-16&to=2026-06-16', [
+                'checked_in_at' => '2026-06-14T18:30',
+                'checkout_on' => '2026-06-16',
+                'checked_out_at' => '2026-06-16T09:15',
+            ])
+            ->assertRedirect(route('hotel.index', [
+                'tab' => 'checked-out',
+                'from' => '2026-06-16',
+                'to' => '2026-06-16',
+            ]))
+            ->assertSessionHas('status', 'Stay dates updated.');
+
+        $stay->refresh();
+        $this->assertSame('2026-06-16 01:15:00', $stay->checked_out_at?->utc()->format('Y-m-d H:i:s'));
+        $this->assertSame('Hazel Brosas', $stay->checked_out_by_name);
+
+        $this->actingAsEmployee()
+            ->get('/backoffice/hotel?tab=checked-out&from=2026-06-16&to=2026-06-16')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('checkedOutStays.0.checked_out_at', '2026-06-16T09:15')
+                ->where('checkedOutStays.0.checked_out_label', 'Jun 16, 2026 9:15 AM')
+                ->where('checkedOutStays.0.checked_out_by', 'Hazel Brosas · #10001'));
+    }
+
+    public function test_stay_dates_require_a_check_in_and_check_out(): void
+    {
+        $stay = HotelStay::factory()->create();
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/hotel')
+            ->put(route('hotel.stays.update', $stay), [])
+            ->assertRedirect('/backoffice/hotel')
+            ->assertSessionHasErrors([
+                'checked_in_at' => 'Enter the check-in date.',
+                'checkout_on' => 'Enter the check-out date.',
+            ]);
+    }
+
+    public function test_check_out_date_before_check_in_is_rejected(): void
+    {
+        $stay = HotelStay::factory()->create([
+            'checkout_on' => '2026-06-16',
+        ]);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/hotel')
+            ->put(route('hotel.stays.update', $stay), [
+                'checked_in_at' => '2026-06-16T10:00',
+                'checkout_on' => '2026-06-15',
+            ])
+            ->assertRedirect('/backoffice/hotel')
+            ->assertSessionHasErrors([
+                'checkout_on' => 'Check-out date must be on or after the check-in date.',
+            ]);
+
+        $this->assertSame('2026-06-16', $stay->fresh()->checkout_on?->toDateString());
+    }
+
+    public function test_checked_out_time_before_check_in_is_rejected(): void
+    {
+        $stay = HotelStay::factory()->checkedOut()->create([
+            'checked_out_at' => '2026-06-16 04:00:00',
+        ]);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/hotel')
+            ->put(route('hotel.stays.update', $stay), [
+                'checked_in_at' => '2026-06-16T12:00',
+                'checkout_on' => '2026-06-16',
+                'checked_out_at' => '2026-06-16T11:59',
+            ])
+            ->assertRedirect('/backoffice/hotel')
+            ->assertSessionHasErrors([
+                'checked_out_at' => 'Checked-out time must be on or after check-in.',
+            ]);
+
+        $this->assertSame('2026-06-16 04:00:00', $stay->fresh()->checked_out_at?->utc()->format('Y-m-d H:i:s'));
+    }
+
+    public function test_checked_out_guest_requires_a_checked_out_time(): void
+    {
+        $stay = HotelStay::factory()->checkedOut()->create();
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/hotel')
+            ->put(route('hotel.stays.update', $stay), [
+                'checked_in_at' => '2026-06-16T10:00',
+                'checkout_on' => '2026-06-16',
+            ])
+            ->assertRedirect('/backoffice/hotel')
+            ->assertSessionHasErrors([
+                'checked_out_at' => 'Enter the checked-out date.',
+            ]);
+
+        $this->assertNotNull($stay->fresh()->checked_out_at);
+    }
+
     /**
      * @return array<string, mixed>
      */

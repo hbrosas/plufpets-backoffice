@@ -9,6 +9,7 @@ use App\Models\CatalogItemVariant;
 use App\Models\Category;
 use App\Support\CatalogItemRules;
 use App\Support\CsvImportFile;
+use App\Support\CsvImportResult;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -44,27 +45,33 @@ class ImportCatalogItems
     ];
 
     /**
-     * @return array{imported: int, errors: list<array{row: int, message: string}>}
+     * @return array{columns: list<string>, rows: list<array{row: int, values: list<string>}>}
+     */
+    public function preview(UploadedFile $file): array
+    {
+        $parsed = $this->parsed($file);
+
+        return [
+            'columns' => $parsed['columns'],
+            'rows' => CsvImportResult::table($parsed['rows'], $parsed['columns']),
+        ];
+    }
+
+    /**
+     * @return array{imported: int, errors: list<array{row: int, message: string}>, logs: array{columns: list<string>, rows: list<array{row: int, values: list<string>, imported: bool, message: string}>}}
      */
     public function handle(UploadedFile $file): array
     {
         set_time_limit(120);
 
-        $parsed = CsvImportFile::read(
-            $file,
-            self::REQUIRED_COLUMNS,
-            self::OPTIONAL_COLUMNS,
-            self::MAX_ROWS,
-            'catalog rows',
-        );
-
-        [$groups, $errors] = $this->groups($parsed['rows'], array_key_exists('variant_active', $parsed['columns']));
-
+        $parsed = $this->parsed($file);
+        [$groups, $errors] = $this->groups($parsed['rows'], $parsed['has_variant_active']);
         $imported = 0;
+        $savedRows = [];
 
         if ($groups !== []) {
-            DB::transaction(function () use ($groups, &$errors, &$imported): void {
-                $imported = $this->saveGroups($groups, $errors);
+            DB::transaction(function () use ($groups, &$errors, &$imported, &$savedRows): void {
+                [$imported, $savedRows] = $this->saveGroups($groups, $errors);
             });
         }
 
@@ -73,6 +80,30 @@ class ImportCatalogItems
         return [
             'imported' => $imported,
             'errors' => $errors,
+            'logs' => [
+                'columns' => $parsed['columns'],
+                'rows' => CsvImportResult::logs($parsed['rows'], $parsed['columns'], $errors, $savedRows),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{columns: list<string>, rows: list<array{number: int, cells: array<string, string>}>, has_variant_active: bool}
+     */
+    private function parsed(UploadedFile $file): array
+    {
+        $parsed = CsvImportFile::read(
+            $file,
+            self::REQUIRED_COLUMNS,
+            self::OPTIONAL_COLUMNS,
+            self::MAX_ROWS,
+            'catalog rows',
+        );
+
+        return [
+            'columns' => CsvImportFile::orderedColumns($parsed['columns'], self::REQUIRED_COLUMNS, self::OPTIONAL_COLUMNS),
+            'rows' => $parsed['rows'],
+            'has_variant_active' => array_key_exists('variant_active', $parsed['columns']),
         ];
     }
 
@@ -170,14 +201,16 @@ class ImportCatalogItems
     /**
      * @param  array<string, array<string, mixed>>  $groups
      * @param  list<array{row: int, message: string}>  $errors
+     * @return array{0: int, 1: list<int>}
      */
-    private function saveGroups(array $groups, array &$errors): int
+    private function saveGroups(array $groups, array &$errors): array
     {
         $items = $this->existingItems($groups);
         $categoryIds = $this->ensureNames(Category::class, $this->filledNames($groups, 'category_name'));
         $brandIds = $this->ensureNames(Brand::class, $this->filledNames($groups, 'brand_name'));
         [$bySku, $byBarcode] = $this->existingVariants($groups);
         $imported = 0;
+        $savedRows = [];
         $newItems = [];
         $newVariants = [];
         $timestamp = now();
@@ -228,12 +261,14 @@ class ImportCatalogItems
                     'variants' => $accepted,
                 ];
                 $imported += count($accepted);
+                array_push($savedRows, ...array_column($accepted, 'row'));
 
                 continue;
             }
 
             $this->saveItem($item, $group, $categoryIds, $brandIds);
             $imported += count($accepted);
+            array_push($savedRows, ...array_column($accepted, 'row'));
             $this->collectNewVariants($item->id, $accepted, $bySku, $newVariants, $timestamp);
         }
 
@@ -243,7 +278,7 @@ class ImportCatalogItems
             CatalogItemVariant::query()->insert($chunk);
         }
 
-        return $imported;
+        return [$imported, $savedRows];
     }
 
     /**

@@ -21,6 +21,11 @@ class CatalogItemImportController extends Controller
         ]);
     }
 
+    public function preview(ImportCatalogItemsRequest $request, ImportCatalogItems $importCatalogItems): RedirectResponse
+    {
+        return back()->with('import_preview', $importCatalogItems->preview($request->file('file')));
+    }
+
     public function store(ImportCatalogItemsRequest $request, ImportCatalogItems $importCatalogItems): RedirectResponse
     {
         $result = $importCatalogItems->handle($request->file('file'));
@@ -36,6 +41,7 @@ class CatalogItemImportController extends Controller
         return redirect()
             ->route('shop.catalog.index')
             ->with('status', $status)
-            ->with('import_errors', $result['errors']);
+            ->with('import_errors', $result['errors'])
+            ->with('import_logs', $result['logs']);
     }
 }

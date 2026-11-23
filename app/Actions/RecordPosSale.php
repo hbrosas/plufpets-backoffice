@@ -20,11 +20,13 @@ use App\Models\PaymentMethod;
 use App\Models\PosOpenOrder;
 use App\Models\PosSale;
 use App\Models\PosSaleItem;
+use App\Models\PosSaleItemCommission;
 use App\Models\PosSalePayment;
 use App\Models\PosSaleTax;
 use App\Models\PosShift;
 use App\Models\TaxFee;
 use App\Support\Peso;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -89,31 +91,8 @@ class RecordPosSale
                 'sold_at' => now(),
             ]);
 
-            foreach ($preparedItems as $prepared) {
-                /** @var CatalogItemVariant $variant */
-                $variant = $prepared['variant'];
-
-                PosSaleItem::query()->create([
-                    'pos_sale_id' => $sale->id,
-                    'catalog_item_variant_id' => $variant->id,
-                    'product_name' => $variant->catalogItem?->name ?? $variant->name,
-                    'variant_name' => $variant->name,
-                    'sku' => $variant->sku,
-                    'notes' => $prepared['notes'] !== '' ? $prepared['notes'] : null,
-                    'modifiers' => $prepared['modifiers'] === [] ? null : $prepared['modifiers'],
-                    'quantity' => $prepared['quantity'],
-                    'unit_price' => $prepared['unit_price'],
-                    'line_total' => $prepared['line_total'],
-                    'is_free' => $prepared['is_free'],
-                ])->commissions()->createMany($prepared['commissions']);
-
-                if ($prepared['decrement_inventory']) {
-                    BranchInventory::query()
-                        ->where('branch_id', $shift->branch_id)
-                        ->where('catalog_item_variant_id', $variant->id)
-                        ->decrement('quantity', $prepared['quantity']);
-                }
-            }
+            $this->storeSaleItems($sale, $preparedItems);
+            $this->decrementInventories($shift->branch_id, $preparedItems);
 
             foreach ($preparedPayments as $preparedPayment) {
                 if ($preparedPayment['payment_method_id'] === null) {
@@ -153,7 +132,7 @@ class RecordPosSale
                 $this->shopOrderStock->commit($shopOrder);
             }
 
-            return $sale->load(['items.commissions', 'taxes', 'payments']);
+            return $sale;
         });
     }
 
@@ -188,11 +167,22 @@ class RecordPosSale
     {
         $prepared = [];
         $applied = 0.0;
+        $methodIds = [];
+
+        foreach ($payments as $payment) {
+            if (isset($payment['payment_method_id'])) {
+                $methodIds[] = (int) $payment['payment_method_id'];
+            }
+        }
+
+        $methods = $methodIds === []
+            ? collect()
+            : PaymentMethod::query()->whereIn('id', array_unique($methodIds))->get()->keyBy('id');
 
         foreach ($payments as $index => $payment) {
-            $method = PaymentMethod::query()->findOrFail($payment['payment_method_id']);
+            $method = $methods->get((int) ($payment['payment_method_id'] ?? 0));
 
-            if (! $method->is_active) {
+            if (! $method instanceof PaymentMethod || ! $method->is_active) {
                 throw ValidationException::withMessages([
                     "payments.{$index}.payment_method_id" => 'Choose an active payment method.',
                 ]);
@@ -395,9 +385,11 @@ class RecordPosSale
 
     /**
      * @param  array<string, mixed>  $item
+     * @param  Collection<int, Employee>  $employees
+     * @param  Collection<string, EmployeeServiceCommission>  $rates
      * @return list<array{employee_id: int, employee_number: string, employee_name: string, role: string, rate: string, pool_size: int, commissionable_amount: string, amount: string}>
      */
-    private function commissionsFor(CatalogItemVariant $variant, bool $isProduct, float $commissionable, array $item, int $index): array
+    private function commissionsFor(CatalogItemVariant $variant, bool $isProduct, float $commissionable, array $item, int $index, Collection $employees, Collection $rates): array
     {
         $assignedIds = $this->employeeIds($item['assigned_employee_ids'] ?? []);
         $assistedIds = $this->employeeIds($item['assisted_employee_ids'] ?? []);
@@ -419,33 +411,22 @@ class RecordPosSale
         }
 
         $ids = [...$assignedIds, ...$assistedIds];
-        $employees = Employee::query()
-            ->whereKey($ids)
-            ->where('is_active', true)
-            ->whereHas('profile')
-            ->get()
-            ->keyBy('id');
+        $selected = $employees->only($ids);
 
-        if ($employees->count() !== count($ids)) {
+        if ($selected->count() !== count($ids)) {
             throw ValidationException::withMessages([
                 "items.{$index}.assigned_employee_ids" => 'Choose an active employee with a record.',
             ]);
         }
 
-        $rates = EmployeeServiceCommission::query()
-            ->where('catalog_item_id', $variant->catalog_item_id)
-            ->whereIn('employee_id', $ids)
-            ->get()
-            ->keyBy('employee_id');
-
         $assigned = array_map(fn (int $id): array => [
             'employee' => $employees[$id],
-            'rate' => (float) ($rates->get($id)?->assigned_rate ?? 0),
+            'rate' => (float) ($rates->get($variant->catalog_item_id.'-'.$id)?->assigned_rate ?? 0),
         ], $assignedIds);
 
         $assisted = array_map(fn (int $id): array => [
             'employee' => $employees[$id],
-            'rate' => (float) ($rates->get($id)?->assisted_rate ?? 0),
+            'rate' => (float) ($rates->get($variant->catalog_item_id.'-'.$id)?->assisted_rate ?? 0),
         ], $assistedIds);
 
         return [
@@ -541,23 +522,14 @@ class RecordPosSale
 
         $subtotal = 0.0;
         $preparedItems = [];
+        $variants = $this->variantsFor($shift->branch_id, $attributes['items'], $lock);
+        $inventories = $this->inventoriesFor($shift->branch_id, $variants, $lock);
+        $commissionSources = $this->commissionSources($attributes['items'], $variants);
 
         foreach ($attributes['items'] as $index => $item) {
-            $variantQuery = CatalogItemVariant::query()
-                ->with([
-                    'catalogItem.modifiers',
-                    'catalogItem.modifierOptionPrices.branchPrices' => fn ($query) => $query->where('branch_id', $shift->branch_id),
-                    'branchPrices' => fn ($query) => $query->where('branch_id', $shift->branch_id),
-                ])
-                ->whereKey($item['catalog_item_variant_id']);
+            $variant = $variants->get((int) ($item['catalog_item_variant_id'] ?? 0));
 
-            if ($lock) {
-                $variantQuery->lockForUpdate();
-            }
-
-            $variant = $variantQuery->firstOrFail();
-
-            if (! $variant->is_active || ! $variant->catalogItem?->is_active) {
+            if (! $variant instanceof CatalogItemVariant || ! $variant->is_active || ! $variant->catalogItem?->is_active) {
                 throw ValidationException::withMessages([
                     "items.{$index}.catalog_item_variant_id" => 'That item is not available.',
                 ]);
@@ -568,15 +540,7 @@ class RecordPosSale
             $isProduct = $variant->catalogItem?->type === CatalogItemType::Product;
 
             if ($isProduct && ! $isFree) {
-                $inventoryQuery = BranchInventory::query()
-                    ->where('branch_id', $shift->branch_id)
-                    ->where('catalog_item_variant_id', $variant->id);
-
-                if ($lock) {
-                    $inventoryQuery->lockForUpdate();
-                }
-
-                $inventory = $inventoryQuery->first();
+                $inventory = $inventories->get($variant->id);
                 $onHand = ($inventory instanceof BranchInventory ? $inventory->available() : 0) + ($held[$variant->id] ?? 0);
 
                 if ($quantity > $onHand) {
@@ -613,7 +577,15 @@ class RecordPosSale
                 'line_total' => number_format($lineTotal, 2, '.', ''),
                 'decrement_inventory' => $isProduct && ! $isFree,
                 'is_free' => $isFree,
-                'commissions' => $isFree ? [] : $this->commissionsFor($variant, $isProduct, $commissionable, $item, $index),
+                'commissions' => $isFree ? [] : $this->commissionsFor(
+                    $variant,
+                    $isProduct,
+                    $commissionable,
+                    $item,
+                    $index,
+                    $commissionSources['employees'],
+                    $commissionSources['rates'],
+                ),
             ];
         }
 
@@ -841,5 +813,212 @@ class RecordPosSale
         }
 
         return sprintf('POS-%s-%04d', $prefix, $sequence);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     * @return Collection<int, CatalogItemVariant>
+     */
+    private function variantsFor(int $branchId, array $items, bool $lock): Collection
+    {
+        $ids = [];
+
+        foreach ($items as $item) {
+            $ids[] = (int) ($item['catalog_item_variant_id'] ?? 0);
+        }
+
+        $ids = array_values(array_unique(array_filter($ids)));
+
+        $query = CatalogItemVariant::query()
+            ->with([
+                'catalogItem.modifiers',
+                'catalogItem.modifierOptionPrices.branchPrices' => fn ($query) => $query->where('branch_id', $branchId),
+                'branchPrices' => fn ($query) => $query->where('branch_id', $branchId),
+            ])
+            ->whereIn('id', $ids)
+            ->orderBy('id');
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        return $query->get()->keyBy('id');
+    }
+
+    /**
+     * @param  Collection<int, CatalogItemVariant>  $variants
+     * @return Collection<int, BranchInventory>
+     */
+    private function inventoriesFor(int $branchId, Collection $variants, bool $lock): Collection
+    {
+        $ids = $variants
+            ->filter(fn (CatalogItemVariant $variant): bool => $variant->catalogItem?->type === CatalogItemType::Product)
+            ->modelKeys();
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        $query = BranchInventory::query()
+            ->where('branch_id', $branchId)
+            ->whereIn('catalog_item_variant_id', $ids)
+            ->orderBy('catalog_item_variant_id');
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        return $query->get()->keyBy('catalog_item_variant_id');
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     * @param  Collection<int, CatalogItemVariant>  $variants
+     * @return array{employees: Collection<int, Employee>, rates: Collection<string, EmployeeServiceCommission>}
+     */
+    private function commissionSources(array $items, Collection $variants): array
+    {
+        $employeeIds = [];
+        $catalogIds = [];
+
+        foreach ($items as $item) {
+            $ids = [
+                ...$this->employeeIds($item['assigned_employee_ids'] ?? []),
+                ...$this->employeeIds($item['assisted_employee_ids'] ?? []),
+            ];
+
+            if ($ids === []) {
+                continue;
+            }
+
+            $variant = $variants->get((int) ($item['catalog_item_variant_id'] ?? 0));
+
+            if (! $variant instanceof CatalogItemVariant) {
+                continue;
+            }
+
+            array_push($employeeIds, ...$ids);
+            $catalogIds[] = $variant->catalog_item_id;
+        }
+
+        if ($employeeIds === []) {
+            return ['employees' => collect(), 'rates' => collect()];
+        }
+
+        return [
+            'employees' => Employee::query()
+                ->whereKey(array_unique($employeeIds))
+                ->where('is_active', true)
+                ->whereHas('profile')
+                ->get()
+                ->keyBy('id'),
+            'rates' => EmployeeServiceCommission::query()
+                ->whereIn('catalog_item_id', array_unique($catalogIds))
+                ->whereIn('employee_id', array_unique($employeeIds))
+                ->get()
+                ->keyBy(fn (EmployeeServiceCommission $rate): string => $rate->catalog_item_id.'-'.$rate->employee_id),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $preparedItems
+     */
+    private function storeSaleItems(PosSale $sale, array $preparedItems): void
+    {
+        if ($preparedItems === []) {
+            return;
+        }
+
+        $timestamp = now();
+        $rows = [];
+        $commissions = [];
+
+        foreach ($preparedItems as $prepared) {
+            /** @var CatalogItemVariant $variant */
+            $variant = $prepared['variant'];
+            $rows[] = [
+                'pos_sale_id' => $sale->id,
+                'catalog_item_variant_id' => $variant->id,
+                'product_name' => $variant->catalogItem?->name ?? $variant->name,
+                'variant_name' => $variant->name,
+                'sku' => $variant->sku,
+                'notes' => $prepared['notes'] !== '' && $prepared['notes'] !== null ? $prepared['notes'] : null,
+                'modifiers' => $prepared['modifiers'] === [] ? null : json_encode($prepared['modifiers']),
+                'quantity' => $prepared['quantity'],
+                'unit_price' => $prepared['unit_price'],
+                'line_total' => $prepared['line_total'],
+                'is_free' => $prepared['is_free'] ? 1 : 0,
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
+            ];
+            $commissions[] = $prepared['commissions'];
+        }
+
+        foreach (array_chunk($rows, 200) as $chunk) {
+            PosSaleItem::query()->insert($chunk);
+        }
+
+        $saved = PosSaleItem::query()
+            ->where('pos_sale_id', $sale->id)
+            ->orderBy('id')
+            ->get();
+        $commissionRows = [];
+
+        foreach ($saved as $index => $item) {
+            foreach ($commissions[$index] ?? [] as $commission) {
+                $commissionRows[] = [
+                    'pos_sale_item_id' => $item->id,
+                    'employee_id' => $commission['employee_id'],
+                    'employee_number' => $commission['employee_number'],
+                    'employee_name' => $commission['employee_name'],
+                    'role' => $commission['role'],
+                    'rate' => $commission['rate'],
+                    'pool_size' => $commission['pool_size'],
+                    'commissionable_amount' => $commission['commissionable_amount'],
+                    'amount' => $commission['amount'],
+                    'waived_at' => null,
+                    'waived_by_employee_number' => null,
+                    'waived_by_name' => null,
+                    'created_at' => $timestamp,
+                    'updated_at' => $timestamp,
+                ];
+            }
+        }
+
+        foreach (array_chunk($commissionRows, 200) as $chunk) {
+            PosSaleItemCommission::query()->insert($chunk);
+        }
+    }
+
+    /**
+     * @param  list<array{variant: CatalogItemVariant, quantity: int, decrement_inventory: bool}>  $preparedItems
+     */
+    private function decrementInventories(int $branchId, array $preparedItems): void
+    {
+        $quantities = [];
+
+        foreach ($preparedItems as $prepared) {
+            if (! $prepared['decrement_inventory']) {
+                continue;
+            }
+
+            $variantId = $prepared['variant']->id;
+            $quantities[$variantId] = ($quantities[$variantId] ?? 0) + $prepared['quantity'];
+        }
+
+        foreach (array_chunk($quantities, 200, true) as $chunk) {
+            $cases = [];
+
+            foreach ($chunk as $variantId => $quantity) {
+                $cases[] = 'when '.(int) $variantId.' then quantity - '.(int) $quantity;
+            }
+
+            BranchInventory::query()
+                ->where('branch_id', $branchId)
+                ->whereIn('catalog_item_variant_id', array_keys($chunk))
+                ->update([
+                    'quantity' => DB::raw('case catalog_item_variant_id '.implode(' ', $cases).' else quantity end'),
+                ]);
+        }
     }
 }

@@ -22,6 +22,7 @@ use App\Models\PosSalePayment;
 use App\Models\PosShift;
 use App\Models\TaxFee;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -523,6 +524,87 @@ class PosSaleControllerTest extends TestCase
         $this->assertDatabaseHas('branch_inventories', [
             'catalog_item_variant_id' => $variant->id,
             'quantity' => 4,
+        ]);
+    }
+
+    public function test_an_unknown_item_is_rejected(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $payment = PaymentMethod::factory()->cash()->create();
+
+        $this->actingAsEmployee()
+            ->postJson("/backoffice/pos/register/{$branch->id}/sales", [
+                'items' => [['catalog_item_variant_id' => 999999, 'quantity' => 1]],
+                'payments' => [[
+                    'payment_method_id' => $payment->id,
+                    'amount' => '10.00',
+                    'amount_tendered' => '10.00',
+                ]],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([
+                'items.0.catalog_item_variant_id' => 'That item is not available.',
+            ]);
+
+        $this->assertDatabaseCount('pos_sales', 0);
+    }
+
+    public function test_a_sale_with_many_lines_records_each_item(): void
+    {
+        $branch = Branch::factory()->create();
+        PosShift::factory()->create(['branch_id' => $branch->id]);
+        $payment = PaymentMethod::factory()->cash()->create();
+        $variants = CatalogItemVariant::factory()->count(30)->create(['price' => 10]);
+
+        foreach ($variants as $index => $variant) {
+            BranchInventory::factory()->create([
+                'branch_id' => $branch->id,
+                'catalog_item_variant_id' => $variant->id,
+                'quantity' => $index === 0 ? 5 : 2,
+            ]);
+        }
+
+        $items = $variants->map(fn (CatalogItemVariant $variant): array => [
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => 1,
+        ])->all();
+        $items[] = [
+            'catalog_item_variant_id' => $variants->first()->id,
+            'quantity' => 1,
+        ];
+
+        $this->actingAsEmployee();
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $response = $this->postJson("/backoffice/pos/register/{$branch->id}/sales", [
+            'items' => $items,
+            'payments' => [[
+                'payment_method_id' => $payment->id,
+                'amount' => '310.00',
+                'amount_tendered' => '310.00',
+            ]],
+        ]);
+
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $response->assertOk();
+        $response->assertJsonPath('checkout_success.total', '₱310.00');
+        $this->assertLessThan(80, $queries);
+        $this->assertSame(31, PosSaleItem::query()->count());
+        $this->assertDatabaseHas('pos_sales', [
+            'branch_id' => $branch->id,
+            'total' => '310.00',
+        ]);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variants->first()->id,
+            'quantity' => 3,
+        ]);
+        $this->assertDatabaseHas('branch_inventories', [
+            'catalog_item_variant_id' => $variants->last()->id,
+            'quantity' => 1,
         ]);
     }
 

@@ -34,13 +34,28 @@ class CategoryImportControllerTest extends TestCase
         );
     }
 
+    public function test_preview_lists_category_rows_without_importing(): void
+    {
+        $response = $this->actingAsEmployee()
+            ->from('/backoffice/shop/catalog-meta')
+            ->post('/backoffice/shop/categories/import/preview', [
+                'file' => $this->csvFile("name,pos_category,show_on_shop\nFood,Retail,1\n"),
+            ]);
+
+        $response->assertRedirect('/backoffice/shop/catalog-meta');
+        $this->assertSame([
+            ['row' => 2, 'values' => ['Food', 'Retail', '1']],
+        ], $response->getSession()->get('import_preview')['rows']);
+        $this->assertDatabaseCount('categories', 0);
+    }
+
     public function test_missing_file_is_rejected(): void
     {
         $response = $this->actingAsEmployee()->from('/backoffice/shop/catalog-meta')->post('/backoffice/shop/categories/import', []);
 
         $response->assertRedirect('/backoffice/shop/catalog-meta');
         $response->assertSessionHasErrors([
-            'file' => 'Choose a CSV file to upload.',
+            'file' => 'Choose a CSV or Excel file to upload.',
         ]);
     }
 
@@ -112,6 +127,8 @@ class CategoryImportControllerTest extends TestCase
         $response->assertSessionHas('import_errors', [
             ['row' => 2, 'message' => 'That POS category does not exist.'],
         ]);
+        $this->assertSame(false, $response->getSession()->get('import_logs')['rows'][0]['imported']);
+        $this->assertSame('That POS category does not exist.', $response->getSession()->get('import_logs')['rows'][0]['message']);
         $this->assertDatabaseCount('categories', 0);
     }
 
