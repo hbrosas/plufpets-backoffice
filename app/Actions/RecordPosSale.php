@@ -947,7 +947,7 @@ class RecordPosSale
                 'quantity' => $prepared['quantity'],
                 'unit_price' => $prepared['unit_price'],
                 'line_total' => $prepared['line_total'],
-                'is_free' => $prepared['is_free'] ? 1 : 0,
+                'is_free' => (bool) $prepared['is_free'],
                 'created_at' => $timestamp,
                 'updated_at' => $timestamp,
             ];
