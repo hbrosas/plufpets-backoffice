@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HidesTestTransactions;
 use Database\Factories\StockAssignmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +14,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class StockAssignment extends Model
 {
     /** @use HasFactory<StockAssignmentFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
+
+    /**
+     * @param  Builder<static>  $query
+     */
+    public function hideTestRelations(Builder $query): void
+    {
+        $query->whereHas('purchaseOrderItem');
+    }
 
     /**
      * @return array<string, string>

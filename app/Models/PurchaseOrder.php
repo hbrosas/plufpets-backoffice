@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\DeliveryStatus;
 use App\Enums\PurchaseOrderStatus;
+use App\Models\Concerns\HidesTestTransactions;
 use Database\Factories\PurchaseOrderFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -17,7 +18,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class PurchaseOrder extends Model
 {
     /** @use HasFactory<PurchaseOrderFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
+
+    /**
+     * @return list<string>
+     */
+    public function testSupplierColumns(): array
+    {
+        return ['supplier_id'];
+    }
 
     /**
      * @var array<string, mixed>

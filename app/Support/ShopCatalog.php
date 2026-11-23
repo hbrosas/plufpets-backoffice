@@ -26,6 +26,7 @@ class ShopCatalog
     public function page(Request $request): array
     {
         $branches = Branch::query()
+            ->operational()
             ->where('is_active', true)
             ->orderBy('name')
             ->orderBy('id')

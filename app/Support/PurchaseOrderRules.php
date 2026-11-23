@@ -13,8 +13,8 @@ class PurchaseOrderRules
     public static function for(): array
     {
         return [
-            'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
-            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'supplier_id' => ['required', 'integer', TestingMode::existsSupplier()],
+            'branch_id' => ['required', 'integer', TestingMode::existsBranch()],
             'notes' => ['nullable', 'string', 'max:5000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.catalog_item_variant_id' => [

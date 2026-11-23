@@ -55,6 +55,7 @@ class ShopOrderController extends Controller
             'statuses' => ShopOrderStatus::options(),
             'schedules' => $this->schedules(),
             'branches' => Branch::query()
+                ->operational()
                 ->orderBy('name')
                 ->orderBy('id')
                 ->get(['id', 'name'])

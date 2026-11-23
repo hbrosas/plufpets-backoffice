@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HidesTestTransactions;
 use App\Support\Peso;
 use App\Support\ReportPeriod;
 use Database\Factories\HotelStayFactory;
@@ -32,7 +33,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class HotelStay extends Model
 {
     /** @use HasFactory<HotelStayFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
 
     /**
      * @return array<string, string>

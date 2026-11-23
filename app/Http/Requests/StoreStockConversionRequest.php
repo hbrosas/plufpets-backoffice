@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Enums\CatalogItemType;
 use App\Models\BranchInventory;
 use App\Models\CatalogItemVariant;
+use App\Support\TestingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -22,7 +23,7 @@ class StoreStockConversionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'branch_id' => ['required', 'integer', TestingMode::existsBranch()],
             'from_catalog_item_variant_id' => ['required', 'integer', 'exists:catalog_item_variants,id', 'different:to_catalog_item_variant_id'],
             'to_catalog_item_variant_id' => ['required', 'integer', 'exists:catalog_item_variants,id'],
             'quantity' => ['required', 'integer', 'min:1', 'max:100000'],

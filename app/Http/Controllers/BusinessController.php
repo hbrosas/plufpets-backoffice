@@ -26,6 +26,7 @@ class BusinessController extends Controller
                 'email' => $business?->email ?? '',
                 'tin' => $business?->tin ?? '',
                 'daily_sales_target' => $business?->daily_sales_target ?? '',
+                'testing_mode' => $business?->testing_mode ?? false,
                 'logo_url' => $business?->logoUrl(),
                 'favicon_url' => $business?->faviconUrl(),
             ],
@@ -35,7 +36,7 @@ class BusinessController extends Controller
     public function update(UpdateBusinessRequest $request): RedirectResponse
     {
         $business = Business::current() ?? new Business;
-        $business->fill($request->safe()->only(['name', 'address', 'phone', 'email', 'tin', 'daily_sales_target']));
+        $business->fill($request->safe()->only(['name', 'address', 'phone', 'email', 'tin', 'daily_sales_target', 'testing_mode']));
         $this->syncUpload($business, 'logo', $request->file('logo'), $request->boolean('remove_logo'));
         $this->syncUpload($business, 'favicon', $request->file('favicon'), $request->boolean('remove_favicon'));
         $business->save();

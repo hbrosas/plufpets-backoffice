@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HidesTestTransactions;
 use Database\Factories\StockTransferFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +13,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class StockTransfer extends Model
 {
     /** @use HasFactory<StockTransferFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
+
+    /**
+     * @return list<string>
+     */
+    public function testBranchColumns(): array
+    {
+        return ['from_branch_id', 'to_branch_id'];
+    }
 
     /**
      * @return array<string, string>

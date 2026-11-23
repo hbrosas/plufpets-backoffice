@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\CommissionRole;
+use App\Models\Concerns\HidesTestTransactions;
 use Database\Factories\PosSaleItemCommissionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -28,7 +29,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class PosSaleItemCommission extends Model
 {
     /** @use HasFactory<PosSaleItemCommissionFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
+
+    /**
+     * @return list<string>
+     */
+    public function testBranchColumns(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     */
+    public function hideTestRelations(Builder $query): void
+    {
+        $query->whereHas('saleItem');
+    }
 
     /**
      * @return array<string, string>

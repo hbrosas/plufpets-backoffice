@@ -2,10 +2,9 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Branch;
+use App\Support\TestingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class ApplyShopVoucherRequest extends FormRequest
 {
@@ -23,7 +22,7 @@ class ApplyShopVoucherRequest extends FormRequest
             'branch_id' => [
                 'required',
                 'integer',
-                Rule::exists(Branch::class, 'id')->where('is_active', true),
+                TestingMode::existsBranch(activeOnly: true),
             ],
             'voucher_code' => ['required', 'string', 'max:40'],
         ];

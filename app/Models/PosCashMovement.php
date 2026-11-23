@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use App\Enums\PosCashMovementType;
+use App\Models\Concerns\HidesTestTransactions;
 use Database\Factories\PosCashMovementFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,7 +23,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class PosCashMovement extends Model
 {
     /** @use HasFactory<PosCashMovementFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
+
+    /**
+     * @return list<string>
+     */
+    public function testBranchColumns(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     */
+    public function hideTestRelations(Builder $query): void
+    {
+        $query->whereHas('shift');
+    }
 
     /**
      * @return array<string, string>

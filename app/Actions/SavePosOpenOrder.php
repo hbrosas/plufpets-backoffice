@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\HotelStay;
 use App\Models\PosOpenOrder;
 use App\Models\PosShift;
+use App\Support\TestingMode;
 use Illuminate\Validation\ValidationException;
 
 class SavePosOpenOrder
@@ -99,6 +100,7 @@ class SavePosOpenOrder
     {
         $prefix = now()->format('Ymd');
         $count = PosOpenOrder::query()
+            ->withoutGlobalScope(TestingMode::SCOPE)
             ->where('branch_id', $branchId)
             ->whereDate('created_at', now()->toDateString())
             ->count();

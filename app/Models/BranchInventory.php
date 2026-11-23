@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
+use App\Support\TestingMode;
 use Database\Factories\BranchInventoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -23,6 +26,20 @@ class BranchInventory extends Model
             'quantity' => 'integer',
             'reserved' => 'integer',
         ];
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    #[Scope]
+    protected function operational(Builder $query): Builder
+    {
+        if (! TestingMode::includesTestData()) {
+            $query->whereHas('branch', fn (Builder $branch): Builder => $branch->where('for_test_use', false));
+        }
+
+        return $query;
     }
 
     public function available(): int

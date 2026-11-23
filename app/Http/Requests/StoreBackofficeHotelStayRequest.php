@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Support\TestingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
-use Illuminate\Validation\Rule;
 
 class StoreBackofficeHotelStayRequest extends StoreHotelStayRequest
 {
@@ -14,7 +14,7 @@ class StoreBackofficeHotelStayRequest extends StoreHotelStayRequest
     {
         return [
             ...parent::rules(),
-            'branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->where('is_active', true)],
+            'branch_id' => ['required', 'integer', TestingMode::existsBranch(activeOnly: true)],
         ];
     }
 

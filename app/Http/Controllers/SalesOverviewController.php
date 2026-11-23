@@ -52,6 +52,7 @@ class SalesOverviewController extends Controller
     private function branchOptions(): array
     {
         return Branch::query()
+            ->operational()
             ->orderBy('name')
             ->orderBy('id')
             ->get(['id', 'name'])

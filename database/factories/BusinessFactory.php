@@ -21,6 +21,7 @@ class BusinessFactory extends Factory
             'phone' => fake()->phoneNumber(),
             'email' => fake()->safeEmail(),
             'tin' => fake()->numerify('###-###-###-#####'),
+            'testing_mode' => false,
         ];
     }
 }

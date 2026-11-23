@@ -198,38 +198,40 @@ Route::prefix('backoffice')->group(function () {
         Route::middleware('employee.permission:pos.access')->group(function () {
             Route::get('/pos', [PosLaunchController::class, 'index'])->name('pos.launch');
             Route::get('/pos/drawer', [PosDrawerController::class, 'show'])->name('pos.drawer');
-            Route::get('/pos/register/{branch}', [PosController::class, 'index'])->name('pos.index');
-            Route::get('/pos/register/{branch}/shop-orders', [PosController::class, 'shopOrders'])->name('pos.shop-orders');
-            Route::get('/pos/register/{branch}/online-orders', [PosController::class, 'onlineOrders'])->name('pos.online-orders');
-            Route::put('/pos/register/{branch}/online-orders/{pos_open_order}', [PosController::class, 'updateOnlineOrder'])->name('pos.online-orders.update');
-            Route::post('/pos/register/{branch}/online-orders/{pos_open_order}/sale', [PosController::class, 'createOnlineOrderSale'])->name('pos.online-orders.sale');
-            Route::post('/pos/register/{branch}/shifts', [PosShiftController::class, 'store'])->name('pos.shifts.store');
-            Route::post('/pos/register/{branch}/shifts/{pos_shift}/close', [PosShiftController::class, 'close'])->name('pos.shifts.close');
-            Route::get('/pos/register/{branch}/shifts/{pos_shift}/z-report', [PosZReportController::class, 'show'])->name('pos.shifts.z-report');
-            Route::post('/pos/register/{branch}/hotel-stays', [HotelStayController::class, 'store'])->name('pos.hotel-stays.store');
-            Route::post('/pos/register/{branch}/hotel-stays/{hotel_stay}/payments', [HotelStayController::class, 'storePayment'])->name('pos.hotel-stays.payments.store');
-            Route::post('/pos/register/{branch}/hotel-stays/{hotel_stay}/checkout', [HotelStayController::class, 'checkout'])->name('pos.hotel-stays.checkout');
-            Route::post('/pos/register/{branch}/sales/preview', [PosSaleController::class, 'preview'])->name('pos.sales.preview');
-            Route::post('/pos/register/{branch}/sales', [PosSaleController::class, 'store'])->name('pos.sales.store');
-            Route::get('/pos/register/{branch}/sales/{pos_sale}/receipt', [PosSaleController::class, 'receipt'])->name('pos.sales.receipt');
-            Route::put('/pos/register/{branch}/printers/{printer}', [PrinterController::class, 'connect'])->name('pos.printers.connect');
-            Route::post('/pos/register/{branch}/open-orders', [PosOpenOrderController::class, 'store'])->name('pos.open-orders.store');
-            Route::put('/pos/register/{branch}/open-orders/{pos_open_order}', [PosOpenOrderController::class, 'update'])
-                ->scopeBindings()
-                ->name('pos.open-orders.update');
-            Route::delete('/pos/register/{branch}/open-orders/{pos_open_order}', [PosOpenOrderController::class, 'destroy'])
-                ->name('pos.open-orders.destroy');
-            Route::post('/pos/register/{branch}/cash-movements', [PosCashMovementController::class, 'store'])->name('pos.cash-movements.store');
-            Route::post('/pos/register/{branch}/drawer-opens', [PosCashMovementController::class, 'openDrawer'])
-                ->middleware('employee.permission:pos.open-drawer')
-                ->name('pos.drawer-opens.store');
-            Route::post('/pos/register/{branch}/sms', [PosSmsController::class, 'store'])->name('pos.sms.store');
-            Route::post('/pos/sms/{sms_message}/resend', [PosSmsController::class, 'resend'])->name('pos.sms.resend');
-            Route::get('/pos/register/{branch}/sms/history', [PosSmsController::class, 'history'])->name('pos.sms.history');
-            Route::get('/pos/sms/templates', [PosSmsTemplateController::class, 'index'])->name('pos.sms.templates.index');
-            Route::post('/pos/sms/templates', [PosSmsTemplateController::class, 'store'])->name('pos.sms.templates.store');
-            Route::put('/pos/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'update'])->name('pos.sms.templates.update');
-            Route::delete('/pos/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'destroy'])->name('pos.sms.templates.destroy');
+            Route::middleware('branch.operational')->group(function () {
+                Route::get('/pos/register/{branch}', [PosController::class, 'index'])->name('pos.index');
+                Route::get('/pos/register/{branch}/shop-orders', [PosController::class, 'shopOrders'])->name('pos.shop-orders');
+                Route::get('/pos/register/{branch}/online-orders', [PosController::class, 'onlineOrders'])->name('pos.online-orders');
+                Route::put('/pos/register/{branch}/online-orders/{pos_open_order}', [PosController::class, 'updateOnlineOrder'])->name('pos.online-orders.update');
+                Route::post('/pos/register/{branch}/online-orders/{pos_open_order}/sale', [PosController::class, 'createOnlineOrderSale'])->name('pos.online-orders.sale');
+                Route::post('/pos/register/{branch}/shifts', [PosShiftController::class, 'store'])->name('pos.shifts.store');
+                Route::post('/pos/register/{branch}/shifts/{pos_shift}/close', [PosShiftController::class, 'close'])->name('pos.shifts.close');
+                Route::get('/pos/register/{branch}/shifts/{pos_shift}/z-report', [PosZReportController::class, 'show'])->name('pos.shifts.z-report');
+                Route::post('/pos/register/{branch}/hotel-stays', [HotelStayController::class, 'store'])->name('pos.hotel-stays.store');
+                Route::post('/pos/register/{branch}/hotel-stays/{hotel_stay}/payments', [HotelStayController::class, 'storePayment'])->name('pos.hotel-stays.payments.store');
+                Route::post('/pos/register/{branch}/hotel-stays/{hotel_stay}/checkout', [HotelStayController::class, 'checkout'])->name('pos.hotel-stays.checkout');
+                Route::post('/pos/register/{branch}/sales/preview', [PosSaleController::class, 'preview'])->name('pos.sales.preview');
+                Route::post('/pos/register/{branch}/sales', [PosSaleController::class, 'store'])->name('pos.sales.store');
+                Route::get('/pos/register/{branch}/sales/{pos_sale}/receipt', [PosSaleController::class, 'receipt'])->name('pos.sales.receipt');
+                Route::put('/pos/register/{branch}/printers/{printer}', [PrinterController::class, 'connect'])->name('pos.printers.connect');
+                Route::post('/pos/register/{branch}/open-orders', [PosOpenOrderController::class, 'store'])->name('pos.open-orders.store');
+                Route::put('/pos/register/{branch}/open-orders/{pos_open_order}', [PosOpenOrderController::class, 'update'])
+                    ->scopeBindings()
+                    ->name('pos.open-orders.update');
+                Route::delete('/pos/register/{branch}/open-orders/{pos_open_order}', [PosOpenOrderController::class, 'destroy'])
+                    ->name('pos.open-orders.destroy');
+                Route::post('/pos/register/{branch}/cash-movements', [PosCashMovementController::class, 'store'])->name('pos.cash-movements.store');
+                Route::post('/pos/register/{branch}/drawer-opens', [PosCashMovementController::class, 'openDrawer'])
+                    ->middleware('employee.permission:pos.open-drawer')
+                    ->name('pos.drawer-opens.store');
+                Route::post('/pos/register/{branch}/sms', [PosSmsController::class, 'store'])->name('pos.sms.store');
+                Route::post('/pos/sms/{sms_message}/resend', [PosSmsController::class, 'resend'])->name('pos.sms.resend');
+                Route::get('/pos/register/{branch}/sms/history', [PosSmsController::class, 'history'])->name('pos.sms.history');
+                Route::get('/pos/sms/templates', [PosSmsTemplateController::class, 'index'])->name('pos.sms.templates.index');
+                Route::post('/pos/sms/templates', [PosSmsTemplateController::class, 'store'])->name('pos.sms.templates.store');
+                Route::put('/pos/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'update'])->name('pos.sms.templates.update');
+                Route::delete('/pos/sms/templates/{sms_template}', [PosSmsTemplateController::class, 'destroy'])->name('pos.sms.templates.destroy');
+            });
         });
 
         Route::middleware('employee.permission:pos.sms-history')->group(function () {

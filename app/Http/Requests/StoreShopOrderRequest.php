@@ -2,11 +2,11 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Branch;
 use App\Models\DeliveryMethod;
 use App\Models\DeliverySchedule;
 use App\Models\PaymentMethod;
 use App\Support\MobileNumber;
+use App\Support\TestingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -28,7 +28,7 @@ class StoreShopOrderRequest extends FormRequest
             'branch_id' => [
                 'required',
                 'integer',
-                Rule::exists(Branch::class, 'id')->where('is_active', true),
+                TestingMode::existsBranch(activeOnly: true),
             ],
             'name' => ['required', 'string', 'max:120'],
             'phone' => ['required', 'string', 'regex:'.MobileNumber::pattern()],

@@ -24,6 +24,7 @@ class SupplierFactory extends Factory
             'address' => fake()->address(),
             'notes' => null,
             'is_active' => true,
+            'for_test_use' => false,
         ];
     }
 

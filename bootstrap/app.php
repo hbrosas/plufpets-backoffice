@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureEmployeeHasPermission;
 use App\Http\Middleware\EnsureEmployeeIsAuthenticated;
+use App\Http\Middleware\EnsureOperationalBranch;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RedirectIfEmployeeAuthenticated;
 use Illuminate\Foundation\Application;
@@ -26,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'employee.auth' => EnsureEmployeeIsAuthenticated::class,
             'employee.guest' => RedirectIfEmployeeAuthenticated::class,
             'employee.permission' => EnsureEmployeeHasPermission::class,
+            'branch.operational' => EnsureOperationalBranch::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

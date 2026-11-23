@@ -12,6 +12,7 @@ use App\Models\DeliverySchedule;
 use App\Models\PaymentMethod;
 use App\Models\PosOpenOrder;
 use App\Models\Voucher;
+use App\Support\TestingMode;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -419,7 +420,7 @@ class PlaceShopOrder
         for ($attempt = 0; $attempt < 8; $attempt++) {
             $number = $this->mixedCode();
 
-            $taken = PosOpenOrder::query()->where('number', $number)->exists();
+            $taken = PosOpenOrder::query()->withoutGlobalScope(TestingMode::SCOPE)->where('number', $number)->exists();
 
             if (! $taken) {
                 return $number;

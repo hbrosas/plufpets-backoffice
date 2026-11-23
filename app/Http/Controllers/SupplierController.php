@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateSupplierRequest;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Support\Peso;
+use App\Support\TestingMode;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -32,6 +33,7 @@ class SupplierController extends Controller
                     'address' => $supplier->address,
                     'notes' => $supplier->notes,
                     'is_active' => $supplier->is_active,
+                    'for_test_use' => $supplier->for_test_use,
                     'purchase_order_count' => $supplier->purchase_orders_count,
                 ]),
         ]);
@@ -55,6 +57,7 @@ class SupplierController extends Controller
                 'address' => $supplier->address,
                 'notes' => $supplier->notes,
                 'is_active' => $supplier->is_active,
+                'for_test_use' => $supplier->for_test_use,
                 'purchase_orders' => $supplier->purchaseOrders->map(fn (PurchaseOrder $order): array => [
                     'id' => $order->id,
                     'number' => $order->number,
@@ -78,6 +81,7 @@ class SupplierController extends Controller
             'address',
             'notes',
             'is_active',
+            'for_test_use',
         ]));
 
         return redirect()
@@ -97,6 +101,7 @@ class SupplierController extends Controller
             'address',
             'notes',
             'is_active',
+            'for_test_use',
         ]));
 
         return redirect()
@@ -106,7 +111,7 @@ class SupplierController extends Controller
 
     public function destroy(Supplier $supplier): RedirectResponse
     {
-        if ($supplier->purchaseOrders()->exists()) {
+        if ($supplier->purchaseOrders()->withoutGlobalScope(TestingMode::SCOPE)->exists()) {
             return redirect()
                 ->route('inventory.suppliers.index')
                 ->with('status', 'This supplier has purchase orders, so it cannot be deleted.');

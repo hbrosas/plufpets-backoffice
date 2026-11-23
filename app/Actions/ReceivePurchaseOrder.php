@@ -7,6 +7,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
+use App\Support\TestingMode;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -119,7 +120,7 @@ class ReceivePurchaseOrder
     {
         $timestamp = now();
 
-        PurchaseOrderReceiptItem::query()->insert(array_map(
+        PurchaseOrderReceiptItem::query()->withoutGlobalScope(TestingMode::SCOPE)->insert(array_map(
             fn (int $id): array => [
                 'purchase_order_receipt_id' => $receipt->id,
                 'purchase_order_item_id' => $id,

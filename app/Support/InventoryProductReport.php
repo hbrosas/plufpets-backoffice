@@ -31,6 +31,7 @@ class InventoryProductReport
         $variant->loadMissing(['catalogItem:id,name']);
 
         $inventories = BranchInventory::query()
+            ->operational()
             ->with('branch:id,name')
             ->where('catalog_item_variant_id', $variant->id)
             ->orderBy('id')

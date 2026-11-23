@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\BranchInventory;
+use App\Support\TestingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -20,8 +21,8 @@ class StoreStockTransferRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'from_branch_id' => ['required', 'integer', 'exists:branches,id', 'different:to_branch_id'],
-            'to_branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'from_branch_id' => ['required', 'integer', TestingMode::existsBranch(), 'different:to_branch_id'],
+            'to_branch_id' => ['required', 'integer', TestingMode::existsBranch()],
             'catalog_item_variant_id' => ['required', 'integer', 'exists:catalog_item_variants,id'],
             'quantity' => ['required', 'integer', 'min:1', 'max:100000'],
             'notes' => ['nullable', 'string', 'max:5000'],

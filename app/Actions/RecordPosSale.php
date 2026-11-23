@@ -26,6 +26,7 @@ use App\Models\PosSaleTax;
 use App\Models\PosShift;
 use App\Models\TaxFee;
 use App\Support\Peso;
+use App\Support\TestingMode;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -783,6 +784,7 @@ class RecordPosSale
     {
         if (is_string($requested) && preg_match('/^POS-\d{8}-\d{4}$/', $requested) === 1) {
             $taken = PosSale::query()
+                ->withoutGlobalScope(TestingMode::SCOPE)
                 ->where('branch_id', $branchId)
                 ->where('number', $requested)
                 ->lockForUpdate()
@@ -800,6 +802,7 @@ class RecordPosSale
     {
         $prefix = now()->format('Ymd');
         $latestNumber = PosSale::query()
+            ->withoutGlobalScope(TestingMode::SCOPE)
             ->where('branch_id', $branchId)
             ->whereDate('sold_at', now()->toDateString())
             ->orderByDesc('id')
@@ -955,10 +958,11 @@ class RecordPosSale
         }
 
         foreach (array_chunk($rows, 200) as $chunk) {
-            PosSaleItem::query()->insert($chunk);
+            PosSaleItem::query()->withoutGlobalScope(TestingMode::SCOPE)->insert($chunk);
         }
 
         $saved = PosSaleItem::query()
+            ->withoutGlobalScope(TestingMode::SCOPE)
             ->where('pos_sale_id', $sale->id)
             ->orderBy('id')
             ->get();
@@ -986,7 +990,7 @@ class RecordPosSale
         }
 
         foreach (array_chunk($commissionRows, 200) as $chunk) {
-            PosSaleItemCommission::query()->insert($chunk);
+            PosSaleItemCommission::query()->withoutGlobalScope(TestingMode::SCOPE)->insert($chunk);
         }
     }
 

@@ -46,7 +46,7 @@ class SalesShiftController extends Controller
         return Inertia::render('Sales/Shifts/Index', [
             'filters' => $filters->toArray(),
             'period_label' => $filters->label(),
-            'branches' => Branch::query()->orderBy('name')->orderBy('id')->get(['id', 'name']),
+            'branches' => Branch::query()->operational()->orderBy('name')->orderBy('id')->get(['id', 'name']),
             'shifts' => $shifts,
         ]);
     }

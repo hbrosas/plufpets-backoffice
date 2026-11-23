@@ -22,6 +22,7 @@ class SupplierRules
             'address' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'is_active' => ['required', 'boolean'],
+            'for_test_use' => ['required', 'boolean'],
         ];
     }
 

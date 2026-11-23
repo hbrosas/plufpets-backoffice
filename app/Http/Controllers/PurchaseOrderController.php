@@ -221,6 +221,7 @@ class PurchaseOrderController extends Controller
     {
         return [
             'suppliers' => Supplier::query()
+                ->operational()
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->orderBy('id')
@@ -238,6 +239,7 @@ class PurchaseOrderController extends Controller
             'categories' => Category::query()->orderBy('name')->orderBy('id')->pluck('name'),
             'brands' => Brand::query()->orderBy('name')->orderBy('id')->pluck('name'),
             'branches' => Branch::query()
+                ->operational()
                 ->orderBy('name')
                 ->orderBy('id')
                 ->get(['id', 'name', 'registered_business_name', 'address', 'tin']),

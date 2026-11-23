@@ -2,13 +2,16 @@
 
 namespace App\Models;
 
+use App\Support\TestingMode;
 use Database\Factories\BranchFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'registered_business_name', 'tin', 'code', 'address', 'phone', 'is_active'])]
+#[Fillable(['name', 'registered_business_name', 'tin', 'code', 'address', 'phone', 'is_active', 'for_test_use'])]
 class Branch extends Model
 {
     /** @use HasFactory<BranchFactory> */
@@ -19,6 +22,7 @@ class Branch extends Model
      */
     protected $attributes = [
         'is_active' => true,
+        'for_test_use' => false,
     ];
 
     /**
@@ -28,7 +32,22 @@ class Branch extends Model
     {
         return [
             'is_active' => 'boolean',
+            'for_test_use' => 'boolean',
         ];
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    #[Scope]
+    protected function operational(Builder $query): Builder
+    {
+        if (! TestingMode::includesTestData()) {
+            $query->where($query->qualifyColumn('for_test_use'), false);
+        }
+
+        return $query;
     }
 
     public function inventories(): HasMany

@@ -29,12 +29,14 @@ const form = useForm({
     address: '',
     notes: '',
     is_active: true,
+    for_test_use: false,
 });
 
 function openCreate() {
     editingSupplier.value = null;
     form.reset();
     form.is_active = true;
+    form.for_test_use = false;
     form.clearErrors();
     modalOpen.value = true;
 }
@@ -50,6 +52,7 @@ function openEdit(supplier) {
     form.address = supplier.address ?? '';
     form.notes = supplier.notes ?? '';
     form.is_active = supplier.is_active;
+    form.for_test_use = supplier.for_test_use;
     form.clearErrors();
     modalOpen.value = true;
 }
@@ -124,7 +127,10 @@ function deleteSupplier(supplier) {
                         <td class="px-4 py-3">{{ supplier.code || '—' }}</td>
                         <td class="px-4 py-3">{{ supplier.contact_name || supplier.email || '—' }}</td>
                         <td class="px-4 py-3">{{ supplier.purchase_order_count }}</td>
-                        <td class="px-4 py-3">{{ supplier.is_active ? 'Active' : 'Inactive' }}</td>
+                        <td class="px-4 py-3">
+                            {{ supplier.is_active ? 'Active' : 'Inactive' }}
+                            <span v-if="supplier.for_test_use" class="text-ink/50 dark:text-foam/50"> · Test</span>
+                        </td>
                         <td class="px-4 py-3">
                             <div class="flex justify-end gap-3">
                                 <Link class="font-medium text-pine dark:text-sand" :href="`/backoffice/inventory/suppliers/${supplier.id}`">
@@ -224,6 +230,15 @@ function deleteSupplier(supplier) {
                 <label class="flex items-center gap-2 text-sm font-medium">
                     <input v-model="form.is_active" class="h-4 w-4 accent-pine" type="checkbox" />
                     Active
+                </label>
+                <label class="flex items-start gap-2 text-sm font-medium">
+                    <input v-model="form.for_test_use" class="mt-0.5 h-4 w-4 accent-pine" type="checkbox" />
+                    <span>
+                        For test use
+                        <span class="mt-1 block font-normal text-ink/55 dark:text-foam/50">
+                            Purchase orders from this supplier stay hidden unless testing mode is on.
+                        </span>
+                    </span>
                 </label>
                 <button
                     class="h-11 rounded-xl bg-pine text-sm font-medium text-foam disabled:opacity-70"

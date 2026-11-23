@@ -40,7 +40,7 @@ class SalesItemController extends Controller
         return Inertia::render('Sales/Items/Index', [
             'filters' => $filters->toArray(),
             'period_label' => $filters->label(),
-            'branches' => Branch::query()->orderBy('name')->orderBy('id')->get(['id', 'name']),
+            'branches' => Branch::query()->operational()->orderBy('name')->orderBy('id')->get(['id', 'name']),
             'products' => $this->rowsFor($items, 'product'),
             'services' => $this->rowsFor($items, 'service'),
         ]);

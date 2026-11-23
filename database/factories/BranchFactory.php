@@ -23,6 +23,7 @@ class BranchFactory extends Factory
             'address' => fake()->address(),
             'phone' => fake()->numerify('09#########'),
             'is_active' => true,
+            'for_test_use' => false,
         ];
     }
 

@@ -24,6 +24,7 @@ const form = useForm({
     address: props.branch?.address ?? '',
     phone: props.branch?.phone ?? '',
     is_active: props.branch?.is_active ?? true,
+    for_test_use: props.branch?.for_test_use ?? false,
 });
 
 function submit() {
@@ -111,6 +112,16 @@ function submit() {
         <label class="flex items-center gap-3 text-sm font-medium">
             <input v-model="form.is_active" class="h-4 w-4 accent-pine" type="checkbox" />
             Active branch
+        </label>
+
+        <label class="flex items-start gap-3 text-sm font-medium">
+            <input v-model="form.for_test_use" class="mt-0.5 h-4 w-4 accent-pine" type="checkbox" />
+            <span>
+                For test use
+                <span class="mt-1 block font-normal text-ink/55 dark:text-foam/50">
+                    Transactions at this branch stay hidden unless testing mode is on.
+                </span>
+            </span>
         </label>
 
         <div class="flex flex-wrap items-center gap-3">

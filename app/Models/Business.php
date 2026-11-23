@@ -8,11 +8,18 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 
-#[Fillable(['name', 'address', 'phone', 'email', 'tin', 'daily_sales_target', 'logo_path', 'favicon_path', 'shop_banner_visible', 'shop_banner_path', 'shop_promo_visible', 'shop_promo_text', 'shop_promo_background', 'shop_promo_color'])]
+#[Fillable(['name', 'address', 'phone', 'email', 'tin', 'daily_sales_target', 'testing_mode', 'logo_path', 'favicon_path', 'shop_banner_visible', 'shop_banner_path', 'shop_promo_visible', 'shop_promo_text', 'shop_promo_background', 'shop_promo_color'])]
 class Business extends Model
 {
     /** @use HasFactory<BusinessFactory> */
     use HasFactory;
+
+    /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'testing_mode' => false,
+    ];
 
     /**
      * @return array<string, string>
@@ -21,6 +28,7 @@ class Business extends Model
     {
         return [
             'daily_sales_target' => 'decimal:2',
+            'testing_mode' => 'boolean',
             'shop_banner_visible' => 'boolean',
             'shop_promo_visible' => 'boolean',
         ];

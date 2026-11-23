@@ -22,6 +22,7 @@ const form = useForm({
     email: props.business.email ?? '',
     tin: props.business.tin ?? '',
     daily_sales_target: props.business.daily_sales_target ?? '',
+    testing_mode: props.business.testing_mode ?? false,
     logo: null,
     favicon: null,
     remove_logo: false,
@@ -155,6 +156,17 @@ function submit() {
                 <p class="text-sm text-ink/55 dark:text-foam/50">The overview compares today's sales with this amount.</p>
                 <p v-if="form.errors.daily_sales_target" class="text-sm text-danger">{{ form.errors.daily_sales_target }}</p>
             </div>
+
+            <label class="flex items-start gap-3 text-sm font-medium">
+                <input v-model="form.testing_mode" class="mt-0.5 h-4 w-4 accent-pine" type="checkbox" />
+                <span>
+                    Testing mode
+                    <span class="mt-1 block font-normal text-ink/55 dark:text-foam/50">
+                        When this is off, sales, purchases, stock moves, and other transactions for branches or suppliers marked for test use stay hidden.
+                    </span>
+                </span>
+            </label>
+            <p v-if="form.errors.testing_mode" class="text-sm text-danger">{{ form.errors.testing_mode }}</p>
 
             <div class="flex flex-col gap-2">
                 <p class="text-sm font-medium">Logo</p>

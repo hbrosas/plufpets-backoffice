@@ -26,6 +26,7 @@ class BranchController extends Controller
                 'address' => $branch->address,
                 'phone' => $branch->phone,
                 'is_active' => $branch->is_active,
+                'for_test_use' => $branch->for_test_use,
             ]);
 
         return Inertia::render('Shop/Branches/Index', [
@@ -48,6 +49,7 @@ class BranchController extends Controller
             'address',
             'phone',
             'is_active',
+            'for_test_use',
         ]));
 
         return redirect()
@@ -67,6 +69,7 @@ class BranchController extends Controller
                 'address' => $branch->address ?? '',
                 'phone' => $branch->phone ?? '',
                 'is_active' => $branch->is_active,
+                'for_test_use' => $branch->for_test_use,
             ],
         ]);
     }
@@ -81,6 +84,7 @@ class BranchController extends Controller
             'address',
             'phone',
             'is_active',
+            'for_test_use',
         ]));
 
         return redirect()

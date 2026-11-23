@@ -20,7 +20,10 @@ defineProps({
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <section class="flex flex-col gap-5 rounded-2xl border border-mist bg-white p-5 dark:border-white/10 dark:bg-white/5">
             <div class="flex flex-col gap-1">
-                <p class="text-sm text-ink/60 dark:text-foam/60">{{ supplier.is_active ? 'Active' : 'Inactive' }}</p>
+                <p class="text-sm text-ink/60 dark:text-foam/60">
+                    {{ supplier.is_active ? 'Active' : 'Inactive' }}
+                    <span v-if="supplier.for_test_use"> · For test use</span>
+                </p>
                 <h2 class="text-2xl font-medium">{{ supplier.name }}</h2>
                 <p v-if="supplier.code" class="text-sm text-ink/70 dark:text-foam/70">{{ supplier.code }}</p>
             </div>

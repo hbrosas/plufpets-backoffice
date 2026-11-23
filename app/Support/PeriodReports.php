@@ -122,6 +122,7 @@ class PeriodReports
     {
         $costs = $this->latestCosts();
         $onHand = BranchInventory::query()
+            ->operational()
             ->with(['branch:id,name', 'variant:id,catalog_item_id,name,price', 'variant.catalogItem:id,name,type'])
             ->whereHas('variant.catalogItem', fn ($query) => $query->where('type', CatalogItemType::Product->value))
             ->get();
@@ -521,7 +522,7 @@ class PeriodReports
     {
         $totals = $sales->groupBy(fn (PosSale $sale): int => (int) $sale->branch_id);
 
-        return Branch::query()->orderBy('name')->get(['id', 'name'])->map(function (Branch $branch) use ($totals): array {
+        return Branch::query()->operational()->orderBy('name')->get(['id', 'name'])->map(function (Branch $branch) use ($totals): array {
             $rows = $totals->get($branch->id, collect());
 
             return [

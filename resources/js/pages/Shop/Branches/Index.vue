@@ -77,6 +77,12 @@ function deleteBranch(branch) {
                             >
                                 {{ branch.is_active ? 'Active' : 'Hidden' }}
                             </span>
+                            <span
+                                v-if="branch.for_test_use"
+                                class="ml-2 rounded-full bg-sand/30 px-2.5 py-1 text-xs font-medium text-ink dark:bg-sand/20 dark:text-sand"
+                            >
+                                Test
+                            </span>
                         </td>
                         <td class="px-4 py-3">
                             <div class="flex justify-end gap-3">

@@ -2,9 +2,9 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Branch;
 use App\Models\DeliveryMethod;
 use App\Models\PaymentMethod;
+use App\Support\TestingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -25,7 +25,7 @@ class QuoteShopOrderRequest extends FormRequest
             'branch_id' => [
                 'required',
                 'integer',
-                Rule::exists(Branch::class, 'id')->where('is_active', true),
+                TestingMode::existsBranch(activeOnly: true),
             ],
             'delivery_method_id' => [
                 'required',

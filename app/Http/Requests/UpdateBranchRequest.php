@@ -34,6 +34,7 @@ class UpdateBranchRequest extends FormRequest
             'address' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:32'],
             'is_active' => ['required', 'boolean'],
+            'for_test_use' => ['required', 'boolean'],
         ];
     }
 
@@ -61,6 +62,7 @@ class UpdateBranchRequest extends FormRequest
             'address' => $this->filled('address') ? $this->string('address')->trim()->toString() : null,
             'phone' => $this->filled('phone') ? $this->string('phone')->trim()->toString() : null,
             'is_active' => $this->boolean('is_active'),
+            'for_test_use' => $this->boolean('for_test_use'),
         ]);
     }
 }

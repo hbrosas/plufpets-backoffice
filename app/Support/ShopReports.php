@@ -81,6 +81,7 @@ class ShopReports
             ->keyBy(fn (object $row): int => (int) $row->branch_id);
 
         $branches = Branch::query()
+            ->operational()
             ->orderBy('name')
             ->orderBy('id')
             ->get(['id', 'name'])
@@ -337,6 +338,7 @@ class ShopReports
     public function lowStock(): array
     {
         return BranchInventory::query()
+            ->operational()
             ->with([
                 'branch:id,name',
                 'variant:id,catalog_item_id,name',

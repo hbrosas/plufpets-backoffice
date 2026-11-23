@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\PosCashMovementType;
 use App\Enums\PosDenominationCountType;
 use App\Enums\PosShiftStatus;
+use App\Models\Concerns\HidesTestTransactions;
 use App\Support\SalesFilters;
 use Database\Factories\PosShiftFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -33,7 +34,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class PosShift extends Model
 {
     /** @use HasFactory<PosShiftFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
 
     /**
      * @return array<string, string>

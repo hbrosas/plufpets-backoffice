@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HidesTestTransactions;
 use Database\Factories\SmsMessageFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class SmsMessage extends Model
 {
     /** @use HasFactory<SmsMessageFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
 
     /**
      * @return array<string, string>

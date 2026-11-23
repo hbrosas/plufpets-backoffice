@@ -47,6 +47,7 @@ class UpdateSupplierRequest extends FormRequest
             'address' => $this->filled('address') ? $this->string('address')->trim()->toString() : null,
             'notes' => $this->filled('notes') ? $this->string('notes')->trim()->toString() : null,
             'is_active' => $this->boolean('is_active'),
+            'for_test_use' => $this->boolean('for_test_use'),
         ]);
     }
 }

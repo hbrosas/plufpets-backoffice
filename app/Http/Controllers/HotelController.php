@@ -82,6 +82,7 @@ class HotelController extends Controller
                 'vaccines' => HotelVaccine::options(),
             ],
             'branches' => Branch::query()
+                ->operational()
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->orderBy('id')
@@ -121,7 +122,7 @@ class HotelController extends Controller
 
     public function store(StoreBackofficeHotelStayRequest $request, CheckInHotelGuest $checkInHotelGuest): RedirectResponse
     {
-        $branch = Branch::query()->whereKey($request->integer('branch_id'))->where('is_active', true)->first();
+        $branch = Branch::query()->operational()->whereKey($request->integer('branch_id'))->where('is_active', true)->first();
 
         if (! $branch instanceof Branch) {
             throw ValidationException::withMessages([
@@ -241,7 +242,7 @@ class HotelController extends Controller
 
     private function stayBranch(HotelStay $stay): Branch
     {
-        $branch = Branch::query()->whereKey($stay->branch_id)->where('is_active', true)->first();
+        $branch = Branch::query()->operational()->whereKey($stay->branch_id)->where('is_active', true)->first();
 
         abort_unless($branch instanceof Branch, 404);
 

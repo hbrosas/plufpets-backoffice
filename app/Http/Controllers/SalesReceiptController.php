@@ -65,7 +65,7 @@ class SalesReceiptController extends Controller
         return [
             'filters' => $filters->toArray(),
             'period_label' => $filters->label(),
-            'branches' => Branch::query()->orderBy('name')->orderBy('id')->get(['id', 'name']),
+            'branches' => Branch::query()->operational()->orderBy('name')->orderBy('id')->get(['id', 'name']),
             'can_waive_commissions' => EmployeeSession::allows('sales.waive-commission'),
             'receipts' => $receipts,
         ];

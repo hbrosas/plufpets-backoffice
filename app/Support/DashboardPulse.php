@@ -658,6 +658,7 @@ class DashboardPulse
             ->keyBy(fn (object $row): string => $row->branch_id.'-'.$row->catalog_item_variant_id);
 
         return BranchInventory::query()
+            ->operational()
             ->with(['branch:id,name', 'variant:id,catalog_item_id,name', 'variant.catalogItem:id,name,type'])
             ->whereHas('variant.catalogItem', fn ($query) => $query->where('type', CatalogItemType::Product->value))
             ->get()

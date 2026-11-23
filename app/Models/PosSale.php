@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HidesTestTransactions;
 use App\Support\SalesFilters;
 use Database\Factories\PosSaleFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -42,7 +43,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class PosSale extends Model
 {
     /** @use HasFactory<PosSaleFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
 
     /**
      * @return array<string, string>

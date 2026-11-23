@@ -7,6 +7,7 @@ use App\Http\Requests\StoreStockAssignmentRequest;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\PurchaseOrderItem;
+use App\Support\TestingMode;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -16,6 +17,7 @@ class StockAssignmentController extends Controller
     public function index(): Response
     {
         $branches = Branch::query()
+            ->operational()
             ->where('is_active', true)
             ->orderBy('name')
             ->orderBy('id')
@@ -27,7 +29,7 @@ class StockAssignmentController extends Controller
                 'variant:id,catalog_item_id,name,sku',
                 'variant.catalogItem:id,name',
             ])
-            ->withSum('assignments as assigned_quantity', 'quantity')
+            ->withSum(['assignments as assigned_quantity' => fn ($query) => $query->withoutGlobalScope(TestingMode::SCOPE)], 'quantity')
             ->where('received_quantity', '>', 0)
             ->latest('id')
             ->get()

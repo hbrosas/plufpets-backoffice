@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\InventoryHold;
+use App\Models\Concerns\HidesTestTransactions;
 use Database\Factories\PosOpenOrderFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -31,7 +32,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class PosOpenOrder extends Model
 {
     /** @use HasFactory<PosOpenOrderFactory> */
-    use HasFactory;
+    use HasFactory, HidesTestTransactions;
 
     /**
      * @return array<string, string>

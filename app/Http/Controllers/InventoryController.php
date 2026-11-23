@@ -34,6 +34,7 @@ class InventoryController extends Controller
         ]);
 
         $inventories = BranchInventory::query()
+            ->operational()
             ->with([
                 'branch:id,name',
                 'variant:id,catalog_item_id,name,sku,price',
@@ -95,7 +96,7 @@ class InventoryController extends Controller
                 'quantity' => $totalQuantity,
                 'value' => Peso::format($totalValue),
             ],
-            'branches' => Branch::query()->orderBy('name')->orderBy('id')->get(['id', 'name']),
+            'branches' => Branch::query()->operational()->orderBy('name')->orderBy('id')->get(['id', 'name']),
             'variants' => CatalogItemVariant::query()
                 ->with('catalogItem:id,name,type')
                 ->whereHas('catalogItem', fn ($query) => $query->where('type', CatalogItemType::Product))

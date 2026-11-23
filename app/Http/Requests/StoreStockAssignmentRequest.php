@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\PurchaseOrderItem;
+use App\Support\TestingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -20,7 +21,7 @@ class StoreStockAssignmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'branch_id' => ['required', 'integer', TestingMode::existsBranch()],
             'items' => ['required', 'array', 'min:1'],
             'items.*.purchase_order_item_id' => ['required', 'integer', 'distinct', 'exists:purchase_order_items,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
@@ -52,7 +53,7 @@ class StoreStockAssignmentRequest extends FormRequest
 
                 $rows = $this->input('items', []);
                 $items = PurchaseOrderItem::query()
-                    ->with('assignments')
+                    ->withSum(['assignments as assigned_quantity' => fn ($query) => $query->withoutGlobalScope(TestingMode::SCOPE)], 'quantity')
                     ->whereIn('id', collect($rows)->pluck('purchase_order_item_id'))
                     ->get()
                     ->keyBy('id');
@@ -61,13 +62,17 @@ class StoreStockAssignmentRequest extends FormRequest
                     $item = $items->get((int) ($row['purchase_order_item_id'] ?? 0));
 
                     if ($item === null) {
+                        $validator->errors()->add('items.'.$index.'.purchase_order_item_id', 'Choose a delivered product.');
+
                         continue;
                     }
 
-                    if ((int) $row['quantity'] > $item->remainingToAssign()) {
+                    $remaining = max($item->received_quantity - (int) $item->assigned_quantity, 0);
+
+                    if ((int) $row['quantity'] > $remaining) {
                         $validator->errors()->add(
                             'items.'.$index.'.quantity',
-                            'Only '.$item->remainingToAssign().' units remain to assign.',
+                            'Only '.$remaining.' units remain to assign.',
                         );
                     }
                 }

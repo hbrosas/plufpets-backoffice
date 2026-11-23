@@ -24,6 +24,7 @@ class UpdateBusinessRequest extends FormRequest
             'email' => ['nullable', 'email', 'max:255'],
             'tin' => ['nullable', 'string', 'max:32'],
             'daily_sales_target' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'testing_mode' => ['required', 'boolean'],
             'logo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'favicon' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:512'],
             'remove_logo' => ['sometimes', 'boolean'],
@@ -60,6 +61,8 @@ class UpdateBusinessRequest extends FormRequest
             $value = trim((string) $this->input($field, ''));
             $merged[$field] = $value === '' ? null : $value;
         }
+
+        $merged['testing_mode'] = $this->boolean('testing_mode');
 
         $this->merge($merged);
     }

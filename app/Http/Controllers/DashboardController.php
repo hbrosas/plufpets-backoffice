@@ -190,6 +190,7 @@ class DashboardController extends Controller
             ->groupBy('branch_id');
 
         return Branch::query()
+            ->operational()
             ->orderBy('name')
             ->orderBy('id')
             ->get(['id', 'name', 'is_active'])

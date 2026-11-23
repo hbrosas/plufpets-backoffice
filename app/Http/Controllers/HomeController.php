@@ -31,6 +31,7 @@ class HomeController extends Controller
     public function checkout(Request $request): Response
     {
         $branches = Branch::query()
+            ->operational()
             ->where('is_active', true)
             ->orderBy('name')
             ->orderBy('id')
@@ -76,7 +77,7 @@ class HomeController extends Controller
 
     public function quote(QuoteShopOrderRequest $request, PlaceShopOrder $placeShopOrder): JsonResponse
     {
-        $branch = Branch::query()->findOrFail($request->integer('branch_id'));
+        $branch = Branch::query()->operational()->where('is_active', true)->findOrFail($request->integer('branch_id'));
         $priced = $placeShopOrder->quote($branch, $request->safe()->only([
             'delivery_method_id',
             'payment_method_id',
@@ -108,7 +109,7 @@ class HomeController extends Controller
 
     public function store(StoreShopOrderRequest $request, PlaceShopOrder $placeShopOrder, SendShopOrderText $sendShopOrderText): RedirectResponse
     {
-        $branch = Branch::query()->findOrFail($request->integer('branch_id'));
+        $branch = Branch::query()->operational()->where('is_active', true)->findOrFail($request->integer('branch_id'));
         $order = $placeShopOrder->handle($branch, $request->customer(), $request->validated('items'));
         $smsError = $sendShopOrderText->handle($order->load('branch'));
         $request->session()->put('shop_order_id', $order->id);
