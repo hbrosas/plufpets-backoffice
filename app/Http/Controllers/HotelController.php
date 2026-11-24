@@ -6,11 +6,13 @@ use App\Actions\CheckInHotelGuest;
 use App\Actions\CheckOutHotelGuest;
 use App\Actions\RecordHotelStayPayment;
 use App\Actions\UpdateHotelStayDates;
+use App\Actions\UpdateHotelStayDetails;
 use App\Enums\HotelPetGender;
 use App\Enums\HotelVaccine;
 use App\Http\Requests\StoreBackofficeHotelStayRequest;
 use App\Http\Requests\StoreHotelStayPaymentRequest;
 use App\Http\Requests\UpdateHotelStayDatesRequest;
+use App\Http\Requests\UpdateHotelStayDetailsRequest;
 use App\Models\Branch;
 use App\Models\HotelPodType;
 use App\Models\HotelStay;
@@ -171,6 +173,32 @@ class HotelController extends Controller
                 'to' => $tab === 'checked-out' ? $to : null,
             ]))
             ->with('status', 'Stay dates updated.');
+    }
+
+    public function updateDetails(
+        UpdateHotelStayDetailsRequest $request,
+        HotelStay $hotelStay,
+        UpdateHotelStayDetails $updateHotelStayDetails,
+    ): RedirectResponse {
+        $updateHotelStayDetails->handle($hotelStay, $request->safe()->only([
+            'client_name',
+            'contact_number',
+            'address',
+            'hotel_pod_type_id',
+            'pets',
+        ]));
+
+        $tab = $request->string('tab')->toString() === 'checked-out' ? 'checked-out' : 'current';
+        $from = $this->filterDate($request->string('from')->toString());
+        $to = $this->filterDate($request->string('to')->toString());
+
+        return redirect()
+            ->route('hotel.index', array_filter([
+                'tab' => $tab === 'checked-out' ? $tab : null,
+                'from' => $tab === 'checked-out' ? $from : null,
+                'to' => $tab === 'checked-out' ? $to : null,
+            ]))
+            ->with('status', 'Hotel details updated.');
     }
 
     public function storePayment(

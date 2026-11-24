@@ -30,6 +30,14 @@ const props = defineProps({
         type: Object,
         required: true,
     },
+    categories: {
+        type: Array,
+        required: true,
+    },
+    brands: {
+        type: Array,
+        required: true,
+    },
 });
 
 const page = usePage();
@@ -42,6 +50,8 @@ const expandedIds = ref([]);
 const filters = useForm({
     search: props.filters.search,
     branch_id: props.filters.branch_id,
+    category: props.filters.category,
+    brand: props.filters.brand,
 });
 
 const transferForm = useForm({
@@ -175,16 +185,36 @@ function submitConvert() {
             </article>
         </section>
 
-        <form class="flex flex-col gap-3 sm:flex-row" @submit.prevent="applyFilters">
+        <form class="flex flex-col gap-3 sm:flex-row sm:flex-wrap" @submit.prevent="applyFilters">
             <input
                 v-model="filters.search"
-                class="h-11 flex-1 rounded-xl border border-mist bg-white px-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
+                class="h-11 min-w-64 flex-1 rounded-xl border border-mist bg-white px-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
                 placeholder="Search by product, SKU, or barcode"
                 type="text"
             />
             <select
+                v-model="filters.category"
+                class="h-11 rounded-xl border border-mist bg-white pr-11 pl-4 text-sm outline-none focus:border-pine sm:w-48 dark:border-white/10 dark:bg-white/5"
+                aria-label="Category"
+                @change="applyFilters"
+            >
+                <option value="">All categories</option>
+                <option value="__none">No category</option>
+                <option v-for="category in categories" :key="category" :value="category">{{ category }}</option>
+            </select>
+            <select
+                v-model="filters.brand"
+                class="h-11 rounded-xl border border-mist bg-white pr-11 pl-4 text-sm outline-none focus:border-pine sm:w-48 dark:border-white/10 dark:bg-white/5"
+                aria-label="Brand"
+                @change="applyFilters"
+            >
+                <option value="">All brands</option>
+                <option value="__none">No brand</option>
+                <option v-for="brand in brands" :key="brand" :value="brand">{{ brand }}</option>
+            </select>
+            <select
                 v-model="filters.branch_id"
-                class="h-11 rounded-xl border border-mist bg-white pr-11 pl-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
+                class="h-11 rounded-xl border border-mist bg-white pr-11 pl-4 text-sm outline-none focus:border-pine sm:w-48 dark:border-white/10 dark:bg-white/5"
             >
                 <option value="">All locations</option>
                 <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>

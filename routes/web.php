@@ -125,6 +125,7 @@ Route::prefix('backoffice')->group(function () {
             Route::get('/hotel', [HotelController::class, 'index'])->name('hotel.index');
             Route::post('/hotel/stays', [HotelController::class, 'store'])->name('hotel.stays.store');
             Route::put('/hotel/stays/{hotel_stay}', [HotelController::class, 'update'])->name('hotel.stays.update');
+            Route::put('/hotel/stays/{hotel_stay}/details', [HotelController::class, 'updateDetails'])->name('hotel.stays.details.update');
             Route::post('/hotel/stays/{hotel_stay}/payments', [HotelController::class, 'storePayment'])->name('hotel.stays.payments.store');
             Route::post('/hotel/stays/{hotel_stay}/checkout', [HotelController::class, 'checkout'])->name('hotel.stays.checkout');
             Route::post('/hotel/pod-types', [HotelPodTypeController::class, 'store'])->name('hotel.pod-types.store');

@@ -163,6 +163,7 @@ class HotelStay extends Model
             'checked_out_at' => $checkedOut?->format('Y-m-d\TH:i') ?? '',
             'checked_out_label' => $checkedOut?->format('M j, Y g:i A') ?? '',
             'checked_out_by' => $this->checkedOutByLabel(),
+            'hotel_pod_type_id' => $this->hotel_pod_type_id,
             'pod_type_label' => $this->podType?->name ?? '',
             'pet_names' => $this->pets->pluck('name')->join(', '),
             'pets' => $this->pets->map(fn (HotelStayPet $pet): array => $pet->toRegisterPayload())->all(),

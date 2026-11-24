@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Enums\CatalogItemType;
 use App\Models\Branch;
 use App\Models\BranchInventory;
+use App\Models\Brand;
 use App\Models\CatalogItem;
 use App\Models\CatalogItemVariant;
+use App\Models\Category;
 use App\Models\PaymentMethod;
 use App\Models\PosSale;
 use App\Models\PosShift;
@@ -111,6 +113,60 @@ class InventoryControllerTest extends TestCase
             ->where('rows.0.locations.1.price', '₱50.00')
             ->where('summary.quantity', 10)
             ->where('summary.value', '₱300.00'));
+    }
+
+    public function test_inventory_keeps_stock_for_the_selected_category(): void
+    {
+        $food = Category::factory()->create(['name' => 'Food']);
+        $treats = Category::factory()->create(['name' => 'Treats']);
+        $branch = Branch::factory()->create();
+        $this->stock($branch, 'Kibble', $food, null, 8);
+        $this->unassignedStock('Biscuit', $treats, null, 3);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/inventory?category=Food');
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 1)
+            ->where('rows.0.product', 'Kibble')
+            ->where('summary.quantity', 8)
+            ->where('filters.category', 'Food')
+            ->where('categories', ['Food', 'Treats']));
+    }
+
+    public function test_inventory_keeps_stock_for_the_selected_brand(): void
+    {
+        $royal = Brand::factory()->create(['name' => 'Royal']);
+        $aozi = Brand::factory()->create(['name' => 'Aozi']);
+        $branch = Branch::factory()->create();
+        $this->stock($branch, 'Kibble', null, $royal, 5);
+        $this->stock($branch, 'Cans', null, $aozi, 2);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/inventory?brand=Aozi');
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 1)
+            ->where('rows.0.product', 'Cans')
+            ->where('summary.quantity', 2)
+            ->where('filters.brand', 'Aozi')
+            ->where('brands', ['Aozi', 'Royal']));
+    }
+
+    public function test_inventory_can_show_stock_with_no_category(): void
+    {
+        $food = Category::factory()->create(['name' => 'Food']);
+        $branch = Branch::factory()->create();
+        $this->stock($branch, 'Kibble', $food, null, 4);
+        $this->stock($branch, 'Loose treats', null, null, 6);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/inventory?category=__none');
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 1)
+            ->where('rows.0.product', 'Loose treats')
+            ->where('summary.quantity', 6));
     }
 
     public function test_guest_is_redirected_from_product_inventory(): void
@@ -266,5 +322,36 @@ class InventoryControllerTest extends TestCase
         $response->assertSee('&lt;script&gt;', false);
         $response->assertDontSee("<script>alert('xss')</script>", false);
         $this->assertSame(2, substr_count($response->getContent(), 'class="label"'));
+    }
+
+    private function stock(Branch $branch, string $name, ?Category $category, ?Brand $brand, int $quantity): void
+    {
+        $item = CatalogItem::factory()->create([
+            'name' => $name,
+            'category_id' => $category?->id,
+            'brand_id' => $brand?->id,
+        ]);
+        $variant = CatalogItemVariant::factory()->for($item)->create();
+        BranchInventory::factory()->create([
+            'branch_id' => $branch->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => $quantity,
+        ]);
+    }
+
+    private function unassignedStock(string $name, ?Category $category, ?Brand $brand, int $quantity): void
+    {
+        $item = CatalogItem::factory()->create([
+            'name' => $name,
+            'category_id' => $category?->id,
+            'brand_id' => $brand?->id,
+        ]);
+        $variant = CatalogItemVariant::factory()->for($item)->create();
+        PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => PurchaseOrder::factory()->confirmed()->create()->id,
+            'catalog_item_variant_id' => $variant->id,
+            'quantity' => $quantity,
+            'received_quantity' => $quantity,
+        ]);
     }
 }

@@ -5,13 +5,16 @@ namespace App\Http\Controllers;
 use App\Enums\CatalogItemType;
 use App\Models\Branch;
 use App\Models\BranchInventory;
+use App\Models\Brand;
 use App\Models\CatalogItemVariant;
+use App\Models\Category;
 use App\Models\Printer;
 use App\Models\PurchaseOrderItem;
 use App\Support\BarcodeSvg;
 use App\Support\InventoryCosts;
 use App\Support\InventoryProductReport;
 use App\Support\Peso;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
@@ -26,11 +29,15 @@ class InventoryController extends Controller
         $request->merge([
             'search' => $request->string('search')->trim()->toString() ?: null,
             'branch_id' => $request->integer('branch_id') ?: null,
+            'category' => $request->string('category')->trim()->toString() ?: null,
+            'brand' => $request->string('brand')->trim()->toString() ?: null,
         ]);
 
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:128'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'category' => ['nullable', 'string', 'max:255'],
+            'brand' => ['nullable', 'string', 'max:255'],
         ]);
 
         $inventories = BranchInventory::query()
@@ -48,13 +55,16 @@ class InventoryController extends Controller
                         ->orWhere('barcode', $search)
                         ->orWhereHas('catalogItem', fn ($query) => $query->where('name', 'like', '%'.$search.'%'));
                 });
-            })
-            ->orderBy('id')
-            ->get();
+            });
 
-        $unassigned = ($filters['branch_id'] ?? null)
-            ? collect()
-            : PurchaseOrderItem::query()
+        $this->constrainCatalog($inventories, $filters['category'] ?? null, $filters['brand'] ?? null);
+
+        $inventories = $inventories->orderBy('id')->get();
+
+        if ($filters['branch_id'] ?? null) {
+            $unassigned = collect();
+        } else {
+            $unassigned = PurchaseOrderItem::query()
                 ->with([
                     'variant:id,catalog_item_id,name,sku,price',
                     'variant.catalogItem:id,name',
@@ -68,10 +78,15 @@ class InventoryController extends Controller
                             ->orWhere('barcode', $search)
                             ->orWhereHas('catalogItem', fn ($query) => $query->where('name', 'like', '%'.$search.'%'));
                     });
-                })
+                });
+
+            $this->constrainCatalog($unassigned, $filters['category'] ?? null, $filters['brand'] ?? null);
+
+            $unassigned = $unassigned
                 ->get()
                 ->filter(fn (PurchaseOrderItem $item): bool => $item->received_quantity > (int) $item->assigned_quantity)
                 ->values();
+        }
 
         $rows = $this->productRows($inventories, $unassigned, $inventoryCosts);
         $totalQuantity = (int) $rows->sum('total_quantity');
@@ -97,6 +112,8 @@ class InventoryController extends Controller
                 'value' => Peso::format($totalValue),
             ],
             'branches' => Branch::query()->operational()->orderBy('name')->orderBy('id')->get(['id', 'name']),
+            'categories' => Category::query()->orderBy('name')->pluck('name')->all(),
+            'brands' => Brand::query()->orderBy('name')->pluck('name')->all(),
             'variants' => CatalogItemVariant::query()
                 ->with('catalogItem:id,name,type')
                 ->whereHas('catalogItem', fn ($query) => $query->where('type', CatalogItemType::Product))
@@ -109,6 +126,8 @@ class InventoryController extends Controller
             'filters' => [
                 'search' => $filters['search'] ?? '',
                 'branch_id' => $filters['branch_id'] ?? '',
+                'category' => $filters['category'] ?? '',
+                'brand' => $filters['brand'] ?? '',
             ],
         ]);
     }
@@ -160,6 +179,35 @@ class InventoryController extends Controller
         }
 
         return $view;
+    }
+
+    /**
+     * @param  Builder<BranchInventory>|Builder<PurchaseOrderItem>  $query
+     */
+    private function constrainCatalog(Builder $query, ?string $category, ?string $brand): void
+    {
+        $this->constrainCatalogColumn($query, 'category', $category);
+        $this->constrainCatalogColumn($query, 'brand', $brand);
+    }
+
+    /**
+     * @param  Builder<BranchInventory>|Builder<PurchaseOrderItem>  $query
+     */
+    private function constrainCatalogColumn(Builder $query, string $relation, ?string $name): void
+    {
+        if ($name === null) {
+            return;
+        }
+
+        $query->whereHas('variant.catalogItem', function (Builder $items) use ($relation, $name): void {
+            if ($name === '__none') {
+                $items->whereNull($relation.'_id');
+
+                return;
+            }
+
+            $items->whereHas($relation, fn (Builder $related) => $related->where('name', $name));
+        });
     }
 
     /**

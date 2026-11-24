@@ -24,6 +24,7 @@ const emit = defineEmits(['close', 'sell', 'drawer']);
 
 const selectedId = ref(null);
 const checkingIn = ref(false);
+const editingDetails = ref(false);
 const paymentOpen = ref(false);
 const checkedInLabel = ref('');
 
@@ -74,6 +75,14 @@ const datesForm = useForm({
     checked_out_at: '',
 });
 
+const detailsForm = useForm({
+    client_name: '',
+    contact_number: '',
+    address: '',
+    hotel_pod_type_id: '',
+    pets: [emptyPet()],
+});
+
 const selectedStay = computed(() => props.stays.find((stay) => stay.id === selectedId.value) ?? null);
 const emptyLabel = computed(() => {
     if (!props.checkedOut) {
@@ -97,6 +106,16 @@ const paymentMethod = computed(() =>
 );
 const asksForTendered = computed(() => Boolean(paymentMethod.value?.is_cash || paymentMethod.value?.asks_for_change));
 const asksForReference = computed(() => Boolean(paymentMethod.value) && !paymentMethod.value.is_cash);
+const podChoices = computed(() => {
+    const choices = [...props.options.pod_types];
+    const stay = selectedStay.value;
+
+    if (stay?.hotel_pod_type_id && !choices.some((pod) => String(pod.id) === String(stay.hotel_pod_type_id))) {
+        choices.push({ id: stay.hotel_pod_type_id, name: stay.pod_type_label });
+    }
+
+    return choices;
+});
 const paymentChange = computed(() => {
     if (!asksForTendered.value) {
         return null;
@@ -121,6 +140,10 @@ watch(
     ],
     syncDates,
 );
+
+watch(() => selectedStay.value?.id, () => {
+    editingDetails.value = false;
+});
 
 watch(() => props.stays, (stays) => {
     if (selectedId.value !== null && !stays.some((stay) => stay.id === selectedId.value)) {
@@ -187,6 +210,61 @@ function saveDates() {
         preserveState: true,
         preserveUrl: true,
         only: props.checkedOut ? ['checkedOutStays', 'filters', 'flash'] : ['stays', 'filters', 'flash'],
+    });
+}
+
+function startEdit() {
+    const stay = selectedStay.value;
+
+    if (!stay) {
+        return;
+    }
+
+    detailsForm.clearErrors();
+    detailsForm.client_name = stay.client_name;
+    detailsForm.contact_number = stay.contact_number;
+    detailsForm.address = stay.address;
+    detailsForm.hotel_pod_type_id = stay.hotel_pod_type_id ?? '';
+    detailsForm.pets = stay.pets.map((pet) => ({
+        id: pet.id,
+        name: pet.name,
+        breed: pet.breed,
+        age: pet.age,
+        gender: pet.gender,
+        has_vaccine_booklet: pet.has_vaccine_booklet,
+        vaccines: [...(pet.vaccine_values ?? [])],
+        feeding_instructions: pet.feeding_instructions ?? '',
+        medication_instructions: pet.medication_instructions ?? '',
+        special_instructions: pet.special_instructions ?? '',
+    }));
+    editingDetails.value = true;
+}
+
+function addDetailPet() {
+    detailsForm.pets = [...detailsForm.pets, emptyPet()];
+}
+
+function removeDetailPet(index) {
+    if (detailsForm.pets.length === 1) {
+        return;
+    }
+
+    detailsForm.pets = detailsForm.pets.filter((_, petIndex) => petIndex !== index);
+}
+
+function saveDetails() {
+    if (!selectedStay.value) {
+        return;
+    }
+
+    detailsForm.put(`/backoffice/hotel/stays/${selectedStay.value.id}/details${window.location.search}`, {
+        preserveScroll: true,
+        preserveState: true,
+        preserveUrl: true,
+        only: props.checkedOut ? ['checkedOutStays', 'filters', 'flash'] : ['stays', 'filters', 'flash'],
+        onSuccess: () => {
+            editingDetails.value = false;
+        },
     });
 }
 
@@ -526,10 +604,124 @@ defineExpose({
                         <p v-if="paymentForm.errors.status || checkoutForm.errors.status" class="text-sm text-danger">
                             {{ paymentForm.errors.status || checkoutForm.errors.status }}
                         </p>
-                        <div class="flex flex-col gap-1">
-                            <h3 class="text-lg font-medium">{{ selectedStay.client_name }}</h3>
-                            <p class="text-sm text-ink/60 dark:text-foam/60">{{ selectedStay.contact_number }}</p>
-                            <p class="text-sm text-ink/60 dark:text-foam/60">{{ selectedStay.address }}</p>
+                        <form v-if="editingDetails" id="hotel-details-form" class="flex flex-col gap-5" @submit.prevent="saveDetails">
+                            <div class="flex items-center justify-between gap-3">
+                                <h3 class="text-sm font-medium">Client Information</h3>
+                                <button class="text-sm font-medium" type="button" @click="editingDetails = false">Cancel</button>
+                            </div>
+                            <label class="flex flex-col gap-1 text-sm">
+                                Name
+                                <input v-model="detailsForm.client_name" class="h-10 rounded-xl border border-mist bg-white px-3 dark:border-white/10 dark:bg-white/5" required type="text" />
+                                <span v-if="detailsForm.errors.client_name" class="text-danger">{{ detailsForm.errors.client_name }}</span>
+                            </label>
+                            <label class="flex flex-col gap-1 text-sm">
+                                Contact No.
+                                <input v-model="detailsForm.contact_number" class="h-10 rounded-xl border border-mist bg-white px-3 dark:border-white/10 dark:bg-white/5" required type="tel" />
+                                <span v-if="detailsForm.errors.contact_number" class="text-danger">{{ detailsForm.errors.contact_number }}</span>
+                            </label>
+                            <label class="flex flex-col gap-1 text-sm">
+                                Address
+                                <textarea v-model="detailsForm.address" class="min-h-20 rounded-xl border border-mist bg-white px-3 py-2 dark:border-white/10 dark:bg-white/5" required />
+                                <span v-if="detailsForm.errors.address" class="text-danger">{{ detailsForm.errors.address }}</span>
+                            </label>
+                            <label class="flex flex-col gap-1 text-sm">
+                                Pod Type
+                                <select v-model="detailsForm.hotel_pod_type_id" class="h-10 rounded-xl border border-mist bg-white px-3 dark:border-white/10 dark:bg-white/5" required>
+                                    <option disabled value="">Choose</option>
+                                    <option v-for="pod in podChoices" :key="pod.id" :value="pod.id">{{ pod.name }}</option>
+                                </select>
+                                <span v-if="detailsForm.errors.hotel_pod_type_id" class="text-danger">{{ detailsForm.errors.hotel_pod_type_id }}</span>
+                            </label>
+                            <div class="flex items-center justify-between gap-3">
+                                <h3 class="text-sm font-medium">Pet Information</h3>
+                                <button class="h-9 rounded-xl border border-mist px-3 text-sm font-medium dark:border-white/15" type="button" @click="addDetailPet">
+                                    Add pet
+                                </button>
+                            </div>
+                            <p v-if="detailsForm.errors.pets" class="text-sm text-danger">{{ detailsForm.errors.pets }}</p>
+                            <article
+                                v-for="(pet, index) in detailsForm.pets"
+                                :key="pet.id ?? `new-${index}`"
+                                class="flex flex-col gap-3 rounded-2xl border border-mist p-4 dark:border-white/10"
+                            >
+                                <div class="flex items-center justify-between gap-3">
+                                    <p class="text-sm font-medium">Pet {{ index + 1 }}</p>
+                                    <button
+                                        v-if="detailsForm.pets.length > 1"
+                                        class="text-sm font-medium text-danger"
+                                        type="button"
+                                        @click="removeDetailPet(index)"
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <label class="flex flex-col gap-1 text-sm">
+                                        Pet Name
+                                        <input v-model="pet.name" class="h-10 rounded-xl border border-mist bg-white px-3 dark:border-white/10 dark:bg-white/5" required type="text" />
+                                        <span v-if="detailsForm.errors[`pets.${index}.name`]" class="text-danger">{{ detailsForm.errors[`pets.${index}.name`] }}</span>
+                                    </label>
+                                    <label class="flex flex-col gap-1 text-sm">
+                                        Breed
+                                        <input v-model="pet.breed" class="h-10 rounded-xl border border-mist bg-white px-3 dark:border-white/10 dark:bg-white/5" required type="text" />
+                                        <span v-if="detailsForm.errors[`pets.${index}.breed`]" class="text-danger">{{ detailsForm.errors[`pets.${index}.breed`] }}</span>
+                                    </label>
+                                    <label class="flex flex-col gap-1 text-sm">
+                                        Age
+                                        <input v-model="pet.age" class="h-10 rounded-xl border border-mist bg-white px-3 dark:border-white/10 dark:bg-white/5" required type="text" />
+                                        <span v-if="detailsForm.errors[`pets.${index}.age`]" class="text-danger">{{ detailsForm.errors[`pets.${index}.age`] }}</span>
+                                    </label>
+                                    <label class="flex flex-col gap-1 text-sm">
+                                        Gender
+                                        <select v-model="pet.gender" class="h-10 rounded-xl border border-mist bg-white px-3 dark:border-white/10 dark:bg-white/5" required>
+                                            <option disabled value="">Choose</option>
+                                            <option v-for="gender in options.genders" :key="gender.value" :value="gender.value">{{ gender.label }}</option>
+                                        </select>
+                                        <span v-if="detailsForm.errors[`pets.${index}.gender`]" class="text-danger">{{ detailsForm.errors[`pets.${index}.gender`] }}</span>
+                                    </label>
+                                </div>
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input v-model="pet.has_vaccine_booklet" class="h-4 w-4 accent-pine" type="checkbox" />
+                                    Has vaccine booklet
+                                </label>
+                                <fieldset class="flex flex-col gap-2">
+                                    <legend class="text-sm font-medium">Vaccines</legend>
+                                    <label v-for="vaccine in options.vaccines" :key="vaccine.value" class="flex items-center gap-2 text-sm">
+                                        <input
+                                            class="h-4 w-4 accent-pine"
+                                            type="checkbox"
+                                            :checked="pet.vaccines.includes(vaccine.value)"
+                                            @change="toggleVaccine(pet, vaccine.value)"
+                                        />
+                                        {{ vaccine.label }}
+                                    </label>
+                                </fieldset>
+                                <label class="flex flex-col gap-1 text-sm">
+                                    Feeding Instructions
+                                    <textarea v-model="pet.feeding_instructions" class="min-h-16 rounded-xl border border-mist bg-white px-3 py-2 dark:border-white/10 dark:bg-white/5" />
+                                </label>
+                                <label class="flex flex-col gap-1 text-sm">
+                                    Medication Instructions
+                                    <textarea v-model="pet.medication_instructions" class="min-h-16 rounded-xl border border-mist bg-white px-3 py-2 dark:border-white/10 dark:bg-white/5" />
+                                </label>
+                                <label class="flex flex-col gap-1 text-sm">
+                                    Other Special Instructions
+                                    <textarea v-model="pet.special_instructions" class="min-h-16 rounded-xl border border-mist bg-white px-3 py-2 dark:border-white/10 dark:bg-white/5" />
+                                </label>
+                            </article>
+                            <button class="h-11 rounded-xl bg-pine px-4 text-sm font-medium text-foam disabled:opacity-70" type="submit" :disabled="detailsForm.processing">
+                                {{ detailsForm.processing ? 'Saving…' : 'Save details' }}
+                            </button>
+                        </form>
+                        <div v-else class="flex items-start justify-between gap-3">
+                            <div class="flex flex-col gap-1">
+                                <h3 class="text-lg font-medium">{{ selectedStay.client_name }}</h3>
+                                <p class="text-sm text-ink/60 dark:text-foam/60">{{ selectedStay.contact_number }}</p>
+                                <p class="text-sm text-ink/60 dark:text-foam/60">{{ selectedStay.address }}</p>
+                            </div>
+                            <button v-if="embedded" class="h-10 shrink-0 rounded-xl border border-mist px-3 text-sm font-medium dark:border-white/15" type="button" @click="startEdit">
+                                Edit details
+                            </button>
                         </div>
                         <div class="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
                             <p><span class="text-ink/55 dark:text-foam/55">Branch</span><br>{{ selectedStay.branch_name }}</p>
@@ -563,7 +755,7 @@ defineExpose({
                             <p v-if="selectedStay.checked_out_by"><span class="text-ink/55 dark:text-foam/55">Checked out by</span><br>{{ selectedStay.checked_out_by }}</p>
                             <p><span class="text-ink/55 dark:text-foam/55">Pod</span><br>{{ selectedStay.pod_type_label }}</p>
                         </div>
-                        <article v-for="pet in selectedStay.pets" :key="pet.id" class="flex flex-col gap-2 rounded-2xl border border-mist p-4 text-sm dark:border-white/10">
+                        <article v-for="pet in selectedStay.pets" v-show="!editingDetails" :key="pet.id" class="flex flex-col gap-2 rounded-2xl border border-mist p-4 text-sm dark:border-white/10">
                             <p class="font-medium">{{ pet.name }}</p>
                             <p class="text-ink/60 dark:text-foam/60">{{ pet.breed }} · {{ pet.age }} · {{ pet.gender_label }}</p>
                             <p>Vaccine booklet: {{ pet.has_vaccine_booklet ? 'Yes' : 'No' }}</p>

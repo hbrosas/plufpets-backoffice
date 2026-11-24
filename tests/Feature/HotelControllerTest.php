@@ -562,6 +562,163 @@ class HotelControllerTest extends TestCase
         $this->assertNotNull($stay->fresh()->checked_out_at);
     }
 
+    public function test_guest_cannot_change_hotel_details(): void
+    {
+        $stay = HotelStay::factory()->create(['client_name' => 'Mina Cruz']);
+        $pet = HotelStayPet::factory()->create(['hotel_stay_id' => $stay->id, 'name' => 'Biscuit']);
+
+        $this->put(route('hotel.stays.details.update', $stay), [
+            'client_name' => 'Mina Santos',
+            'contact_number' => '09171234567',
+            'address' => '12 Mabini Street',
+            'hotel_pod_type_id' => $stay->hotel_pod_type_id,
+            'pets' => [$this->petPayload(['id' => $pet->id, 'name' => 'Pepper'])],
+        ])->assertRedirect(route('login'));
+
+        $this->assertSame('Mina Cruz', $stay->fresh()->client_name);
+        $this->assertSame('Biscuit', $pet->fresh()->name);
+    }
+
+    public function test_employee_without_hotel_access_cannot_change_hotel_details(): void
+    {
+        $employee = Employee::factory()->create([
+            'role_id' => Role::factory()->withPermissions(['dashboard.view'])->create()->id,
+        ]);
+        $stay = HotelStay::factory()->create(['client_name' => 'Mina Cruz']);
+
+        $this->actingAsEmployee($employee)
+            ->put(route('hotel.stays.details.update', $stay), [
+                'client_name' => 'Mina Santos',
+                'contact_number' => '09171234567',
+                'address' => '12 Mabini Street',
+                'hotel_pod_type_id' => $stay->hotel_pod_type_id,
+                'pets' => [$this->petPayload()],
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('Mina Cruz', $stay->fresh()->client_name);
+    }
+
+    public function test_hotel_details_can_be_updated(): void
+    {
+        $currentPod = HotelPodType::factory()->create();
+        $nextPod = HotelPodType::factory()->create();
+        $stay = HotelStay::factory()->create([
+            'client_name' => 'Mina Cruz',
+            'contact_number' => '09170000000',
+            'address' => 'Old address',
+            'checkout_on' => '2026-06-16',
+            'hotel_pod_type_id' => $currentPod->id,
+        ]);
+        $kept = HotelStayPet::factory()->create([
+            'hotel_stay_id' => $stay->id,
+            'name' => 'Biscuit',
+            'breed' => 'Aspin',
+        ]);
+        $removed = HotelStayPet::factory()->create([
+            'hotel_stay_id' => $stay->id,
+            'name' => 'Mochi',
+        ]);
+
+        $this->actingAsEmployee()
+            ->put(route('hotel.stays.details.update', $stay), [
+                'client_name' => 'Mina Santos',
+                'contact_number' => '09171234567',
+                'address' => '12 Mabini Street',
+                'hotel_pod_type_id' => $nextPod->id,
+                'pets' => [
+                    $this->petPayload([
+                        'id' => $kept->id,
+                        'breed' => 'Shih Tzu',
+                        'feeding_instructions' => 'Twice a day',
+                    ]),
+                    $this->petPayload(['name' => 'Pepper', 'gender' => 'male']),
+                ],
+            ])
+            ->assertRedirect(route('hotel.index'))
+            ->assertSessionHas('status', 'Hotel details updated.');
+
+        $stay->refresh();
+        $this->assertSame('Mina Santos', $stay->client_name);
+        $this->assertSame('09171234567', $stay->contact_number);
+        $this->assertSame('12 Mabini Street', $stay->address);
+        $this->assertSame($nextPod->id, $stay->hotel_pod_type_id);
+        $this->assertSame('2026-06-16', $stay->checkout_on?->toDateString());
+        $this->assertSame('Shih Tzu', $kept->fresh()->breed);
+        $this->assertSame('Twice a day', $kept->fresh()->feeding_instructions);
+        $this->assertModelMissing($removed);
+        $this->assertDatabaseHas('hotel_stay_pets', [
+            'hotel_stay_id' => $stay->id,
+            'name' => 'Pepper',
+            'gender' => 'male',
+        ]);
+    }
+
+    public function test_hotel_details_require_a_client_name(): void
+    {
+        $stay = HotelStay::factory()->create(['client_name' => 'Mina Cruz']);
+        $pet = HotelStayPet::factory()->create(['hotel_stay_id' => $stay->id]);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/hotel')
+            ->put(route('hotel.stays.details.update', $stay), [
+                'client_name' => '   ',
+                'contact_number' => '09171234567',
+                'address' => '12 Mabini Street',
+                'hotel_pod_type_id' => $stay->hotel_pod_type_id,
+                'pets' => [$this->petPayload(['id' => $pet->id])],
+            ])
+            ->assertRedirect('/backoffice/hotel')
+            ->assertSessionHasErrors([
+                'client_name' => 'Enter the client name.',
+            ]);
+
+        $this->assertSame('Mina Cruz', $stay->fresh()->client_name);
+    }
+
+    public function test_hotel_details_cannot_use_a_pet_from_another_stay(): void
+    {
+        $stay = HotelStay::factory()->create(['client_name' => 'Mina Cruz']);
+        $otherPet = HotelStayPet::factory()->create(['name' => 'Mochi']);
+
+        $this->actingAsEmployee()
+            ->from('/backoffice/hotel')
+            ->put(route('hotel.stays.details.update', $stay), [
+                'client_name' => 'Mina Santos',
+                'contact_number' => '09171234567',
+                'address' => '12 Mabini Street',
+                'hotel_pod_type_id' => $stay->hotel_pod_type_id,
+                'pets' => [$this->petPayload(['id' => $otherPet->id, 'name' => 'Pepper'])],
+            ])
+            ->assertRedirect('/backoffice/hotel')
+            ->assertSessionHasErrors([
+                'pets.0.id' => 'Choose a pet on this stay.',
+            ]);
+
+        $this->assertSame('Mina Cruz', $stay->fresh()->client_name);
+        $this->assertSame('Mochi', $otherPet->fresh()->name);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function petPayload(array $overrides = []): array
+    {
+        return [
+            'name' => 'Biscuit',
+            'breed' => 'Aspin',
+            'age' => '3 years',
+            'gender' => 'female',
+            'has_vaccine_booklet' => true,
+            'vaccines' => ['anti_rabies'],
+            'feeding_instructions' => null,
+            'medication_instructions' => null,
+            'special_instructions' => null,
+            ...$overrides,
+        ];
+    }
+
     /**
      * @return array<string, mixed>
      */

@@ -67,6 +67,11 @@ class HotelStayPet extends Model
             'gender_label' => $this->gender->label(),
             'has_vaccine_booklet' => $this->has_vaccine_booklet,
             'vaccines' => $vaccines,
+            'vaccine_values' => collect($this->vaccines ?? [])
+                ->map(fn (mixed $value): ?string => HotelVaccine::tryFrom((string) $value)?->value)
+                ->filter()
+                ->values()
+                ->all(),
             'feeding_instructions' => $this->feeding_instructions,
             'medication_instructions' => $this->medication_instructions,
             'special_instructions' => $this->special_instructions,
