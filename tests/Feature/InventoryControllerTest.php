@@ -360,10 +360,11 @@ class InventoryControllerTest extends TestCase
         $rows = XlsxSheet::rows($path, 20, 'inventory rows');
         unlink($path);
 
-        $this->assertSame(['Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'], $rows[0]);
-        $this->assertSame('Organic kibble', $rows[1][0]);
-        $this->assertSame('Makati Branch', $rows[1][3]);
-        $this->assertSame('12', $rows[1][4]);
+        $this->assertSame(['Category', 'Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'], $rows[0]);
+        $this->assertSame('Food', $rows[1][0]);
+        $this->assertSame('Organic kibble', $rows[1][1]);
+        $this->assertSame('Makati Branch', $rows[1][4]);
+        $this->assertSame('12', $rows[1][5]);
         $this->assertCount(2, $rows);
     }
 
@@ -371,7 +372,8 @@ class InventoryControllerTest extends TestCase
     {
         $branch = Branch::factory()->create(['name' => 'Makati Branch']);
         $brand = Brand::factory()->create(['name' => 'Pluf']);
-        $this->stock($branch, 'Organic kibble', null, $brand, 12);
+        $food = Category::factory()->create(['name' => 'Food']);
+        $this->stock($branch, 'Organic kibble', $food, $brand, 12);
 
         $response = $this->actingAsEmployee()->get('/backoffice/inventory/export?format=xlsx&sheet=count');
 
@@ -382,14 +384,15 @@ class InventoryControllerTest extends TestCase
         $rows = XlsxSheet::rows($path, 20, 'inventory rows');
         unlink($path);
 
-        $this->assertSame(['Inventory Count', '', '', '', '', '', ''], $rows[0]);
-        $this->assertSame([now()->format('F j, Y'), '', '', '', '', '', ''], $rows[1]);
-        $this->assertSame(['Brand', 'Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count'], $rows[2]);
+        $this->assertSame(['Inventory Count', '', '', '', '', '', '', ''], $rows[0]);
+        $this->assertSame([now()->format('F j, Y'), '', '', '', '', '', '', ''], $rows[1]);
+        $this->assertSame(['Brand', 'Category', 'Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count'], $rows[2]);
         $this->assertSame('Pluf', $rows[3][0]);
-        $this->assertSame('Organic kibble', $rows[3][1]);
-        $this->assertSame('Makati Branch', $rows[3][4]);
-        $this->assertSame('12', $rows[3][5]);
-        $this->assertSame('', $rows[3][6]);
+        $this->assertSame('Food', $rows[3][1]);
+        $this->assertSame('Organic kibble', $rows[3][2]);
+        $this->assertSame('Makati Branch', $rows[3][5]);
+        $this->assertSame('12', $rows[3][6]);
+        $this->assertSame('', $rows[3][7]);
         $this->assertNotContains('Purchase price', $rows[2]);
     }
 
@@ -439,16 +442,16 @@ class InventoryControllerTest extends TestCase
         [$onHand, $unstocked] = $this->stockCountSections($rows);
 
         $this->assertSame([
-            ['Pluf', 'Organic kibble', 'Default', 'KIB-001', 'Makati Branch', '12', ''],
+            ['Pluf', '—', 'Organic kibble', 'Default', 'KIB-001', 'Makati Branch', '12', ''],
         ], $onHand);
         $this->assertSame([
-            ['Acme', 'Dry treats', 'Default', 'TREAT-1', 'Makati Branch', '0', ''],
-            ['Pluf', 'Organic kibble', 'Default', 'KIB-001', 'BGC Branch', '0', ''],
-            ['—', 'Leather leash', 'Default', 'LEASH-1', '—', '0', ''],
+            ['Acme', '—', 'Dry treats', 'Default', 'TREAT-1', 'Makati Branch', '0', ''],
+            ['Pluf', '—', 'Organic kibble', 'Default', 'KIB-001', 'BGC Branch', '0', ''],
+            ['—', '—', 'Leather leash', 'Default', 'LEASH-1', '—', '0', ''],
         ], $unstocked);
-        $this->assertNotContains('Grooming', array_column($rows, 1));
-        $this->assertNotContains('Old toy', array_column($rows, 1));
-        $this->assertNotContains('Retired collar', array_column($rows, 1));
+        $this->assertNotContains('Grooming', array_column($rows, 2));
+        $this->assertNotContains('Old toy', array_column($rows, 2));
+        $this->assertNotContains('Retired collar', array_column($rows, 2));
     }
 
     public function test_stock_count_export_lists_products_missing_from_the_selected_branch(): void
@@ -464,11 +467,11 @@ class InventoryControllerTest extends TestCase
         $rows = $this->exportedRows('/backoffice/inventory/export?format=xlsx&sheet=count&branch_id='.$makati->id);
         [$onHand, $unstocked] = $this->stockCountSections($rows);
 
-        $this->assertSame(['Dry treats'], array_column($onHand, 1));
-        $this->assertSame(['Leather leash', 'Organic kibble'], array_column($unstocked, 1));
-        $this->assertSame(['Makati Branch', 'Makati Branch'], array_column($unstocked, 4));
-        $this->assertSame(['0', '0'], array_column($unstocked, 5));
-        $this->assertSame(['', ''], array_column($unstocked, 6));
+        $this->assertSame(['Dry treats'], array_column($onHand, 2));
+        $this->assertSame(['Leather leash', 'Organic kibble'], array_column($unstocked, 2));
+        $this->assertSame(['Makati Branch', 'Makati Branch'], array_column($unstocked, 5));
+        $this->assertSame(['0', '0'], array_column($unstocked, 6));
+        $this->assertSame(['', ''], array_column($unstocked, 7));
     }
 
     public function test_stock_count_pdf_is_a_download(): void

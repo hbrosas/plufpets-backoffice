@@ -102,8 +102,8 @@ class InventoryController extends Controller
         $countedOn = now()->format('F j, Y');
         $subtitle = $this->exportSubtitle($filters, (int) $rows->sum('total_quantity'), (float) $rows->sum('value_amount'), $stockCount);
         $headers = $stockCount
-            ? ['Brand', 'Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count']
-            : ['Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'];
+            ? ['Brand', 'Category', 'Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count']
+            : ['Category', 'Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'];
 
         if ($format === 'xlsx') {
             $sheetRows = [$headers, ...$lines];
@@ -126,8 +126,8 @@ class InventoryController extends Controller
                 $stockCount ? 'Inventory Count' : 'Inventory',
                 $sheetRows,
                 $stockCount ? 15 : null,
-                $stockCount ? 5 : null,
-                $stockCount ? [18, 34, 14, 16, 20, 10, 48] : null,
+                $stockCount ? 6 : null,
+                $stockCount ? [16, 18, 28, 12, 14, 16, 10, 46] : null,
                 $stockCount ? 3 : null,
             ), 200, [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -183,8 +183,9 @@ class InventoryController extends Controller
             ->with([
                 'branch:id,name',
                 'variant:id,catalog_item_id,name,sku,price',
-                'variant.catalogItem:id,name,brand_id',
+                'variant.catalogItem:id,name,brand_id,category_id',
                 'variant.catalogItem.brand:id,name',
+                'variant.catalogItem.category:id,name',
                 'variant.branchPrices:id,branch_id,catalog_item_variant_id,price',
             ])
             ->when($filters['branch_id'] ?? null, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
@@ -206,8 +207,9 @@ class InventoryController extends Controller
             $unassigned = PurchaseOrderItem::query()
                 ->with([
                     'variant:id,catalog_item_id,name,sku,price',
-                    'variant.catalogItem:id,name,brand_id',
+                    'variant.catalogItem:id,name,brand_id,category_id',
                     'variant.catalogItem.brand:id,name',
+                    'variant.catalogItem.category:id,name',
                     'variant.branchPrices:id,branch_id,catalog_item_variant_id,price',
                 ])
                 ->withSum('assignments as assigned_quantity', 'quantity')
@@ -241,9 +243,11 @@ class InventoryController extends Controller
 
         foreach ($rows as $row) {
             foreach ($row['locations'] as $location) {
+                $category = $row['category'] !== '' ? $row['category'] : '—';
                 $lines[] = $stockCount
                     ? [
                         $row['brand'] !== '' ? $row['brand'] : '—',
+                        $category,
                         $row['product'] ?? '',
                         $row['variant'] ?? '',
                         $row['sku'] ?? '',
@@ -252,6 +256,7 @@ class InventoryController extends Controller
                         '',
                     ]
                     : [
+                        $category,
                         $row['product'] ?? '',
                         $row['variant'] ?? '',
                         $row['sku'] ?? '',
@@ -265,7 +270,7 @@ class InventoryController extends Controller
         }
 
         if ($stockCount) {
-            usort($lines, fn (array $left, array $right): int => [$left[0], $left[1], $left[2], $left[4]] <=> [$right[0], $right[1], $right[2], $right[4]]);
+            usort($lines, fn (array $left, array $right): int => [$left[0], $left[1], $left[2], $left[3], $left[5]] <=> [$right[0], $right[1], $right[2], $right[3], $right[5]]);
         }
 
         return $lines;
@@ -283,7 +288,7 @@ class InventoryController extends Controller
         $unstocked = [];
 
         foreach ($lines as $line) {
-            if ((int) $line[5] > 0) {
+            if ((int) $line[6] > 0) {
                 $onHand[] = $line;
             } else {
                 $unstocked[] = $line;
@@ -295,7 +300,7 @@ class InventoryController extends Controller
             ...$this->unstockedProductLines($filters, $rows->pluck('variant_id')->map(fn (mixed $id): int => (int) $id)->all()),
         ];
 
-        usort($unstocked, fn (array $left, array $right): int => [$left[0], $left[1], $left[2], $left[4]] <=> [$right[0], $right[1], $right[2], $right[4]]);
+        usort($unstocked, fn (array $left, array $right): int => [$left[0], $left[1], $left[2], $left[3], $left[5]] <=> [$right[0], $right[1], $right[2], $right[3], $right[5]]);
 
         return [$onHand, $unstocked];
     }
@@ -317,8 +322,9 @@ class InventoryController extends Controller
 
         $variants = CatalogItemVariant::query()
             ->with([
-                'catalogItem:id,name,brand_id',
+                'catalogItem:id,name,brand_id,category_id',
                 'catalogItem.brand:id,name',
+                'catalogItem.category:id,name',
             ])
             ->where('is_active', true)
             ->whereHas('catalogItem', function (Builder $items) use ($filters): void {
@@ -351,6 +357,7 @@ class InventoryController extends Controller
         return $variants
             ->map(fn (CatalogItemVariant $variant): array => [
                 $variant->catalogItem?->brand?->name ?: '—',
+                $variant->catalogItem?->category?->name ?: '—',
                 $variant->catalogItem?->name ?? '',
                 $variant->name ?? '',
                 $variant->sku ?? '',
@@ -479,6 +486,7 @@ class InventoryController extends Controller
      *     variant_id: int,
      *     product: string|null,
      *     brand: string,
+     *     category: string,
      *     variant: string|null,
      *     sku: string|null,
      *     locations: list<array{id: string, branch_id: int|null, name: string, quantity: int, price: string}>,
@@ -561,6 +569,7 @@ class InventoryController extends Controller
                     'variant_id' => $variantId,
                     'product' => $entry['variant']?->catalogItem?->name,
                     'brand' => $entry['variant']?->catalogItem?->brand?->name ?? '',
+                    'category' => $entry['variant']?->catalogItem?->category?->name ?? '',
                     'variant' => $entry['variant']?->name,
                     'sku' => $entry['variant']?->sku,
                     'locations' => $locations,

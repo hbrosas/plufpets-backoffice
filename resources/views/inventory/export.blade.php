@@ -52,39 +52,42 @@
             @endif
             <table>
                 <colgroup>
-                    <col style="width: 11%">
-                    <col style="width: 20%">
-                    <col style="width: 9%">
-                    <col style="width: 11%">
+                    <col style="width: 10%">
                     <col style="width: 12%">
-                    <col style="width: 7%">
-                    <col style="width: 30%">
+                    <col style="width: 18%">
+                    <col style="width: 9%">
+                    <col style="width: 10%">
+                    <col style="width: 11%">
+                    <col style="width: 6%">
+                    <col style="width: 24%">
                 </colgroup>
                 <thead>
                     <tr>
-                        <th style="width: 11%">Brand</th>
-                        <th style="width: 20%">Product</th>
+                        <th style="width: 10%">Brand</th>
+                        <th style="width: 12%">Category</th>
+                        <th style="width: 18%">Product</th>
                         <th style="width: 9%">Variant</th>
-                        <th style="width: 11%">SKU</th>
-                        <th style="width: 12%">Location</th>
-                        <th class="center" style="width: 7%">Expected</th>
-                        <th style="width: 30%">Count</th>
+                        <th style="width: 10%">SKU</th>
+                        <th style="width: 11%">Location</th>
+                        <th class="center" style="width: 6%">Expected</th>
+                        <th style="width: 24%">Count</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse ($section['lines'] as $line)
                         <tr>
                             <td>{{ $line[0] }}</td>
-                            <td class="product">{{ $line[1] }}</td>
-                            <td>{{ $line[2] }}</td>
+                            <td>{{ $line[1] }}</td>
+                            <td class="product">{{ $line[2] }}</td>
                             <td>{{ $line[3] }}</td>
                             <td>{{ $line[4] }}</td>
-                            <td class="center">{{ $line[5] }}</td>
+                            <td>{{ $line[5] }}</td>
+                            <td class="center">{{ $line[6] }}</td>
                             <td class="write">&nbsp;</td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7">{{ $section['empty'] }}</td>
+                            <td colspan="8">{{ $section['empty'] }}</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -93,17 +96,19 @@
     @else
     <table>
             <colgroup>
-                <col style="width: 22%">
                 <col style="width: 12%">
-                <col style="width: 12%">
-                <col style="width: 16%">
-                <col style="width: 7%">
+                <col style="width: 18%">
                 <col style="width: 11%">
                 <col style="width: 11%">
-                <col style="width: 9%">
+                <col style="width: 14%">
+                <col style="width: 6%">
+                <col style="width: 10%">
+                <col style="width: 10%">
+                <col style="width: 8%">
             </colgroup>
             <thead>
                 <tr>
+                    <th>Category</th>
                     <th>Product</th>
                     <th>Variant</th>
                     <th>SKU</th>
@@ -121,14 +126,15 @@
                         <td>{{ $line[1] }}</td>
                         <td>{{ $line[2] }}</td>
                         <td>{{ $line[3] }}</td>
-                        <td class="num">{{ $line[4] }}</td>
+                        <td>{{ $line[4] }}</td>
                         <td class="num">{{ $line[5] }}</td>
                         <td class="num">{{ $line[6] }}</td>
                         <td class="num">{{ $line[7] }}</td>
+                        <td class="num">{{ $line[8] }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="8">No stock.</td>
+                        <td colspan="9">No stock.</td>
                     </tr>
                 @endforelse
             </tbody>
