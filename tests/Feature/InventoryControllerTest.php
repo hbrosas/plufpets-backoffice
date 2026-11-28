@@ -391,6 +391,84 @@ class InventoryControllerTest extends TestCase
         $this->assertNotContains('Purchase price', $rows[0]);
     }
 
+    public function test_stock_count_export_lists_products_without_stock_below_the_count(): void
+    {
+        $makati = Branch::factory()->create(['name' => 'Makati Branch']);
+        $bgc = Branch::factory()->create(['name' => 'BGC Branch']);
+        $pluf = Brand::factory()->create(['name' => 'Pluf']);
+        $acme = Brand::factory()->create(['name' => 'Acme']);
+        $kibble = CatalogItemVariant::factory()->for(CatalogItem::factory()->create([
+            'name' => 'Organic kibble',
+            'brand_id' => $pluf->id,
+        ]))->create(['name' => 'Default', 'sku' => 'KIB-001']);
+        BranchInventory::factory()->create([
+            'branch_id' => $makati->id,
+            'catalog_item_variant_id' => $kibble->id,
+            'quantity' => 12,
+        ]);
+        BranchInventory::factory()->create([
+            'branch_id' => $bgc->id,
+            'catalog_item_variant_id' => $kibble->id,
+            'quantity' => 0,
+        ]);
+        $treats = CatalogItemVariant::factory()->for(CatalogItem::factory()->create([
+            'name' => 'Dry treats',
+            'brand_id' => $acme->id,
+        ]))->create(['name' => 'Default', 'sku' => 'TREAT-1']);
+        BranchInventory::factory()->create([
+            'branch_id' => $makati->id,
+            'catalog_item_variant_id' => $treats->id,
+            'quantity' => 0,
+        ]);
+        CatalogItemVariant::factory()->for(CatalogItem::factory()->create([
+            'name' => 'Leather leash',
+        ]))->create(['name' => 'Default', 'sku' => 'LEASH-1']);
+        CatalogItemVariant::factory()->for(CatalogItem::factory()->service()->create([
+            'name' => 'Grooming',
+        ]))->create(['name' => 'Default']);
+        CatalogItemVariant::factory()->for(CatalogItem::factory()->inactive()->create([
+            'name' => 'Old toy',
+        ]))->create(['name' => 'Default']);
+        CatalogItemVariant::factory()->for(CatalogItem::factory()->create([
+            'name' => 'Retired collar',
+        ]))->create(['name' => 'Default', 'is_active' => false]);
+
+        $rows = $this->exportedRows('/backoffice/inventory/export?format=xlsx&sheet=count');
+        [$onHand, $unstocked] = $this->stockCountSections($rows);
+
+        $this->assertSame([
+            ['Pluf', 'Organic kibble', 'Default', 'KIB-001', 'Makati Branch', '12', ''],
+        ], $onHand);
+        $this->assertSame([
+            ['Acme', 'Dry treats', 'Default', 'TREAT-1', 'Makati Branch', '0', ''],
+            ['Pluf', 'Organic kibble', 'Default', 'KIB-001', 'BGC Branch', '0', ''],
+            ['—', 'Leather leash', 'Default', 'LEASH-1', '—', '0', ''],
+        ], $unstocked);
+        $this->assertNotContains('Grooming', array_column($rows, 1));
+        $this->assertNotContains('Old toy', array_column($rows, 1));
+        $this->assertNotContains('Retired collar', array_column($rows, 1));
+    }
+
+    public function test_stock_count_export_lists_products_missing_from_the_selected_branch(): void
+    {
+        $makati = Branch::factory()->create(['name' => 'Makati Branch']);
+        $bgc = Branch::factory()->create(['name' => 'BGC Branch']);
+        $this->stock($bgc, 'Organic kibble', null, null, 4);
+        $this->stock($makati, 'Dry treats', null, null, 5);
+        CatalogItemVariant::factory()->for(CatalogItem::factory()->create([
+            'name' => 'Leather leash',
+        ]))->create(['name' => 'Default', 'sku' => 'LEASH-1']);
+
+        $rows = $this->exportedRows('/backoffice/inventory/export?format=xlsx&sheet=count&branch_id='.$makati->id);
+        [$onHand, $unstocked] = $this->stockCountSections($rows);
+
+        $this->assertSame(['Dry treats'], array_column($onHand, 1));
+        $this->assertSame(['Leather leash', 'Organic kibble'], array_column($unstocked, 1));
+        $this->assertSame(['Makati Branch', 'Makati Branch'], array_column($unstocked, 4));
+        $this->assertSame(['0', '0'], array_column($unstocked, 5));
+        $this->assertSame(['', ''], array_column($unstocked, 6));
+    }
+
     public function test_stock_count_pdf_is_a_download(): void
     {
         $branch = Branch::factory()->create();
@@ -413,6 +491,53 @@ class InventoryControllerTest extends TestCase
             ->get('/backoffice/inventory/export?format=pdf&sheet=profit')
             ->assertRedirect('/backoffice/inventory')
             ->assertSessionHasErrors(['sheet' => 'Choose profit pricing or a stock count.']);
+    }
+
+    /**
+     * @return list<list<string>>
+     */
+    private function exportedRows(string $url): array
+    {
+        $response = $this->actingAsEmployee()->get($url);
+
+        $response->assertOk();
+        $path = tempnam(sys_get_temp_dir(), 'inventory-count');
+        file_put_contents($path, $response->getContent());
+        $rows = XlsxSheet::rows($path, 20, 'inventory rows');
+        unlink($path);
+
+        return $rows;
+    }
+
+    /**
+     * @param  list<list<string>>  $rows
+     * @return array{0: list<list<string>>, 1: list<list<string>>}
+     */
+    private function stockCountSections(array $rows): array
+    {
+        $onHand = [];
+        $unstocked = [];
+        $below = false;
+
+        foreach ($rows as $row) {
+            if ($row[0] === 'No stock') {
+                $below = true;
+
+                continue;
+            }
+
+            if ($row[0] === 'Brand' || $row[0] === '' || $row[0] === 'No products without stock.') {
+                continue;
+            }
+
+            if ($below) {
+                $unstocked[] = $row;
+            } else {
+                $onHand[] = $row;
+            }
+        }
+
+        return [$onHand, $unstocked];
     }
 
     private function stock(Branch $branch, string $name, ?Category $category, ?Brand $brand, int $quantity): void

@@ -20,6 +20,7 @@
             html, body { margin: 0; padding: 0; }
             body { font-size: 7px; line-height: 1; }
             p.mast { margin: 0; padding: 0 1px; font-size: 7px; line-height: 1.1; }
+            p.section { margin: 4px 0 0; padding: 0 1px; font-size: 8px; font-weight: 700; }
             table { table-layout: fixed; }
             th { font-size: 6px; letter-spacing: 0; }
             th, td { padding: 0 1px; line-height: 1; vertical-align: middle; }
@@ -34,46 +35,56 @@
         <h1>{{ $title }}</h1>
         <p>{{ $subtitle }}</p>
     @endif
+    @if ($stockCount)
+        @foreach ([
+            ['heading' => null, 'lines' => $lines, 'empty' => 'No products on hand.'],
+            ['heading' => 'No stock', 'lines' => $unstockedLines, 'empty' => 'No products without stock.'],
+        ] as $section)
+            @if ($section['heading'])
+                <p class="section">{{ $section['heading'] }}</p>
+            @endif
+            <table>
+                <colgroup>
+                    <col style="width: 9%">
+                    <col style="width: 17%">
+                    <col style="width: 8%">
+                    <col style="width: 9%">
+                    <col style="width: 10%">
+                    <col style="width: 5%">
+                    <col style="width: 42%">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Brand</th>
+                        <th>Product</th>
+                        <th>Variant</th>
+                        <th>SKU</th>
+                        <th>Location</th>
+                        <th class="center">Expected</th>
+                        <th>Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse ($section['lines'] as $line)
+                        <tr>
+                            <td>{{ $line[0] }}</td>
+                            <td>{{ $line[1] }}</td>
+                            <td>{{ $line[2] }}</td>
+                            <td>{{ $line[3] }}</td>
+                            <td>{{ $line[4] }}</td>
+                            <td class="center">{{ $line[5] }}</td>
+                            <td class="write"></td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="7">{{ $section['empty'] }}</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        @endforeach
+    @else
     <table>
-        @if ($stockCount)
-            <colgroup>
-                <col style="width: 9%">
-                <col style="width: 17%">
-                <col style="width: 8%">
-                <col style="width: 9%">
-                <col style="width: 10%">
-                <col style="width: 5%">
-                <col style="width: 42%">
-            </colgroup>
-            <thead>
-                <tr>
-                    <th>Brand</th>
-                    <th>Product</th>
-                    <th>Variant</th>
-                    <th>SKU</th>
-                    <th>Location</th>
-                    <th class="center">Expected</th>
-                    <th>Count</th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse ($lines as $line)
-                    <tr>
-                        <td>{{ $line[0] }}</td>
-                        <td>{{ $line[1] }}</td>
-                        <td>{{ $line[2] }}</td>
-                        <td>{{ $line[3] }}</td>
-                        <td>{{ $line[4] }}</td>
-                        <td class="center">{{ $line[5] }}</td>
-                        <td class="write"></td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="7">No stock.</td>
-                    </tr>
-                @endforelse
-            </tbody>
-        @else
             <colgroup>
                 <col style="width: 22%">
                 <col style="width: 12%">
@@ -114,7 +125,7 @@
                     </tr>
                 @endforelse
             </tbody>
-        @endif
     </table>
+    @endif
 </body>
 </html>

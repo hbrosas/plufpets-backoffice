@@ -92,6 +92,12 @@ class InventoryController extends Controller
         $stockCount = $validated['sheet'] === 'count';
         $rows = $this->stockRows($filters, $inventoryCosts);
         $lines = $this->exportLines($rows, $stockCount);
+        $unstockedLines = [];
+
+        if ($stockCount) {
+            [$lines, $unstockedLines] = $this->stockCountTables($lines, $rows, $filters);
+        }
+
         $filename = 'inventory-'.($stockCount ? 'count-' : '').now()->toDateString().'.'.$format;
         $subtitle = $this->exportSubtitle($filters, (int) $rows->sum('total_quantity'), (float) $rows->sum('value_amount'), $stockCount);
         $headers = $stockCount
@@ -99,10 +105,18 @@ class InventoryController extends Controller
             : ['Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'];
 
         if ($format === 'xlsx') {
-            return response(XlsxWorkbook::binary($stockCount ? 'Stock count' : 'Inventory', [
-                $headers,
-                ...$lines,
-            ], $stockCount ? 18 : null, $stockCount ? 5 : null), 200, [
+            $sheetRows = [$headers, ...$lines];
+
+            if ($stockCount) {
+                $sheetRows[] = array_fill(0, count($headers), '');
+                $sheetRows[] = ['No stock', ...array_fill(0, count($headers) - 1, '')];
+                $sheetRows[] = $headers;
+                array_push($sheetRows, ...($unstockedLines === []
+                    ? [['No products without stock.', ...array_fill(0, count($headers) - 1, '')]]
+                    : $unstockedLines));
+            }
+
+            return response(XlsxWorkbook::binary($stockCount ? 'Stock count' : 'Inventory', $sheetRows, $stockCount ? 18 : null, $stockCount ? 5 : null), 200, [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             ]);
@@ -112,6 +126,7 @@ class InventoryController extends Controller
             'title' => $stockCount ? 'Stock count' : 'Inventory',
             'subtitle' => $subtitle,
             'lines' => $lines,
+            'unstockedLines' => $unstockedLines,
             'stockCount' => $stockCount,
         ])->setPaper($stockCount ? 'legal' : 'a4', 'landscape')->download($filename);
     }
@@ -240,6 +255,96 @@ class InventoryController extends Controller
         }
 
         return $lines;
+    }
+
+    /**
+     * @param  list<list<int|string|null>>  $lines
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @param  array{search: string|null, branch_id: int|null, category: string|null, brand: string|null}  $filters
+     * @return array{0: list<list<int|string|null>>, 1: list<list<int|string|null>>}
+     */
+    private function stockCountTables(array $lines, Collection $rows, array $filters): array
+    {
+        $onHand = [];
+        $unstocked = [];
+
+        foreach ($lines as $line) {
+            if ((int) $line[5] > 0) {
+                $onHand[] = $line;
+            } else {
+                $unstocked[] = $line;
+            }
+        }
+
+        $unstocked = [
+            ...$unstocked,
+            ...$this->unstockedProductLines($filters, $rows->pluck('variant_id')->map(fn (mixed $id): int => (int) $id)->all()),
+        ];
+
+        usort($unstocked, fn (array $left, array $right): int => [$left[0], $left[1], $left[2], $left[4]] <=> [$right[0], $right[1], $right[2], $right[4]]);
+
+        return [$onHand, $unstocked];
+    }
+
+    /**
+     * Active products that have no inventory row in this export.
+     *
+     * @param  array{search: string|null, branch_id: int|null, category: string|null, brand: string|null}  $filters
+     * @param  list<int>  $listedVariantIds
+     * @return list<list<int|string|null>>
+     */
+    private function unstockedProductLines(array $filters, array $listedVariantIds): array
+    {
+        $location = '—';
+
+        if ($filters['branch_id'] !== null) {
+            $location = Branch::query()->whereKey($filters['branch_id'])->value('name') ?: 'Unknown';
+        }
+
+        $variants = CatalogItemVariant::query()
+            ->with([
+                'catalogItem:id,name,brand_id',
+                'catalogItem.brand:id,name',
+            ])
+            ->where('is_active', true)
+            ->whereHas('catalogItem', function (Builder $items) use ($filters): void {
+                $items->where('type', CatalogItemType::Product)->where('is_active', true);
+
+                if ($filters['category'] === '__none') {
+                    $items->whereNull('category_id');
+                } elseif (filled($filters['category'])) {
+                    $items->whereHas('category', fn (Builder $category) => $category->where('name', $filters['category']));
+                }
+
+                if ($filters['brand'] === '__none') {
+                    $items->whereNull('brand_id');
+                } elseif (filled($filters['brand'])) {
+                    $items->whereHas('brand', fn (Builder $brand) => $brand->where('name', $filters['brand']));
+                }
+            })
+            ->when(filled($filters['search']), function (Builder $query) use ($filters): void {
+                $search = $filters['search'];
+                $query->where(function (Builder $query) use ($search): void {
+                    $query->where('sku', 'like', '%'.$search.'%')
+                        ->orWhere('barcode', $search)
+                        ->orWhereHas('catalogItem', fn (Builder $items) => $items->where('name', 'like', '%'.$search.'%'));
+                });
+            })
+            ->when($listedVariantIds !== [], fn (Builder $query) => $query->whereNotIn('id', $listedVariantIds))
+            ->orderBy('id')
+            ->get();
+
+        return $variants
+            ->map(fn (CatalogItemVariant $variant): array => [
+                $variant->catalogItem?->brand?->name ?: '—',
+                $variant->catalogItem?->name ?? '',
+                $variant->name ?? '',
+                $variant->sku ?? '',
+                $location,
+                0,
+                '',
+            ])
+            ->all();
     }
 
     /**
