@@ -43,6 +43,7 @@ const props = defineProps({
 const page = usePage();
 const flash = computed(() => page.props.flash ?? {});
 const canAdjust = computed(() => (page.props.employee?.permissions ?? []).includes('inventory.adjust'));
+const exportSheet = ref('pricing');
 const transferOpen = ref(false);
 const convertOpen = ref(false);
 const activeRow = ref(null);
@@ -122,6 +123,7 @@ function exportHref(format) {
     }
 
     params.set('format', format);
+    params.set('sheet', exportSheet.value);
 
     return `/backoffice/inventory/export?${params.toString()}`;
 }
@@ -211,6 +213,14 @@ function submitConvert() {
         </section>
 
         <div class="flex flex-wrap items-center gap-2">
+            <select
+                v-model="exportSheet"
+                class="h-11 rounded-xl border border-mist bg-white pr-11 pl-4 text-sm outline-none focus:border-pine dark:border-white/10 dark:bg-white/5"
+                aria-label="Export contents"
+            >
+                <option value="pricing">Profit pricing</option>
+                <option value="count">Stock count</option>
+            </select>
             <a class="inline-flex h-11 items-center rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15" :href="exportHref('pdf')">
                 Export PDF
             </a>

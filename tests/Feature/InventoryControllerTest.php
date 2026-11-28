@@ -367,6 +367,50 @@ class InventoryControllerTest extends TestCase
         $this->assertCount(2, $rows);
     }
 
+    public function test_stock_count_export_leaves_the_count_blank(): void
+    {
+        $branch = Branch::factory()->create(['name' => 'Makati Branch']);
+        $this->stock($branch, 'Organic kibble', null, null, 12);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/inventory/export?format=xlsx&sheet=count');
+
+        $response->assertOk();
+        $this->assertStringContainsString('inventory-count-'.now()->toDateString().'.xlsx', (string) $response->headers->get('content-disposition'));
+        $path = tempnam(sys_get_temp_dir(), 'inventory-count');
+        file_put_contents($path, $response->getContent());
+        $rows = XlsxSheet::rows($path, 20, 'inventory rows');
+        unlink($path);
+
+        $this->assertSame(['Product', 'Variant', 'SKU', 'Location', 'Count'], $rows[0]);
+        $this->assertSame('Organic kibble', $rows[1][0]);
+        $this->assertSame('Makati Branch', $rows[1][3]);
+        $this->assertSame('', $rows[1][4]);
+        $this->assertNotContains('12', $rows[1]);
+        $this->assertNotContains('Purchase price', $rows[0]);
+    }
+
+    public function test_stock_count_pdf_is_a_download(): void
+    {
+        $branch = Branch::factory()->create();
+        $this->stock($branch, 'Organic kibble', null, null, 4);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/inventory/export?format=pdf&sheet=count');
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+        $this->assertStringContainsString('inventory-count-'.now()->toDateString().'.pdf', (string) $response->headers->get('content-disposition'));
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
+    public function test_inventory_export_rejects_an_unknown_sheet(): void
+    {
+        $this->actingAsEmployee()
+            ->from('/backoffice/inventory')
+            ->get('/backoffice/inventory/export?format=pdf&sheet=profit')
+            ->assertRedirect('/backoffice/inventory')
+            ->assertSessionHasErrors(['sheet' => 'Choose profit pricing or a stock count.']);
+    }
+
     private function stock(Branch $branch, string $name, ?Category $category, ?Brand $brand, int $quantity): void
     {
         $item = CatalogItem::factory()->create([

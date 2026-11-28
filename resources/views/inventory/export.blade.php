@@ -14,52 +14,87 @@
         td.num, th.num { text-align: right; white-space: nowrap; }
         thead { display: table-header-group; }
         tr { page-break-inside: avoid; }
+        td.write { height: 28px; border: 1px solid #14231f; }
     </style>
 </head>
 <body>
     <h1>{{ $title }}</h1>
     <p>{{ $subtitle }}</p>
     <table>
-        <colgroup>
-            <col style="width: 22%">
-            <col style="width: 12%">
-            <col style="width: 12%">
-            <col style="width: 16%">
-            <col style="width: 7%">
-            <col style="width: 11%">
-            <col style="width: 11%">
-            <col style="width: 9%">
-        </colgroup>
-        <thead>
-            <tr>
-                <th>Product</th>
-                <th>Variant</th>
-                <th>SKU</th>
-                <th>Location</th>
-                <th class="num">Qty</th>
-                <th class="num">Purchase</th>
-                <th class="num">Retail</th>
-                <th class="num">Markup</th>
-            </tr>
-        </thead>
-        <tbody>
-            @forelse ($lines as $line)
+        @if ($stockCount)
+            <colgroup>
+                <col style="width: 28%">
+                <col style="width: 14%">
+                <col style="width: 14%">
+                <col style="width: 18%">
+                <col style="width: 26%">
+            </colgroup>
+            <thead>
                 <tr>
-                    <td>{{ $line[0] }}</td>
-                    <td>{{ $line[1] }}</td>
-                    <td>{{ $line[2] }}</td>
-                    <td>{{ $line[3] }}</td>
-                    <td class="num">{{ $line[4] }}</td>
-                    <td class="num">{{ $line[5] }}</td>
-                    <td class="num">{{ $line[6] }}</td>
-                    <td class="num">{{ $line[7] }}</td>
+                    <th>Product</th>
+                    <th>Variant</th>
+                    <th>SKU</th>
+                    <th>Location</th>
+                    <th>Count</th>
                 </tr>
-            @empty
+            </thead>
+            <tbody>
+                @forelse ($lines as $line)
+                    <tr>
+                        <td>{{ $line[0] }}</td>
+                        <td>{{ $line[1] }}</td>
+                        <td>{{ $line[2] }}</td>
+                        <td>{{ $line[3] }}</td>
+                        <td class="write"></td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="5">No stock.</td>
+                    </tr>
+                @endforelse
+            </tbody>
+        @else
+            <colgroup>
+                <col style="width: 22%">
+                <col style="width: 12%">
+                <col style="width: 12%">
+                <col style="width: 16%">
+                <col style="width: 7%">
+                <col style="width: 11%">
+                <col style="width: 11%">
+                <col style="width: 9%">
+            </colgroup>
+            <thead>
                 <tr>
-                    <td colspan="8">No stock.</td>
+                    <th>Product</th>
+                    <th>Variant</th>
+                    <th>SKU</th>
+                    <th>Location</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Purchase</th>
+                    <th class="num">Retail</th>
+                    <th class="num">Markup</th>
                 </tr>
-            @endforelse
-        </tbody>
+            </thead>
+            <tbody>
+                @forelse ($lines as $line)
+                    <tr>
+                        <td>{{ $line[0] }}</td>
+                        <td>{{ $line[1] }}</td>
+                        <td>{{ $line[2] }}</td>
+                        <td>{{ $line[3] }}</td>
+                        <td class="num">{{ $line[4] }}</td>
+                        <td class="num">{{ $line[5] }}</td>
+                        <td class="num">{{ $line[6] }}</td>
+                        <td class="num">{{ $line[7] }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="8">No stock.</td>
+                    </tr>
+                @endforelse
+            </tbody>
+        @endif
     </table>
 </body>
 </html>

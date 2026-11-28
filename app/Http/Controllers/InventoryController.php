@@ -77,28 +77,42 @@ class InventoryController extends Controller
     public function export(Request $request, InventoryCosts $inventoryCosts): SymfonyResponse
     {
         $filters = $this->filters($request);
-        $format = $request->validate([
+        $request->merge([
+            'sheet' => $request->string('sheet')->trim()->toString() ?: 'pricing',
+        ]);
+        $validated = $request->validate([
             'format' => ['required', Rule::in(['pdf', 'xlsx'])],
-        ])['format'];
+            'sheet' => ['required', Rule::in(['pricing', 'count'])],
+        ], [
+            'format.required' => 'Choose a PDF or Excel file.',
+            'format.in' => 'Choose a PDF or Excel file.',
+            'sheet.in' => 'Choose profit pricing or a stock count.',
+        ]);
+        $format = $validated['format'];
+        $stockCount = $validated['sheet'] === 'count';
         $rows = $this->stockRows($filters, $inventoryCosts);
-        $lines = $this->exportLines($rows);
-        $filename = 'inventory-'.now()->toDateString().'.'.$format;
-        $subtitle = $this->exportSubtitle($filters, (int) $rows->sum('total_quantity'), (float) $rows->sum('value_amount'));
+        $lines = $this->exportLines($rows, $stockCount);
+        $filename = 'inventory-'.($stockCount ? 'count-' : '').now()->toDateString().'.'.$format;
+        $subtitle = $this->exportSubtitle($filters, (int) $rows->sum('total_quantity'), (float) $rows->sum('value_amount'), $stockCount);
+        $headers = $stockCount
+            ? ['Product', 'Variant', 'SKU', 'Location', 'Count']
+            : ['Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'];
 
         if ($format === 'xlsx') {
-            return response(XlsxWorkbook::binary('Inventory', [
-                ['Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'],
+            return response(XlsxWorkbook::binary($stockCount ? 'Stock count' : 'Inventory', [
+                $headers,
                 ...$lines,
-            ]), 200, [
+            ], $stockCount ? 28 : null), 200, [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             ]);
         }
 
         return Pdf::loadView('inventory.export', [
-            'title' => 'Inventory',
+            'title' => $stockCount ? 'Stock count' : 'Inventory',
             'subtitle' => $subtitle,
             'lines' => $lines,
+            'stockCount' => $stockCount,
         ])->setPaper('a4', 'landscape')->download($filename);
     }
 
@@ -190,22 +204,30 @@ class InventoryController extends Controller
      * @param  Collection<int, array<string, mixed>>  $rows
      * @return list<list<int|string|null>>
      */
-    private function exportLines(Collection $rows): array
+    private function exportLines(Collection $rows, bool $stockCount): array
     {
         $lines = [];
 
         foreach ($rows as $row) {
             foreach ($row['locations'] as $location) {
-                $lines[] = [
-                    $row['product'] ?? '',
-                    $row['variant'] ?? '',
-                    $row['sku'] ?? '',
-                    $location['name'],
-                    $location['quantity'],
-                    $row['purchase_price'],
-                    $row['retail_price'],
-                    $row['markup'],
-                ];
+                $lines[] = $stockCount
+                    ? [
+                        $row['product'] ?? '',
+                        $row['variant'] ?? '',
+                        $row['sku'] ?? '',
+                        $location['name'],
+                        '',
+                    ]
+                    : [
+                        $row['product'] ?? '',
+                        $row['variant'] ?? '',
+                        $row['sku'] ?? '',
+                        $location['name'],
+                        $location['quantity'],
+                        $row['purchase_price'],
+                        $row['retail_price'],
+                        $row['markup'],
+                    ];
             }
         }
 
@@ -215,7 +237,7 @@ class InventoryController extends Controller
     /**
      * @param  array{search: string|null, branch_id: int|null, category: string|null, brand: string|null}  $filters
      */
-    private function exportSubtitle(array $filters, int $quantity, float $value): string
+    private function exportSubtitle(array $filters, int $quantity, float $value, bool $stockCount): string
     {
         $parts = [];
 
@@ -236,8 +258,12 @@ class InventoryController extends Controller
             $parts[] = 'Location: '.($name ?: 'Unknown');
         }
 
-        $parts[] = 'Total stock '.$quantity;
-        $parts[] = 'Value '.Peso::format($value);
+        if ($stockCount) {
+            $parts[] = 'Write the counted quantity in the blank column.';
+        } else {
+            $parts[] = 'Total stock '.$quantity;
+            $parts[] = 'Value '.Peso::format($value);
+        }
 
         return implode(' · ', $parts);
     }

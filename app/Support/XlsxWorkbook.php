@@ -9,7 +9,7 @@ class XlsxWorkbook
     /**
      * @param  list<list<int|float|string|null>>  $rows
      */
-    public static function binary(string $sheetName, array $rows): string
+    public static function binary(string $sheetName, array $rows, ?float $dataRowHeight = null): string
     {
         $path = tempnam(sys_get_temp_dir(), 'xlsx');
 
@@ -23,7 +23,7 @@ class XlsxWorkbook
         $zip->addFromString('_rels/.rels', self::rootRels());
         $zip->addFromString('xl/workbook.xml', self::workbook($sheetName));
         $zip->addFromString('xl/_rels/workbook.xml.rels', self::workbookRels());
-        $zip->addFromString('xl/worksheets/sheet1.xml', self::sheet($rows));
+        $zip->addFromString('xl/worksheets/sheet1.xml', self::sheet($rows, $dataRowHeight));
         $zip->close();
 
         $contents = file_get_contents($path);
@@ -35,7 +35,7 @@ class XlsxWorkbook
     /**
      * @param  list<list<int|float|string|null>>  $rows
      */
-    private static function sheet(array $rows): string
+    private static function sheet(array $rows, ?float $dataRowHeight): string
     {
         $xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
@@ -43,7 +43,10 @@ class XlsxWorkbook
 
         foreach ($rows as $index => $row) {
             $number = $index + 1;
-            $xml .= '<row r="'.$number.'">';
+            $height = $index > 0 && $dataRowHeight !== null
+                ? ' ht="'.$dataRowHeight.'" customHeight="1"'
+                : '';
+            $xml .= '<row r="'.$number.'"'.$height.'>';
 
             foreach (array_values($row) as $column => $value) {
                 $xml .= self::cell(self::column($column).$number, $value);
