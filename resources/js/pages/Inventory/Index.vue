@@ -42,6 +42,7 @@ const props = defineProps({
 
 const page = usePage();
 const flash = computed(() => page.props.flash ?? {});
+const canAdjust = computed(() => (page.props.employee?.permissions ?? []).includes('inventory.adjust'));
 const transferOpen = ref(false);
 const convertOpen = ref(false);
 const activeRow = ref(null);
@@ -100,6 +101,30 @@ const convertedPurchasePrice = computed(() => {
 
     return Math.round((sourcePurchasePrice.value / piecesPerUnit) * 100) / 100;
 });
+
+function exportHref(format) {
+    const params = new URLSearchParams();
+
+    if (props.filters.search) {
+        params.set('search', props.filters.search);
+    }
+
+    if (props.filters.branch_id) {
+        params.set('branch_id', String(props.filters.branch_id));
+    }
+
+    if (props.filters.category) {
+        params.set('category', props.filters.category);
+    }
+
+    if (props.filters.brand) {
+        params.set('brand', props.filters.brand);
+    }
+
+    params.set('format', format);
+
+    return `/backoffice/inventory/export?${params.toString()}`;
+}
 
 function applyFilters() {
     filters.get('/backoffice/inventory', {
@@ -184,6 +209,22 @@ function submitConvert() {
                 <p class="text-sm text-ink/55 dark:text-foam/50">At latest purchase price</p>
             </article>
         </section>
+
+        <div class="flex flex-wrap items-center gap-2">
+            <a class="inline-flex h-11 items-center rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15" :href="exportHref('pdf')">
+                Export PDF
+            </a>
+            <a class="inline-flex h-11 items-center rounded-xl border border-mist px-4 text-sm font-medium dark:border-white/15" :href="exportHref('xlsx')">
+                Export XLSX
+            </a>
+            <Link
+                v-if="canAdjust"
+                class="inline-flex h-11 items-center rounded-xl bg-pine px-4 text-sm font-medium text-foam"
+                href="/backoffice/inventory/adjustments"
+            >
+                Stock Adjustment
+            </Link>
+        </div>
 
         <form class="flex flex-col gap-3 sm:flex-row sm:flex-wrap" @submit.prevent="applyFilters">
             <input

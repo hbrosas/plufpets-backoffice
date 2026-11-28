@@ -24,7 +24,7 @@ class PermissionCatalog
             ['key' => 'shop.settings', 'name' => 'Manage shop settings', 'group' => 'Shop'],
             ['key' => 'shop.orders', 'name' => 'Manage shop orders', 'group' => 'Shop'],
             ['key' => 'inventory.view', 'name' => 'View inventory', 'group' => 'Inventory'],
-            ['key' => 'inventory.adjust', 'name' => 'Transfer and convert stock', 'group' => 'Inventory'],
+            ['key' => 'inventory.adjust', 'name' => 'Transfer, convert, and adjust stock', 'group' => 'Inventory'],
             ['key' => 'inventory.purchase-orders', 'name' => 'Manage purchase orders', 'group' => 'Inventory'],
             ['key' => 'inventory.delivery-orders', 'name' => 'Receive deliveries', 'group' => 'Inventory'],
             ['key' => 'inventory.stock-assignments', 'name' => 'Assign stock', 'group' => 'Inventory'],

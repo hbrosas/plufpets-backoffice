@@ -701,10 +701,58 @@ class EmployeePayrollControllerTest extends TestCase
             ]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('payroll.deductions.1.name', 'Cash advance — Emergency')
+                ->where('payroll.deductions.1.name', 'Cash advance')
                 ->where('payroll.deductions.1.amount', '500.00')
                 ->where('payroll.cash_advance_ids', [$approved->id])
                 ->where('payroll.net', '7192.31'));
+    }
+
+    public function test_cash_advances_are_combined_into_one_line_without_the_reason(): void
+    {
+        $employee = $this->employeeWithProfile();
+        $employee->profile->payLines()->create([
+            'kind' => PayLineKind::Compensation,
+            'name' => 'Basic salary',
+            'amount' => '20000',
+            'sort' => 0,
+        ]);
+        $first = PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $employee->id,
+            'status' => PayrollFilingStatus::Approved,
+            'starts_on' => '2026-10-05',
+            'amount' => '500.00',
+            'reason' => 'Emergency',
+        ]);
+        $second = PayrollFiling::factory()->cashAdvance()->create([
+            'employee_id' => $employee->id,
+            'status' => PayrollFilingStatus::Approved,
+            'starts_on' => '2026-10-08',
+            'amount' => '80.00',
+            'reason' => 'Medicine',
+        ]);
+
+        $this->actingAsEmployee()
+            ->get(route('staff.record.show', [
+                'employee' => $employee,
+                ...$this->hours(),
+                'late_hours' => '0',
+                'overtime_hours' => '0',
+                'deduct_government' => 0,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('payroll.deductions', function (mixed $deductions): bool {
+                    $advances = collect($deductions)->where('basis', 'cash_advance')->values();
+
+                    return $advances->count() === 1
+                        && $advances[0]['name'] === 'Cash advance'
+                        && $advances[0]['amount'] === '580.00'
+                        && ! str_contains($advances[0]['name'], 'Emergency')
+                        && ! str_contains($advances[0]['name'], 'Medicine')
+                        && collect($deductions)->contains(fn (array $line): bool => str_contains($line['name'], 'Emergency')) === false;
+                })
+                ->where('payroll.cash_advance_ids', [$first->id, $second->id])
+                ->where('payroll.net', '7112.31'));
     }
 
     public function test_deleting_a_payroll_releases_its_cash_advance(): void

@@ -6,6 +6,7 @@ use App\Models\BranchInventory;
 use App\Models\CatalogItemVariant;
 use App\Models\PosSaleItem;
 use App\Models\PurchaseOrderReceiptItem;
+use App\Models\StockAdjustmentLine;
 use App\Models\StockAssignment;
 use App\Models\StockConversion;
 use App\Models\StockTransfer;
@@ -76,6 +77,12 @@ class InventoryProductReport
             ->orderByDesc('id')
             ->get();
 
+        $adjustmentLines = StockAdjustmentLine::query()
+            ->with('adjustment.branch:id,name')
+            ->where('catalog_item_variant_id', $variant->id)
+            ->orderByDesc('id')
+            ->get();
+
         $saleItems = PosSaleItem::query()
             ->with(['sale:id,branch_id,number,sold_at,refunded_at,refund_reason', 'sale.branch:id,name'])
             ->where('catalog_item_variant_id', $variant->id)
@@ -128,6 +135,7 @@ class InventoryProductReport
             ->concat($this->transferHistory($transfers))
             ->concat($this->conversionInHistory($conversionsIn))
             ->concat($this->conversionOutHistory($conversionsOut))
+            ->concat($this->adjustmentHistory($adjustmentLines))
             ->sortByDesc(fn (array $row): array => [$row['sort_at'], $row['id']])
             ->values()
             ->map(function (array $row): array {
@@ -319,6 +327,26 @@ class InventoryProductReport
                 'detail' => 'Converted into '.$destination.' ('.$conversion->to_quantity.' pieces)',
             ];
         });
+    }
+
+    /**
+     * @param  Collection<int, StockAdjustmentLine>  $lines
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function adjustmentHistory(Collection $lines): Collection
+    {
+        return $lines
+            ->reject(fn (StockAdjustmentLine $line): bool => $line->record_as_sale)
+            ->map(fn (StockAdjustmentLine $line): array => [
+                'id' => 'adjustment-'.$line->id,
+                'sort_at' => $line->created_at?->timestamp ?? 0,
+                'occurred_at' => $this->formatDate($line->created_at),
+                'type' => 'Adjustment',
+                'quantity' => $line->quantity - $line->previous_quantity,
+                'location' => $line->adjustment?->branch?->name ?? '—',
+                'reference' => null,
+                'detail' => 'On-hand quantity updated',
+            ]);
     }
 
     private function formatDate(mixed $date): ?string

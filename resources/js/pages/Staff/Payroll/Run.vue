@@ -515,7 +515,7 @@ function openStep(id) {
                                         type="checkbox"
                                         :value="advance.id"
                                     />
-                                    <span>{{ advance.reason || 'Cash advance' }}</span>
+                                    <span>Cash advance{{ advance.date ? ` · ${advance.date}` : '' }}</span>
                                 </label>
                                 <span>{{ advance.amount_label }}</span>
                             </li>

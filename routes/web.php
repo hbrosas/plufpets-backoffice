@@ -57,6 +57,7 @@ use App\Http\Controllers\ShopBannerController;
 use App\Http\Controllers\ShopOrderController;
 use App\Http\Controllers\ShopPromotionController;
 use App\Http\Controllers\ShopSettingController;
+use App\Http\Controllers\StockAdjustmentController;
 use App\Http\Controllers\StockAssignmentController;
 use App\Http\Controllers\StockConversionController;
 use App\Http\Controllers\StockTransferController;
@@ -371,6 +372,7 @@ Route::prefix('backoffice')->group(function () {
         Route::prefix('inventory')->name('inventory.')->group(function () {
             Route::middleware('employee.permission:inventory.view')->group(function () {
                 Route::get('/', [InventoryController::class, 'index'])->name('index');
+                Route::get('export', [InventoryController::class, 'export'])->name('export');
                 Route::get('products/{catalog_item_variant}/labels', [InventoryController::class, 'labels'])
                     ->name('products.labels');
                 Route::get('products/{catalog_item_variant}', [InventoryController::class, 'show'])
@@ -378,6 +380,8 @@ Route::prefix('backoffice')->group(function () {
             });
 
             Route::middleware('employee.permission:inventory.adjust')->group(function () {
+                Route::get('adjustments', [StockAdjustmentController::class, 'create'])->name('adjustments.create');
+                Route::post('adjustments', [StockAdjustmentController::class, 'store'])->name('adjustments.store');
                 Route::post('transfers', [StockTransferController::class, 'store'])->name('transfers.store');
                 Route::post('conversions', [StockConversionController::class, 'store'])->name('conversions.store');
             });

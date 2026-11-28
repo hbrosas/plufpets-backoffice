@@ -14,9 +14,12 @@ use App\Support\BarcodeSvg;
 use App\Support\InventoryCosts;
 use App\Support\InventoryProductReport;
 use App\Support\Peso;
+use App\Support\XlsxWorkbook;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -25,6 +28,84 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 class InventoryController extends Controller
 {
     public function index(Request $request, InventoryCosts $inventoryCosts): Response
+    {
+        $filters = $this->filters($request);
+        $rows = $this->stockRows($filters, $inventoryCosts);
+        $totalQuantity = (int) $rows->sum('total_quantity');
+        $totalValue = (float) $rows->sum('value_amount');
+
+        return Inertia::render('Inventory/Index', [
+            'rows' => $rows->map(fn (array $row): array => [
+                'id' => $row['id'],
+                'variant_id' => $row['variant_id'],
+                'product' => $row['product'],
+                'variant' => $row['variant'],
+                'sku' => $row['sku'],
+                'locations' => $row['locations'],
+                'total_quantity' => $row['total_quantity'],
+                'purchase_price' => $row['purchase_price'],
+                'purchase_price_amount' => $row['purchase_price_amount'],
+                'retail_price' => $row['retail_price'],
+                'markup' => $row['markup'],
+                'can_move' => $row['can_move'],
+            ])->values(),
+            'summary' => [
+                'quantity' => $totalQuantity,
+                'value' => Peso::format($totalValue),
+            ],
+            'branches' => Branch::query()->operational()->orderBy('name')->orderBy('id')->get(['id', 'name']),
+            'categories' => Category::query()->orderBy('name')->pluck('name')->all(),
+            'brands' => Brand::query()->orderBy('name')->pluck('name')->all(),
+            'variants' => CatalogItemVariant::query()
+                ->with('catalogItem:id,name,type')
+                ->whereHas('catalogItem', fn ($query) => $query->where('type', CatalogItemType::Product))
+                ->orderBy('id')
+                ->get()
+                ->map(fn (CatalogItemVariant $variant): array => [
+                    'id' => $variant->id,
+                    'label' => $variant->catalogItem?->name.($variant->name !== 'Default' ? ' · '.$variant->name : ''),
+                ]),
+            'filters' => [
+                'search' => $filters['search'] ?? '',
+                'branch_id' => $filters['branch_id'] ?? '',
+                'category' => $filters['category'] ?? '',
+                'brand' => $filters['brand'] ?? '',
+            ],
+        ]);
+    }
+
+    public function export(Request $request, InventoryCosts $inventoryCosts): SymfonyResponse
+    {
+        $filters = $this->filters($request);
+        $format = $request->validate([
+            'format' => ['required', Rule::in(['pdf', 'xlsx'])],
+        ])['format'];
+        $rows = $this->stockRows($filters, $inventoryCosts);
+        $lines = $this->exportLines($rows);
+        $filename = 'inventory-'.now()->toDateString().'.'.$format;
+        $subtitle = $this->exportSubtitle($filters, (int) $rows->sum('total_quantity'), (float) $rows->sum('value_amount'));
+
+        if ($format === 'xlsx') {
+            return response(XlsxWorkbook::binary('Inventory', [
+                ['Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'],
+                ...$lines,
+            ]), 200, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            ]);
+        }
+
+        return Pdf::loadView('inventory.export', [
+            'title' => 'Inventory',
+            'subtitle' => $subtitle,
+            'lines' => $lines,
+        ])->setPaper('a4', 'landscape')->download($filename);
+    }
+
+    /**
+     * @return array{search: string|null, branch_id: int|null, category: string|null, brand: string|null}
+     */
+    private function filters(Request $request): array
     {
         $request->merge([
             'search' => $request->string('search')->trim()->toString() ?: null,
@@ -40,6 +121,20 @@ class InventoryController extends Controller
             'brand' => ['nullable', 'string', 'max:255'],
         ]);
 
+        return [
+            'search' => $filters['search'] ?? null,
+            'branch_id' => $filters['branch_id'] ?? null,
+            'category' => $filters['category'] ?? null,
+            'brand' => $filters['brand'] ?? null,
+        ];
+    }
+
+    /**
+     * @param  array{search: string|null, branch_id: int|null, category: string|null, brand: string|null}  $filters
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function stockRows(array $filters, InventoryCosts $inventoryCosts): Collection
+    {
         $inventories = BranchInventory::query()
             ->operational()
             ->with([
@@ -88,48 +183,63 @@ class InventoryController extends Controller
                 ->values();
         }
 
-        $rows = $this->productRows($inventories, $unassigned, $inventoryCosts);
-        $totalQuantity = (int) $rows->sum('total_quantity');
-        $totalValue = (float) $rows->sum('value_amount');
+        return $this->productRows($inventories, $unassigned, $inventoryCosts);
+    }
 
-        return Inertia::render('Inventory/Index', [
-            'rows' => $rows->map(fn (array $row): array => [
-                'id' => $row['id'],
-                'variant_id' => $row['variant_id'],
-                'product' => $row['product'],
-                'variant' => $row['variant'],
-                'sku' => $row['sku'],
-                'locations' => $row['locations'],
-                'total_quantity' => $row['total_quantity'],
-                'purchase_price' => $row['purchase_price'],
-                'purchase_price_amount' => $row['purchase_price_amount'],
-                'retail_price' => $row['retail_price'],
-                'markup' => $row['markup'],
-                'can_move' => $row['can_move'],
-            ])->values(),
-            'summary' => [
-                'quantity' => $totalQuantity,
-                'value' => Peso::format($totalValue),
-            ],
-            'branches' => Branch::query()->operational()->orderBy('name')->orderBy('id')->get(['id', 'name']),
-            'categories' => Category::query()->orderBy('name')->pluck('name')->all(),
-            'brands' => Brand::query()->orderBy('name')->pluck('name')->all(),
-            'variants' => CatalogItemVariant::query()
-                ->with('catalogItem:id,name,type')
-                ->whereHas('catalogItem', fn ($query) => $query->where('type', CatalogItemType::Product))
-                ->orderBy('id')
-                ->get()
-                ->map(fn (CatalogItemVariant $variant): array => [
-                    'id' => $variant->id,
-                    'label' => $variant->catalogItem?->name.($variant->name !== 'Default' ? ' · '.$variant->name : ''),
-                ]),
-            'filters' => [
-                'search' => $filters['search'] ?? '',
-                'branch_id' => $filters['branch_id'] ?? '',
-                'category' => $filters['category'] ?? '',
-                'brand' => $filters['brand'] ?? '',
-            ],
-        ]);
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return list<list<int|string|null>>
+     */
+    private function exportLines(Collection $rows): array
+    {
+        $lines = [];
+
+        foreach ($rows as $row) {
+            foreach ($row['locations'] as $location) {
+                $lines[] = [
+                    $row['product'] ?? '',
+                    $row['variant'] ?? '',
+                    $row['sku'] ?? '',
+                    $location['name'],
+                    $location['quantity'],
+                    $row['purchase_price'],
+                    $row['retail_price'],
+                    $row['markup'],
+                ];
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param  array{search: string|null, branch_id: int|null, category: string|null, brand: string|null}  $filters
+     */
+    private function exportSubtitle(array $filters, int $quantity, float $value): string
+    {
+        $parts = [];
+
+        if (filled($filters['search'])) {
+            $parts[] = 'Search: '.$filters['search'];
+        }
+
+        if (filled($filters['category'])) {
+            $parts[] = 'Category: '.($filters['category'] === '__none' ? 'None' : $filters['category']);
+        }
+
+        if (filled($filters['brand'])) {
+            $parts[] = 'Brand: '.($filters['brand'] === '__none' ? 'None' : $filters['brand']);
+        }
+
+        if ($filters['branch_id'] !== null) {
+            $name = Branch::query()->whereKey($filters['branch_id'])->value('name');
+            $parts[] = 'Location: '.($name ?: 'Unknown');
+        }
+
+        $parts[] = 'Total stock '.$quantity;
+        $parts[] = 'Value '.Peso::format($value);
+
+        return implode(' · ', $parts);
     }
 
     public function show(CatalogItemVariant $catalogItemVariant, InventoryProductReport $report): Response

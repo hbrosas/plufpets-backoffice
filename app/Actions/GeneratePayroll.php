@@ -234,6 +234,7 @@ class GeneratePayroll
         }
 
         $cashAdvanceIds = [];
+        $cashAdvanceCents = 0;
         $selectedCashAdvances = array_key_exists('cash_advance_ids', $input)
             ? array_map(intval(...), $input['cash_advance_ids'])
             : null;
@@ -243,17 +244,14 @@ class GeneratePayroll
                 continue;
             }
 
-            $amountCents = $this->cents((float) $filing->amount);
-            $amount = $this->fromCents($amountCents);
-            $deductions[] = $this->earning(
-                filled($filing->reason) ? 'Cash advance — '.$filing->reason : 'Cash advance',
-                'cash_advance',
-                $amount,
-                '1.00',
-                $amount,
-            );
-            $deductionCents += $amountCents;
+            $cashAdvanceCents += $this->cents((float) $filing->amount);
             $cashAdvanceIds[] = $filing->id;
+        }
+
+        if ($cashAdvanceCents > 0) {
+            $amount = $this->fromCents($cashAdvanceCents);
+            $deductions[] = $this->earning('Cash advance', 'cash_advance', $amount, '1.00', $amount);
+            $deductionCents += $cashAdvanceCents;
         }
 
         return [
@@ -291,7 +289,7 @@ class GeneratePayroll
      * @return array<int, array{
      *     overnight_nights: int,
      *     commissions: list<array{name: string, amount: string}>,
-     *     cash_advances: list<array{id: int, reason: string, amount: string}>
+     *     cash_advances: list<array{id: int, date: string, amount: string}>
      * }>
      */
     public function periodItems(Collection $employees, string $periodStart, string $periodEnd): array
@@ -327,7 +325,7 @@ class GeneratePayroll
                 'cash_advances' => array_map(
                     fn (PayrollFiling $filing): array => [
                         'id' => $filing->id,
-                        'reason' => (string) ($filing->reason ?? ''),
+                        'date' => $filing->starts_on?->format('M j, Y') ?? '',
                         'amount' => $this->money((float) $filing->amount),
                     ],
                     $this->cashAdvances($employee, $periodEnd),

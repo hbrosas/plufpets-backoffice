@@ -168,7 +168,8 @@ class RunPayrollControllerTest extends TestCase
                         && $first['commissions'][0]['amount'] === '25.00'
                         && count($first['cash_advances']) === 1
                         && $first['cash_advances'][0]['amount'] === '200.00'
-                        && $first['cash_advances'][0]['reason'] === 'Medicine'
+                        && $first['cash_advances'][0]['date'] === 'Nov 3, 2026'
+                        && ! array_key_exists('reason', $first['cash_advances'][0])
                         && $second['days_worked'] === 5
                         && $second['overnight_nights'] === 4
                         && $second['commissions'][0]['amount'] === '0.00'
@@ -645,7 +646,7 @@ class RunPayrollControllerTest extends TestCase
                 ->where('prepared.employees.0.cash_advances', [
                     [
                         'id' => $leftOpen->id,
-                        'reason' => 'Fare',
+                        'date' => 'Nov 3, 2026',
                         'amount' => '80.00',
                         'amount_label' => '₱80.00',
                     ],

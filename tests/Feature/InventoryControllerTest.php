@@ -17,6 +17,7 @@ use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\StockConversion;
+use App\Support\XlsxSheet;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -322,6 +323,48 @@ class InventoryControllerTest extends TestCase
         $response->assertSee('&lt;script&gt;', false);
         $response->assertDontSee("<script>alert('xss')</script>", false);
         $this->assertSame(2, substr_count($response->getContent(), 'class="label"'));
+    }
+
+    public function test_guest_is_redirected_from_the_inventory_export(): void
+    {
+        $this->get('/backoffice/inventory/export?format=pdf')->assertRedirect(route('login'));
+    }
+
+    public function test_inventory_exports_a_compact_pdf(): void
+    {
+        $branch = Branch::factory()->create(['name' => 'Makati Branch']);
+        $this->stock($branch, 'Organic kibble', null, null, 12);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/inventory/export?format=pdf');
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+        $this->assertStringContainsString('inventory-'.now()->toDateString().'.pdf', (string) $response->headers->get('content-disposition'));
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
+    public function test_inventory_exports_the_filtered_stock_workbook(): void
+    {
+        $branch = Branch::factory()->create(['name' => 'Makati Branch']);
+        $food = Category::factory()->create(['name' => 'Food']);
+        $toys = Category::factory()->create(['name' => 'Toys']);
+        $this->stock($branch, 'Organic kibble', $food, null, 12);
+        $this->stock($branch, 'Rope toy', $toys, null, 4);
+
+        $response = $this->actingAsEmployee()->get('/backoffice/inventory/export?format=xlsx&category=Food');
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $path = tempnam(sys_get_temp_dir(), 'inventory-xlsx');
+        file_put_contents($path, $response->getContent());
+        $rows = XlsxSheet::rows($path, 20, 'inventory rows');
+        unlink($path);
+
+        $this->assertSame(['Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'], $rows[0]);
+        $this->assertSame('Organic kibble', $rows[1][0]);
+        $this->assertSame('Makati Branch', $rows[1][3]);
+        $this->assertSame('12', $rows[1][4]);
+        $this->assertCount(2, $rows);
     }
 
     private function stock(Branch $branch, string $name, ?Category $category, ?Brand $brand, int $quantity): void

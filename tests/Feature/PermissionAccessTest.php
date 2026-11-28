@@ -118,6 +118,8 @@ class PermissionAccessTest extends TestCase
             'shop orders' => ['/backoffice/shop/orders', 'shop.orders'],
             'preorder export' => ['/backoffice/shop/orders/preorders/export', 'shop.orders'],
             'inventory' => ['/backoffice/inventory', 'inventory.view'],
+            'inventory file export' => ['/backoffice/inventory/export?format=pdf', 'inventory.view'],
+            'stock adjustments' => ['/backoffice/inventory/adjustments', 'inventory.adjust'],
             'purchase orders' => ['/backoffice/inventory/purchase-orders', 'inventory.purchase-orders'],
             'delivery orders' => ['/backoffice/inventory/delivery-orders', 'inventory.delivery-orders'],
             'stock assignments' => ['/backoffice/inventory/stock-assignments', 'inventory.stock-assignments'],
