@@ -381,11 +381,11 @@ class InventoryControllerTest extends TestCase
         $rows = XlsxSheet::rows($path, 20, 'inventory rows');
         unlink($path);
 
-        $this->assertSame(['Product', 'Variant', 'SKU', 'Location', 'Count'], $rows[0]);
+        $this->assertSame(['Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count'], $rows[0]);
         $this->assertSame('Organic kibble', $rows[1][0]);
         $this->assertSame('Makati Branch', $rows[1][3]);
-        $this->assertSame('', $rows[1][4]);
-        $this->assertNotContains('12', $rows[1]);
+        $this->assertSame('12', $rows[1][4]);
+        $this->assertSame('', $rows[1][5]);
         $this->assertNotContains('Purchase price', $rows[0]);
     }
 

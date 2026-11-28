@@ -95,7 +95,7 @@ class InventoryController extends Controller
         $filename = 'inventory-'.($stockCount ? 'count-' : '').now()->toDateString().'.'.$format;
         $subtitle = $this->exportSubtitle($filters, (int) $rows->sum('total_quantity'), (float) $rows->sum('value_amount'), $stockCount);
         $headers = $stockCount
-            ? ['Product', 'Variant', 'SKU', 'Location', 'Count']
+            ? ['Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count']
             : ['Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'];
 
         if ($format === 'xlsx') {
@@ -216,6 +216,7 @@ class InventoryController extends Controller
                         $row['variant'] ?? '',
                         $row['sku'] ?? '',
                         $location['name'],
+                        $location['quantity'],
                         '',
                     ]
                     : [
@@ -259,6 +260,7 @@ class InventoryController extends Controller
         }
 
         if ($stockCount) {
+            $parts[] = 'Expected stock '.$quantity;
             $parts[] = 'Write the counted quantity in the blank column.';
         } else {
             $parts[] = 'Total stock '.$quantity;

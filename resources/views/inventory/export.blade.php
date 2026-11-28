@@ -23,11 +23,12 @@
     <table>
         @if ($stockCount)
             <colgroup>
-                <col style="width: 28%">
-                <col style="width: 14%">
-                <col style="width: 14%">
-                <col style="width: 18%">
-                <col style="width: 26%">
+                <col style="width: 24%">
+                <col style="width: 13%">
+                <col style="width: 13%">
+                <col style="width: 16%">
+                <col style="width: 10%">
+                <col style="width: 24%">
             </colgroup>
             <thead>
                 <tr>
@@ -35,6 +36,7 @@
                     <th>Variant</th>
                     <th>SKU</th>
                     <th>Location</th>
+                    <th class="num">Expected</th>
                     <th>Count</th>
                 </tr>
             </thead>
@@ -45,11 +47,12 @@
                         <td>{{ $line[1] }}</td>
                         <td>{{ $line[2] }}</td>
                         <td>{{ $line[3] }}</td>
+                        <td class="num">{{ $line[4] }}</td>
                         <td class="write"></td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5">No stock.</td>
+                        <td colspan="6">No stock.</td>
                     </tr>
                 @endforelse
             </tbody>
