@@ -99,6 +99,7 @@ class InventoryController extends Controller
         }
 
         $filename = 'inventory-'.($stockCount ? 'count-' : '').now()->toDateString().'.'.$format;
+        $countedOn = now()->format('F j, Y');
         $subtitle = $this->exportSubtitle($filters, (int) $rows->sum('total_quantity'), (float) $rows->sum('value_amount'), $stockCount);
         $headers = $stockCount
             ? ['Brand', 'Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count']
@@ -108,22 +109,35 @@ class InventoryController extends Controller
             $sheetRows = [$headers, ...$lines];
 
             if ($stockCount) {
-                $sheetRows[] = array_fill(0, count($headers), '');
-                $sheetRows[] = ['No stock', ...array_fill(0, count($headers) - 1, '')];
-                $sheetRows[] = $headers;
-                array_push($sheetRows, ...($unstockedLines === []
-                    ? [['No products without stock.', ...array_fill(0, count($headers) - 1, '')]]
-                    : $unstockedLines));
+                $blank = array_fill(0, count($headers) - 1, '');
+                $sheetRows = [
+                    ['Inventory Count', ...$blank],
+                    [$countedOn, ...$blank],
+                    $headers,
+                    ...$lines,
+                    array_fill(0, count($headers), ''),
+                    ['No stock', ...$blank],
+                    $headers,
+                    ...($unstockedLines === [] ? [['No products without stock.', ...$blank]] : $unstockedLines),
+                ];
             }
 
-            return response(XlsxWorkbook::binary($stockCount ? 'Stock count' : 'Inventory', $sheetRows, $stockCount ? 18 : null, $stockCount ? 5 : null), 200, [
+            return response(XlsxWorkbook::binary(
+                $stockCount ? 'Inventory Count' : 'Inventory',
+                $sheetRows,
+                $stockCount ? 15 : null,
+                $stockCount ? 5 : null,
+                $stockCount ? [18, 34, 14, 16, 20, 10, 48] : null,
+                $stockCount ? 3 : null,
+            ), 200, [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             ]);
         }
 
         return Pdf::loadView('inventory.export', [
-            'title' => $stockCount ? 'Stock count' : 'Inventory',
+            'title' => $stockCount ? 'Inventory Count' : 'Inventory',
+            'countedOn' => $countedOn,
             'subtitle' => $subtitle,
             'lines' => $lines,
             'unstockedLines' => $unstockedLines,
@@ -371,10 +385,7 @@ class InventoryController extends Controller
             $parts[] = 'Location: '.($name ?: 'Unknown');
         }
 
-        if ($stockCount) {
-            $parts[] = 'Expected stock '.$quantity;
-            $parts[] = 'Write the counted quantity in the blank column.';
-        } else {
+        if (! $stockCount) {
             $parts[] = 'Total stock '.$quantity;
             $parts[] = 'Value '.Peso::format($value);
         }

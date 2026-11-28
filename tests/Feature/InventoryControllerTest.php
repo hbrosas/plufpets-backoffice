@@ -382,13 +382,15 @@ class InventoryControllerTest extends TestCase
         $rows = XlsxSheet::rows($path, 20, 'inventory rows');
         unlink($path);
 
-        $this->assertSame(['Brand', 'Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count'], $rows[0]);
-        $this->assertSame('Pluf', $rows[1][0]);
-        $this->assertSame('Organic kibble', $rows[1][1]);
-        $this->assertSame('Makati Branch', $rows[1][4]);
-        $this->assertSame('12', $rows[1][5]);
-        $this->assertSame('', $rows[1][6]);
-        $this->assertNotContains('Purchase price', $rows[0]);
+        $this->assertSame(['Inventory Count', '', '', '', '', '', ''], $rows[0]);
+        $this->assertSame([now()->format('F j, Y'), '', '', '', '', '', ''], $rows[1]);
+        $this->assertSame(['Brand', 'Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count'], $rows[2]);
+        $this->assertSame('Pluf', $rows[3][0]);
+        $this->assertSame('Organic kibble', $rows[3][1]);
+        $this->assertSame('Makati Branch', $rows[3][4]);
+        $this->assertSame('12', $rows[3][5]);
+        $this->assertSame('', $rows[3][6]);
+        $this->assertNotContains('Purchase price', $rows[2]);
     }
 
     public function test_stock_count_export_lists_products_without_stock_below_the_count(): void
@@ -526,7 +528,7 @@ class InventoryControllerTest extends TestCase
                 continue;
             }
 
-            if ($row[0] === 'Brand' || $row[0] === '' || $row[0] === 'No products without stock.') {
+            if ($row[0] === 'Brand' || $row[1] === '') {
                 continue;
             }
 
