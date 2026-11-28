@@ -370,7 +370,8 @@ class InventoryControllerTest extends TestCase
     public function test_stock_count_export_leaves_the_count_blank(): void
     {
         $branch = Branch::factory()->create(['name' => 'Makati Branch']);
-        $this->stock($branch, 'Organic kibble', null, null, 12);
+        $brand = Brand::factory()->create(['name' => 'Pluf']);
+        $this->stock($branch, 'Organic kibble', null, $brand, 12);
 
         $response = $this->actingAsEmployee()->get('/backoffice/inventory/export?format=xlsx&sheet=count');
 
@@ -381,11 +382,12 @@ class InventoryControllerTest extends TestCase
         $rows = XlsxSheet::rows($path, 20, 'inventory rows');
         unlink($path);
 
-        $this->assertSame(['Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count'], $rows[0]);
-        $this->assertSame('Organic kibble', $rows[1][0]);
-        $this->assertSame('Makati Branch', $rows[1][3]);
-        $this->assertSame('12', $rows[1][4]);
-        $this->assertSame('', $rows[1][5]);
+        $this->assertSame(['Brand', 'Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count'], $rows[0]);
+        $this->assertSame('Pluf', $rows[1][0]);
+        $this->assertSame('Organic kibble', $rows[1][1]);
+        $this->assertSame('Makati Branch', $rows[1][4]);
+        $this->assertSame('12', $rows[1][5]);
+        $this->assertSame('', $rows[1][6]);
         $this->assertNotContains('Purchase price', $rows[0]);
     }
 
@@ -399,7 +401,9 @@ class InventoryControllerTest extends TestCase
         $response->assertOk();
         $response->assertHeader('content-type', 'application/pdf');
         $this->assertStringContainsString('inventory-count-'.now()->toDateString().'.pdf', (string) $response->headers->get('content-disposition'));
-        $this->assertStringStartsWith('%PDF', $response->getContent());
+        $content = $response->getContent();
+        $this->assertStringStartsWith('%PDF', $content);
+        $this->assertMatchesRegularExpression('/\/MediaBox\s*\[\s*0(?:\.0+)?\s+0(?:\.0+)?\s+1008(?:\.0+)?\s+612(?:\.0+)?\s*\]/', $content);
     }
 
     public function test_inventory_export_rejects_an_unknown_sheet(): void

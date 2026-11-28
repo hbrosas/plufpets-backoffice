@@ -9,7 +9,7 @@ class XlsxWorkbook
     /**
      * @param  list<list<int|float|string|null>>  $rows
      */
-    public static function binary(string $sheetName, array $rows, ?float $dataRowHeight = null): string
+    public static function binary(string $sheetName, array $rows, ?float $dataRowHeight = null, ?int $centerColumn = null): string
     {
         $path = tempnam(sys_get_temp_dir(), 'xlsx');
 
@@ -19,11 +19,16 @@ class XlsxWorkbook
 
         $zip = new ZipArchive;
         $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
-        $zip->addFromString('[Content_Types].xml', self::contentTypes());
+        $zip->addFromString('[Content_Types].xml', self::contentTypes($centerColumn !== null));
         $zip->addFromString('_rels/.rels', self::rootRels());
         $zip->addFromString('xl/workbook.xml', self::workbook($sheetName));
-        $zip->addFromString('xl/_rels/workbook.xml.rels', self::workbookRels());
-        $zip->addFromString('xl/worksheets/sheet1.xml', self::sheet($rows, $dataRowHeight));
+        $zip->addFromString('xl/_rels/workbook.xml.rels', self::workbookRels($centerColumn !== null));
+        $zip->addFromString('xl/worksheets/sheet1.xml', self::sheet($rows, $dataRowHeight, $centerColumn));
+
+        if ($centerColumn !== null) {
+            $zip->addFromString('xl/styles.xml', self::styles());
+        }
+
         $zip->close();
 
         $contents = file_get_contents($path);
@@ -35,7 +40,7 @@ class XlsxWorkbook
     /**
      * @param  list<list<int|float|string|null>>  $rows
      */
-    private static function sheet(array $rows, ?float $dataRowHeight): string
+    private static function sheet(array $rows, ?float $dataRowHeight, ?int $centerColumn): string
     {
         $xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
@@ -49,7 +54,8 @@ class XlsxWorkbook
             $xml .= '<row r="'.$number.'"'.$height.'>';
 
             foreach (array_values($row) as $column => $value) {
-                $xml .= self::cell(self::column($column).$number, $value);
+                $style = $column === $centerColumn ? 1 : null;
+                $xml .= self::cell(self::column($column).$number, $value, $style);
             }
 
             $xml .= '</row>';
@@ -58,16 +64,18 @@ class XlsxWorkbook
         return $xml.'</sheetData></worksheet>';
     }
 
-    private static function cell(string $reference, int|float|string|null $value): string
+    private static function cell(string $reference, int|float|string|null $value, ?int $style = null): string
     {
+        $styleAttribute = $style === null ? '' : ' s="'.$style.'"';
+
         if (is_int($value) || is_float($value)) {
-            return '<c r="'.$reference.'"><v>'.$value.'</v></c>';
+            return '<c r="'.$reference.'"'.$styleAttribute.'><v>'.$value.'</v></c>';
         }
 
         $text = htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
         $space = $text !== trim($text) ? ' xml:space="preserve"' : '';
 
-        return '<c r="'.$reference.'" t="inlineStr"><is><t'.$space.'>'.$text.'</t></is></c>';
+        return '<c r="'.$reference.'"'.$styleAttribute.' t="inlineStr"><is><t'.$space.'>'.$text.'</t></is></c>';
     }
 
     private static function column(int $index): string
@@ -84,14 +92,19 @@ class XlsxWorkbook
         return $letters;
     }
 
-    private static function contentTypes(): string
+    private static function contentTypes(bool $styled): string
     {
+        $styles = $styled
+            ? '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            : '';
+
         return '<?xml version="1.0" encoding="UTF-8"?>'
             .'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
             .'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
             .'<Default Extension="xml" ContentType="application/xml"/>'
             .'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
             .'<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            .$styles
             .'</Types>';
     }
 
@@ -113,11 +126,31 @@ class XlsxWorkbook
             .'</workbook>';
     }
 
-    private static function workbookRels(): string
+    private static function workbookRels(bool $styled): string
     {
+        $styles = $styled
+            ? '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+            : '';
+
         return '<?xml version="1.0" encoding="UTF-8"?>'
             .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
             .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            .$styles
             .'</Relationships>';
+    }
+
+    private static function styles(): string
+    {
+        return '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            .'<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>'
+            .'<fills count="1"><fill><patternFill patternType="none"/></fill></fills>'
+            .'<borders count="1"><border/></borders>'
+            .'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+            .'<cellXfs count="2">'
+            .'<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+            .'<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center"/></xf>'
+            .'</cellXfs>'
+            .'</styleSheet>';
     }
 }

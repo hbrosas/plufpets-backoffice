@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>{{ $title }}</title>
     <style>
-        @page { size: A4 landscape; margin: 8px 10px; }
+        @page { size: {{ $stockCount ? 'legal' : 'A4' }} landscape; margin: {{ $stockCount ? '4px 6px' : '8px 10px' }}; }
         body { font-family: DejaVu Sans, sans-serif; color: #14231f; font-size: 8px; line-height: 1.15; margin: 0; }
         h1 { font-size: 11px; margin: 0; }
         p { margin: 1px 0 4px; }
@@ -15,6 +15,14 @@
         thead { display: table-header-group; }
         tr { page-break-inside: avoid; }
         td.write { height: 28px; border: 1px solid #14231f; }
+        th.center, td.center { text-align: center; vertical-align: middle; }
+        @if ($stockCount)
+            body { font-size: 7px; }
+            h1 { font-size: 10px; }
+            p { margin: 0 0 2px; }
+            th, td { padding: 0 2px; }
+            td.write { height: 16px; }
+        @endif
     </style>
 </head>
 <body>
@@ -23,20 +31,22 @@
     <table>
         @if ($stockCount)
             <colgroup>
-                <col style="width: 24%">
-                <col style="width: 13%">
-                <col style="width: 13%">
-                <col style="width: 16%">
+                <col style="width: 12%">
+                <col style="width: 20%">
                 <col style="width: 10%">
-                <col style="width: 24%">
+                <col style="width: 10%">
+                <col style="width: 12%">
+                <col style="width: 8%">
+                <col style="width: 28%">
             </colgroup>
             <thead>
                 <tr>
+                    <th>Brand</th>
                     <th>Product</th>
                     <th>Variant</th>
                     <th>SKU</th>
                     <th>Location</th>
-                    <th class="num">Expected</th>
+                    <th class="center">Expected</th>
                     <th>Count</th>
                 </tr>
             </thead>
@@ -47,12 +57,13 @@
                         <td>{{ $line[1] }}</td>
                         <td>{{ $line[2] }}</td>
                         <td>{{ $line[3] }}</td>
-                        <td class="num">{{ $line[4] }}</td>
+                        <td>{{ $line[4] }}</td>
+                        <td class="center">{{ $line[5] }}</td>
                         <td class="write"></td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6">No stock.</td>
+                        <td colspan="7">No stock.</td>
                     </tr>
                 @endforelse
             </tbody>

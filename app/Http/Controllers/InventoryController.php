@@ -95,14 +95,14 @@ class InventoryController extends Controller
         $filename = 'inventory-'.($stockCount ? 'count-' : '').now()->toDateString().'.'.$format;
         $subtitle = $this->exportSubtitle($filters, (int) $rows->sum('total_quantity'), (float) $rows->sum('value_amount'), $stockCount);
         $headers = $stockCount
-            ? ['Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count']
+            ? ['Brand', 'Product', 'Variant', 'SKU', 'Location', 'Expected', 'Count']
             : ['Product', 'Variant', 'SKU', 'Location', 'Qty', 'Purchase price', 'Retail price', 'Markup'];
 
         if ($format === 'xlsx') {
             return response(XlsxWorkbook::binary($stockCount ? 'Stock count' : 'Inventory', [
                 $headers,
                 ...$lines,
-            ], $stockCount ? 28 : null), 200, [
+            ], $stockCount ? 18 : null, $stockCount ? 5 : null), 200, [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             ]);
@@ -113,7 +113,7 @@ class InventoryController extends Controller
             'subtitle' => $subtitle,
             'lines' => $lines,
             'stockCount' => $stockCount,
-        ])->setPaper('a4', 'landscape')->download($filename);
+        ])->setPaper($stockCount ? 'legal' : 'a4', 'landscape')->download($filename);
     }
 
     /**
@@ -154,7 +154,8 @@ class InventoryController extends Controller
             ->with([
                 'branch:id,name',
                 'variant:id,catalog_item_id,name,sku,price',
-                'variant.catalogItem:id,name',
+                'variant.catalogItem:id,name,brand_id',
+                'variant.catalogItem.brand:id,name',
                 'variant.branchPrices:id,branch_id,catalog_item_variant_id,price',
             ])
             ->when($filters['branch_id'] ?? null, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
@@ -176,7 +177,8 @@ class InventoryController extends Controller
             $unassigned = PurchaseOrderItem::query()
                 ->with([
                     'variant:id,catalog_item_id,name,sku,price',
-                    'variant.catalogItem:id,name',
+                    'variant.catalogItem:id,name,brand_id',
+                    'variant.catalogItem.brand:id,name',
                     'variant.branchPrices:id,branch_id,catalog_item_variant_id,price',
                 ])
                 ->withSum('assignments as assigned_quantity', 'quantity')
@@ -212,6 +214,7 @@ class InventoryController extends Controller
             foreach ($row['locations'] as $location) {
                 $lines[] = $stockCount
                     ? [
+                        $row['brand'] !== '' ? $row['brand'] : '—',
                         $row['product'] ?? '',
                         $row['variant'] ?? '',
                         $row['sku'] ?? '',
@@ -230,6 +233,10 @@ class InventoryController extends Controller
                         $row['markup'],
                     ];
             }
+        }
+
+        if ($stockCount) {
+            usort($lines, fn (array $left, array $right): int => [$left[0], $left[1], $left[2], $left[4]] <=> [$right[0], $right[1], $right[2], $right[4]]);
         }
 
         return $lines;
@@ -355,6 +362,7 @@ class InventoryController extends Controller
      *     id: int,
      *     variant_id: int,
      *     product: string|null,
+     *     brand: string,
      *     variant: string|null,
      *     sku: string|null,
      *     locations: list<array{id: string, branch_id: int|null, name: string, quantity: int, price: string}>,
@@ -436,6 +444,7 @@ class InventoryController extends Controller
                     'id' => $variantId,
                     'variant_id' => $variantId,
                     'product' => $entry['variant']?->catalogItem?->name,
+                    'brand' => $entry['variant']?->catalogItem?->brand?->name ?? '',
                     'variant' => $entry['variant']?->name,
                     'sku' => $entry['variant']?->sku,
                     'locations' => $locations,
