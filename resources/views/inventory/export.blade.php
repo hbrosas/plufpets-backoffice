@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>{{ $title }}</title>
     <style>
-        @page { size: {{ $stockCount ? 'legal' : 'A4' }} landscape; margin: {{ $stockCount ? '4px 6px' : '8px 10px' }}; }
+        @page { size: {{ $stockCount ? 'legal' : 'A4' }} landscape; margin: {{ $stockCount ? '0' : '8px 10px' }}; }
         body { font-family: DejaVu Sans, sans-serif; color: #14231f; font-size: 8px; line-height: 1.15; margin: 0; }
         h1 { font-size: 11px; margin: 0; }
         p { margin: 1px 0 4px; }
@@ -17,27 +17,33 @@
         td.write { height: 28px; border: 1px solid #14231f; }
         th.center, td.center { text-align: center; vertical-align: middle; }
         @if ($stockCount)
-            body { font-size: 7px; }
-            h1 { font-size: 10px; }
-            p { margin: 0 0 2px; }
-            th, td { padding: 0 2px; }
-            td.write { height: 16px; }
+            html, body { margin: 0; padding: 0; }
+            body { font-size: 7px; line-height: 1; }
+            p.mast { margin: 0; padding: 0 1px; font-size: 7px; line-height: 1.1; }
+            table { table-layout: fixed; }
+            th { font-size: 6px; letter-spacing: 0; }
+            th, td { padding: 0 1px; line-height: 1; vertical-align: middle; }
+            td.write { height: 18px; }
         @endif
     </style>
 </head>
 <body>
-    <h1>{{ $title }}</h1>
-    <p>{{ $subtitle }}</p>
+    @if ($stockCount)
+        <p class="mast">{{ $title }} · {{ $subtitle }}</p>
+    @else
+        <h1>{{ $title }}</h1>
+        <p>{{ $subtitle }}</p>
+    @endif
     <table>
         @if ($stockCount)
             <colgroup>
-                <col style="width: 12%">
-                <col style="width: 20%">
-                <col style="width: 10%">
-                <col style="width: 10%">
-                <col style="width: 12%">
+                <col style="width: 9%">
+                <col style="width: 17%">
                 <col style="width: 8%">
-                <col style="width: 28%">
+                <col style="width: 9%">
+                <col style="width: 10%">
+                <col style="width: 5%">
+                <col style="width: 42%">
             </colgroup>
             <thead>
                 <tr>
